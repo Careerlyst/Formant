@@ -1967,271 +1967,1187 @@ export function Orders() {
   );
 }
 
-/* =========================================================
-   MESSAGES
-========================================================= */
+/*
+  Careerlyst — Messages UX replacement
+  Replace only the existing Messages() function with this component.
+
+  Expected existing imports:
+    import React, { useEffect, useRef, useState } from 'react';
+    import DashboardShell from '../components/DashboardShell';
+    import { load } from '../lib/store';
+    import { supabase } from '../lib/supabase';
+
+  This keeps the existing Careerlyst UI classes and fixes chat behaviour:
+  - Your messages -> right
+  - Careerlyst/team messages -> left
+  - Enter -> send
+  - Shift + Enter -> new line
+  - auto-growing composer
+  - auto-scroll to latest message
+  - Enter disabled while sending / no order / empty message
+  - realtime insert de-duplication
+  - readable timestamps
+  - preserves line breaks in messages
+*/
+
+function MessageAttachmentLink({ attachment, mine = false }) {
+  const [url, setUrl] = useState(attachment?.url || '');
+  const [loading, setLoading] = useState(Boolean(attachment?.path && !attachment?.url));
+
+  useEffect(() => {
+    let active = true;
+
+    async function createUrl() {
+      if (!attachment?.path || attachment?.url || !supabase) {
+        if (active) setLoading(false);
+        return;
+      }
+
+      const { data, error } = await supabase.storage
+        .from('message-attachments')
+        .createSignedUrl(attachment.path, 60 * 60);
+
+      if (active) {
+        setUrl(error ? '' : data?.signedUrl || '');
+        setLoading(false);
+      }
+    }
+
+    void createUrl();
+    return () => { active = false; };
+  }, [attachment?.path, attachment?.url]);
+
+  if (loading) {
+    return <div className={`message-attachment ${mine ? 'is-mine' : ''}`}>Loading attachment…</div>;
+  }
+
+  if (!url) return null;
+
+  return (
+    <a
+      className={`message-attachment ${mine ? 'is-mine' : ''}`}
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      download={attachment.name}
+    >
+      <span className="message-attachment-icon">↗</span>
+      <span className="message-attachment-copy">
+        <strong>{attachment.name}</strong>
+        <small>{attachment.size >= 1024 * 1024 ? `${(attachment.size / (1024 * 1024)).toFixed(1)} MB` : `${Math.round(attachment.size / 1024)} KB`}</small>
+      </span>
+    </a>
+  );
+}
 
 export function Messages() {
+  const localState = load();
 
-  const [s, setS] = useState(load());
-
+  const [userId, setUserId] = useState('');
+  const [orders, setOrders] = useState([]);
+  const [selectedOrderId, setSelectedOrderId] = useState(null);
+  const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
+  const [attachment, setAttachment] = useState(null);
+  const [attachmentError, setAttachmentError] = useState('');
 
-  function send() {
+  const [loadingOrders, setLoadingOrders] = useState(Boolean(supabase));
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [sending, setSending] = useState(false);
 
-    if (!text.trim()) return;
+  const [connectionState, setConnectionState] = useState(
+    supabase ? 'connecting' : 'offline'
+  );
+  const [error, setError] = useState('');
 
-    patch((x) => ({
+  const chatBodyRef = useRef(null);
+  const textareaRef = useRef(null);
 
-      ...x,
+  const selectedOrder = orders.find(
+    (order) => String(order.id) === String(selectedOrderId)
+  ) || null;
 
-      messages: [
-        ...(x.messages || []),
+  function scrollToBottom(behavior = 'smooth') {
+    const node = chatBodyRef.current;
+    if (!node) return;
 
-        {
-          from: 'You',
-          text: text.trim(),
-          date: 'Just now',
-          read: true
+    node.scrollTo({
+      top: node.scrollHeight,
+      behavior
+    });
+  }
+
+  function resizeComposer() {
+    const node = textareaRef.current;
+    if (!node) return;
+
+    node.style.height = 'auto';
+
+    const maxHeight = 168;
+    const minHeight = 46;
+    const nextHeight = Math.min(
+      Math.max(node.scrollHeight, minHeight),
+      maxHeight
+    );
+
+    node.style.height = `${nextHeight}px`;
+    node.style.overflowY = node.scrollHeight > maxHeight ? 'auto' : 'hidden';
+  }
+
+  function appendMessage(nextMessage) {
+    if (!nextMessage?.id) return;
+
+    setMessages((current) => {
+      if (current.some((message) => String(message.id) === String(nextMessage.id))) {
+        return current;
+      }
+
+      return [...current, nextMessage].sort(
+        (a, b) =>
+          new Date(a.created_at || 0).getTime() -
+          new Date(b.created_at || 0).getTime()
+      );
+    });
+  }
+
+  function formatMessageTime(value) {
+    if (!value) return '';
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return '';
+    }
+
+    const now = new Date();
+
+    const sameDay =
+      date.getFullYear() === now.getFullYear() &&
+      date.getMonth() === now.getMonth() &&
+      date.getDate() === now.getDate();
+
+    if (sameDay) {
+      return new Intl.DateTimeFormat(undefined, {
+        hour: 'numeric',
+        minute: '2-digit'
+      }).format(date);
+    }
+
+    return new Intl.DateTimeFormat(undefined, {
+      day: 'numeric',
+      month: 'short',
+      hour: 'numeric',
+      minute: '2-digit'
+    }).format(date);
+  }
+
+  const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
+  const ATTACHMENT_BUCKET = 'message-attachments';
+
+  function formatFileSize(bytes) {
+    if (!Number.isFinite(bytes) || bytes <= 0) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function parseMessageBody(body) {
+    const prefix = '__CAREERLYST_ATTACHMENT__:';
+    if (typeof body !== 'string' || !body.startsWith(prefix)) {
+      return { text: body || '', attachment: null };
+    }
+
+    try {
+      const payload = JSON.parse(body.slice(prefix.length));
+      return {
+        text: payload.text || '',
+        attachment: payload.attachment || null
+      };
+    } catch {
+      return { text: body, attachment: null };
+    }
+  }
+
+  function handleAttachmentChange(event) {
+    const file = event.target.files?.[0] || null;
+    event.target.value = '';
+    setAttachmentError('');
+
+    if (!file) {
+      setAttachment(null);
+      return;
+    }
+
+    if (file.size > MAX_ATTACHMENT_SIZE) {
+      setAttachment(null);
+      setAttachmentError('File is too large. Maximum size is 10 MB.');
+      return;
+    }
+
+    const allowedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-powerpoint',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'text/plain',
+      'text/csv',
+      'application/zip',
+      'image/jpeg',
+      'image/png',
+      'image/webp'
+    ];
+
+    if (file.type && !allowedTypes.includes(file.type)) {
+      setAttachment(null);
+      setAttachmentError('This file type is not supported.');
+      return;
+    }
+
+    setAttachment(file);
+  }
+
+  function removeAttachment() {
+    setAttachment(null);
+    setAttachmentError('');
+  }
+
+  function handleComposerChange(event) {
+    setText(event.target.value);
+
+    requestAnimationFrame(() => {
+      resizeComposer();
+    });
+  }
+
+  function handleComposerKeyDown(event) {
+    // Keep Enter available to IME/composition input methods.
+    if (event.nativeEvent?.isComposing) {
+      return;
+    }
+
+    // Enter = send. Shift + Enter = normal newline.
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+
+      if (!sending && selectedOrderId && userId && (text.trim() || attachment)) {
+        void sendMessage();
+      }
+    }
+  }
+
+  async function sendMessage() {
+    const body = text.trim();
+
+    if ((!body && !attachment) || sending || !selectedOrderId) {
+      return;
+    }
+
+    setSending(true);
+    setError('');
+    setAttachmentError('');
+
+    try {
+      let attachmentData = null;
+      let currentUserId = userId;
+
+      if (supabase) {
+        const { data: authData, error: authError } = await supabase.auth.getUser();
+        if (authError || !authData?.user?.id) {
+          throw new Error('Your session could not be verified. Please sign in again.');
         }
 
-      ]
+        currentUserId = authData.user.id;
+        setUserId(currentUserId);
 
-    }));
+        // Verify the selected order belongs to the currently authenticated client.
+        const { data: ownedOrder, error: orderError } = await supabase
+          .from('orders')
+          .select('id, user_id')
+          .eq('id', Number(selectedOrderId))
+          .eq('user_id', currentUserId)
+          .maybeSingle();
 
-    setS(load());
-    setText('');
+        if (orderError) throw orderError;
+        if (!ownedOrder) {
+          throw new Error('This order does not belong to your account.');
+        }
+      }
+
+      if (attachment && supabase) {
+        const safeName = attachment.name.replace(/[^a-zA-Z0-9._-]/g, '-');
+        const path = `${currentUserId}/${selectedOrderId}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from(ATTACHMENT_BUCKET)
+          .upload(path, attachment, {
+            cacheControl: '3600',
+            upsert: false,
+            contentType: attachment.type || 'application/octet-stream'
+          });
+
+        if (uploadError) {
+          throw new Error(
+            uploadError.message ||
+            `Could not upload the attachment. Make sure the '${ATTACHMENT_BUCKET}' storage bucket is configured.`
+          );
+        }
+
+        attachmentData = {
+          name: attachment.name,
+          size: attachment.size,
+          type: attachment.type || 'application/octet-stream',
+          path
+        };
+      }
+
+      const storedBody = attachmentData
+        ? `__CAREERLYST_ATTACHMENT__:${JSON.stringify({ text: body, attachment: attachmentData })}`
+        : body;
+
+      if (!supabase) {
+        const fallbackMessage = {
+          id: `local-${Date.now()}`,
+          order_id: Number(selectedOrderId),
+          sender_id: currentUserId,
+          body: storedBody,
+          created_at: new Date().toISOString()
+        };
+
+        appendMessage(fallbackMessage);
+        setText('');
+        setAttachment(null);
+
+        requestAnimationFrame(() => {
+          resizeComposer();
+          scrollToBottom('smooth');
+        });
+
+        return;
+      }
+
+      const { data, error: insertError } = await supabase
+        .from('messages')
+        .insert({
+          order_id: Number(selectedOrderId),
+          sender_id: currentUserId,
+          body: storedBody
+        })
+        .select(
+          'id, order_id, sender_id, body, created_at, read_at'
+        )
+        .single();
+
+      if (insertError) {
+        throw insertError;
+      }
+
+      appendMessage(data);
+      setText('');
+      setAttachment(null);
+
+      requestAnimationFrame(() => {
+        resizeComposer();
+        scrollToBottom('smooth');
+      });
+    } catch (sendError) {
+      console.error('Message send error:', sendError);
+      setError(
+        sendError?.message ||
+        'Your message could not be sent. Please try again.'
+      );
+    } finally {
+      setSending(false);
+    }
   }
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadConversationList() {
+      setError('');
+
+      if (!supabase) {
+        const fallbackOrders = Array.isArray(localState.orders)
+          ? localState.orders
+          : [];
+
+        if (mounted) {
+          setUserId('local-user');
+          setOrders(fallbackOrders);
+          setSelectedOrderId(fallbackOrders[0]?.id ?? null);
+          setLoadingOrders(false);
+          setConnectionState('offline');
+        }
+
+        return;
+      }
+
+      setLoadingOrders(true);
+      setConnectionState('connecting');
+
+      try {
+        const {
+          data: sessionData,
+          error: sessionError
+        } = await supabase.auth.getSession();
+
+        if (sessionError) {
+          throw sessionError;
+        }
+
+        const currentUser = sessionData?.session?.user;
+
+        if (!currentUser) {
+          throw new Error(
+            'Your session could not be verified. Please sign in again.'
+          );
+        }
+
+        const {
+          data,
+          error: ordersError
+        } = await supabase
+          .from('orders')
+          .select(
+            'id, user_id, service_name, package_name, status, queue_position, created_at'
+          )
+          .eq('user_id', currentUser.id)
+          .order('created_at', {
+            ascending: false
+          });
+
+        if (ordersError) {
+          throw ordersError;
+        }
+
+        if (!mounted) return;
+
+        const nextOrders = data || [];
+
+        setUserId(currentUser.id);
+        setOrders(nextOrders);
+
+        setSelectedOrderId((current) => {
+          const stillExists = nextOrders.some(
+            (order) => String(order.id) === String(current)
+          );
+
+          return stillExists
+            ? current
+            : nextOrders[0]?.id ?? null;
+        });
+      } catch (loadError) {
+        console.error('Messages orders load error:', loadError);
+
+        if (mounted) {
+          setOrders([]);
+          setSelectedOrderId(null);
+          setConnectionState('offline');
+          setError(
+            loadError?.message ||
+            'We could not load your message threads right now.'
+          );
+        }
+      } finally {
+        if (mounted) {
+          setLoadingOrders(false);
+        }
+      }
+    }
+
+    loadConversationList();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedOrderId || !userId) {
+      setMessages([]);
+      setLoadingMessages(false);
+      return undefined;
+    }
+
+    if (!supabase) {
+      const fallback = Array.isArray(localState.messages)
+        ? localState.messages
+        : [];
+
+      setMessages(
+        fallback
+          .filter((message) => {
+            if (!message?.order_id) return true;
+
+            return String(message.order_id) === String(selectedOrderId);
+          })
+          .map((message, index) => ({
+            id: message.id || `local-${selectedOrderId}-${index}`,
+            order_id: Number(selectedOrderId),
+            sender_id:
+              message.sender_id ||
+              (message.from === 'You'
+                ? userId
+                : 'careerlyst-team'),
+            body: message.body || message.text || '',
+            created_at:
+              message.created_at ||
+              new Date().toISOString()
+          }))
+      );
+
+      setConnectionState('offline');
+
+      requestAnimationFrame(() => {
+        scrollToBottom('auto');
+      });
+
+      return undefined;
+    }
+
+    let active = true;
+
+    const channel = supabase
+      .channel(`client-messages-${userId}-${selectedOrderId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `order_id=eq.${selectedOrderId}`
+        },
+        (payload) => {
+          if (!active || !payload.new) {
+            return;
+          }
+
+          appendMessage(payload.new);
+
+          requestAnimationFrame(() => {
+            scrollToBottom('smooth');
+          });
+        }
+      )
+      .subscribe((status) => {
+        if (!active) {
+          return;
+        }
+
+        if (status === 'SUBSCRIBED') {
+          setConnectionState('online');
+          return;
+        }
+
+        if (
+          status === 'CHANNEL_ERROR' ||
+          status === 'TIMED_OUT' ||
+          status === 'CLOSED'
+        ) {
+          setConnectionState('offline');
+        }
+      });
+
+    async function loadThread() {
+      setLoadingMessages(true);
+      setError('');
+      setConnectionState('connecting');
+      setMessages([]);
+
+      try {
+        const {
+          data,
+          error: messageError
+        } = await supabase
+          .from('messages')
+          .select(
+            'id, order_id, sender_id, body, created_at, read_at'
+          )
+          .eq('order_id', Number(selectedOrderId))
+          .order('created_at', {
+            ascending: true
+          });
+
+        if (!active) return;
+
+        if (messageError) {
+          throw messageError;
+        }
+
+        setMessages(data || []);
+
+        requestAnimationFrame(() => {
+          scrollToBottom('auto');
+        });
+      } catch (messageError) {
+        console.error('Messages load error:', messageError);
+
+        if (active) {
+          setMessages([]);
+          setError(
+            messageError?.message ||
+            'We could not load this conversation right now.'
+          );
+        }
+      } finally {
+        if (active) {
+          setLoadingMessages(false);
+        }
+      }
+    }
+
+    void loadThread();
+
+    return () => {
+      active = false;
+      supabase.removeChannel(channel);
+    };
+  }, [selectedOrderId, userId]);
+
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      resizeComposer();
+    });
+  }, [text]);
+
+  useEffect(() => {
+    if (!loadingMessages) {
+      requestAnimationFrame(() => {
+        scrollToBottom('smooth');
+      });
+    }
+  }, [messages.length, loadingMessages]);
 
   return (
     <DashboardShell>
-
-      <div className="dash-head">
-
+      <div className="dash-head messages-page-header">
         <div>
-
-          <p className="eyebrow">
-            MESSAGES
-          </p>
+          <p className="eyebrow">MESSAGES</p>
 
           <h1>
-            Your Careerlyst conversation.
+            Project conversations.
           </h1>
 
+          <p>
+            Updates, questions and revisions.
+          </p>
         </div>
-
       </div>
 
-
-      <div className="chat panel">
-
-        <div className="chat-head">
-
-          <span className="avatar">
-            C
-          </span>
-
-          <div>
-
-            <b>
-              Careerlyst Team
-            </b>
-
-            <small>
-              Project support
-            </small>
-
-          </div>
-
+      {error && !messages.length && (
+        <div
+          className="project-brief-error messages-error"
+          role="alert"
+        >
+          {error}
         </div>
+      )}
 
+      <div className="messages-layout">
+        <aside className="messages-sidebar panel">
+          <div className="messages-sidebar-head">
+            <span className="eyebrow">
+              YOUR PROJECTS
+            </span>
 
-        <div className="chat-body">
-
-          <div className="bubble team">
-            Hi. Once your order is active, we'll use
-            this thread for questions, updates and
-            revisions.
+            <span className="messages-count">
+              {orders.length}
+            </span>
           </div>
 
+          <div className="message-order-list">
+            {loadingOrders ? (
+              <div className="chat-empty">
+                Loading conversations…
+              </div>
+            ) : orders.length ? (
+              orders.map((order) => {
+                const active =
+                  String(order.id) ===
+                  String(selectedOrderId);
 
-          {(s.messages || []).map((m, i) => (
+                return (
+                  <button
+                    type="button"
+                    className={`message-order ${
+                      active ? 'active' : ''
+                    }`}
+                    key={order.id}
+                    onClick={() => {
+                      if (active) return;
 
-            <div
-              className="bubble you"
-              key={i}
-            >
+                      setError('');
+                      setText('');
+                      setAttachment(null);
+                      setAttachmentError('');
+                      setMessages([]);
+                      setSelectedOrderId(order.id);
 
-              {m.text}
+                      requestAnimationFrame(() => {
+                        resizeComposer();
+                      });
+                    }}
+                    aria-current={active ? 'page' : undefined}
+                  >
+                    <span>
+                      ORDER #{order.id}
+                    </span>
+
+                    <strong>
+                      {order.service_name ||
+                        'Careerlyst service'}
+                      {order.package_name
+                        ? ` · ${order.package_name}`
+                        : ''}
+                    </strong>
+
+                    <small>
+                      {String(order.status || 'Pending')
+                        .replace(/-/g, ' ')
+                        .replace(/\b\w/g, (letter) =>
+                          letter.toUpperCase()
+                        )}
+                    </small>
+                  </button>
+                );
+              })
+            ) : (
+              <div className="chat-empty">
+                <strong>
+                  No active orders yet.
+                </strong>
+
+                <p>
+                  Once you place an order, its
+                  conversation will appear here.
+                </p>
+              </div>
+            )}
+          </div>
+        </aside>
+
+        <section className="chat panel">
+          <div className="chat-head">
+            <span className="avatar">
+              C
+            </span>
+
+            <div className="chat-head-copy">
+              <b>
+                Careerlyst Team
+              </b>
 
               <small>
-                {m.date}
+                {selectedOrder
+                  ? `Order #${selectedOrder.id} · ${
+                      selectedOrder.service_name ||
+                      'Project support'
+                    }`
+                  : 'Project support'}
               </small>
-
             </div>
 
-          ))}
+            <div
+              className="message-connection"
+              aria-label={`Connection status: ${connectionState}`}
+            >
+              <span
+                className={`connection-dot ${
+                  connectionState === 'online'
+                    ? 'online'
+                    : ''
+                }`}
+              />
 
-        </div>
+              <span>
+                {connectionState === 'online'
+                  ? 'Live'
+                  : connectionState === 'connecting'
+                    ? 'Connecting…'
+                    : 'Offline'}
+              </span>
+            </div>
+          </div>
 
-
-        <div className="chat-input">
-
-          <textarea
-            value={text}
-            onChange={(e) =>
-              setText(e.target.value)
-            }
-            placeholder="Write a message…"
-          />
-
-          <button
-            className="btn dark"
-            onClick={send}
+          <div
+            className="chat-body"
+            ref={chatBodyRef}
+            aria-live="polite"
           >
-            Send ↗
-          </button>
+            {!selectedOrderId ? (
+              <div className="chat-empty">
+                <strong>
+                  Select a project to start a conversation.
+                </strong>
 
-        </div>
+                <p>
+                  Your Careerlyst messages are organized
+                  by order.
+                </p>
+              </div>
+            ) : loadingMessages ? (
+              <div className="chat-empty">
+                Loading conversation…
+              </div>
+            ) : messages.length ? (
+              messages.map((message) => {
+                const mine =
+                  String(message.sender_id) ===
+                  String(userId);
 
+                // read_at is the message-state source of truth.
+                // Missing read_at = new/unread; present read_at = read.
+                const isRead = Boolean(message.read_at);
+                const messageState = isRead ? 'is-read' : 'is-new';
+                const parsed = parseMessageBody(message.body);
+
+                return (
+                  <div
+                    className={`message-row ${
+                      mine ? 'you' : 'team'
+                    } ${messageState}`}
+                    key={message.id}
+                  >
+                    <div
+                      className={`bubble ${
+                        mine ? 'you' : 'team'
+                      } ${messageState}`}
+                    >
+                      {parsed.text && (
+                        <div className="bubble-text">
+                          {parsed.text}
+                        </div>
+                      )}
+
+                      {parsed.attachment && <MessageAttachmentLink attachment={parsed.attachment} mine={mine} />}
+
+                      <small>
+                        {formatMessageTime(
+                          message.created_at
+                        )}
+                      </small>
+                    </div>
+                  </div>
+                );
+              })
+            ) : error ? (
+              <div className="chat-empty">
+                <strong>
+                  We couldn’t load this conversation.
+                </strong>
+
+                <p>{error}</p>
+              </div>
+            ) : (
+              <div className="chat-empty">
+                <strong>
+                  No messages yet.
+                </strong>
+
+                <p>
+                  Send a message and the Careerlyst
+                  team can reply here.
+                </p>
+              </div>
+            )}
+          </div>
+
+          <form
+            className="chat-input"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void sendMessage();
+            }}
+          >
+            <div className="chat-composer-row">
+              <label
+                className="chat-attach-button"
+                title="Attach a file (max 10 MB)"
+              >
+                <input
+                  type="file"
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.jpg,.jpeg,.png,.webp"
+                  onChange={handleAttachmentChange}
+                  disabled={!selectedOrderId || sending}
+                  aria-label="Attach a file"
+                />
+                <span>＋</span>
+                <small>Attach</small>
+              </label>
+
+              <textarea
+                ref={textareaRef}
+                value={text}
+                onChange={handleComposerChange}
+                onKeyDown={handleComposerKeyDown}
+                placeholder={
+                  selectedOrderId
+                    ? 'Write a message…'
+                    : 'Select a project first…'
+                }
+                rows={1}
+                maxLength={2000}
+                disabled={!selectedOrderId || sending}
+                aria-label="Write a message"
+              />
+
+              <button
+                type="submit"
+                className="btn dark chat-send-button"
+                disabled={
+                  !selectedOrderId ||
+                  (!text.trim() && !attachment) ||
+                  sending
+                }
+              >
+                {sending
+                  ? 'Sending…'
+                  : 'Send ↗'}
+              </button>
+            </div>
+
+            {attachment && (
+              <div className="chat-attachment-preview">
+                <span>📎</span>
+                <strong>{attachment.name}</strong>
+                <small>{formatFileSize(attachment.size)}</small>
+                <button type="button" onClick={removeAttachment} disabled={sending}>×</button>
+              </div>
+            )}
+
+            {attachmentError && (
+              <div className="chat-attachment-error" role="alert">
+                {attachmentError}
+              </div>
+            )}
+
+            <div className="chat-input-meta">
+              <small>
+                Attach files up to 10 MB · Enter to send · Shift + Enter
+                for a new line
+              </small>
+
+              <small className="chat-char-count">
+                {text.length}/2000
+              </small>
+            </div>
+
+            {error && messages.length > 0 && (
+              <div
+                className="chat-inline-error"
+                role="alert"
+              >
+                {error}
+              </div>
+            )}
+          </form>
+        </section>
       </div>
-
     </DashboardShell>
   );
 }
 
+function ClientFileLink({ file }) {
+  const [url, setUrl] = useState('');
+  const [loading, setLoading] = useState(true);
 
-/* =========================================================
-   FILES
-========================================================= */
+  useEffect(() => {
+    let active = true;
 
-export function Files() {
+    async function createUrl() {
+      if (!file?.path || !supabase) {
+        if (active) setLoading(false);
+        return;
+      }
 
-  const [s, setS] = useState(load());
+      const { data, error } = await supabase.storage
+        .from(ATTACHMENT_BUCKET)
+        .createSignedUrl(file.path, 60 * 60);
 
-  function add(e) {
+      if (active) {
+        setUrl(error ? '' : data?.signedUrl || '');
+        setLoading(false);
+      }
+    }
 
-    const f = e.target.files?.[0];
+    void createUrl();
+    return () => { active = false; };
+  }, [file?.path]);
 
-    if (!f) return;
+  const size = formatFileSize(file?.size);
 
-    patch((x) => ({
+  if (loading) {
+    return <span className="file-row-link">Preparing…</span>;
+  }
 
-      ...x,
-
-      files: [
-        ...(x.files || []),
-
-        {
-          name: f.name,
-          size: `${(f.size / 1024).toFixed(0)} KB`,
-          date: 'Just now'
-        }
-
-      ]
-
-    }));
-
-    setS(load());
-
-    /*
-      Reset input so selecting the same
-      file again still triggers change.
-    */
-    e.target.value = '';
+  if (!url) {
+    return <span className="file-row-link is-unavailable">Unavailable</span>;
   }
 
   return (
-    <DashboardShell>
-
-      <div className="dash-head">
-
-        <div>
-
-          <p className="eyebrow">
-            FILES
-          </p>
-
-          <h1>
-            Your project files.
-          </h1>
-
-        </div>
-
-
-        <label className="btn lime file-btn">
-
-          Upload file ↗
-
-          <input
-            type="file"
-            hidden
-            onChange={add}
-          />
-
-        </label>
-
-      </div>
-
-
-      <div className="panel file-list">
-
-        {s.files?.length ? (
-
-          s.files.map((f, i) => (
-
-            <div
-              className="file-row"
-              key={i}
-            >
-
-              <span>
-                FILE
-              </span>
-
-              <div>
-
-                <b>
-                  {f.name}
-                </b>
-
-                <small>
-                  {f.size} · {f.date}
-                </small>
-
-              </div>
-
-              <button>
-                Download
-              </button>
-
-            </div>
-
-          ))
-
-        ) : (
-
-          <div className="empty">
-
-            <h3>
-              No files yet.
-            </h3>
-
-            <p>
-              Upload your existing CV, job
-              descriptions or supporting material.
-            </p>
-
-          </div>
-
-        )}
-
-      </div>
-
-    </DashboardShell>
+    <a
+      className="file-row-link"
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      download={file.name}
+    >
+      Open ↗
+    </a>
   );
 }
 
+function formatFileSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+const ATTACHMENT_BUCKET = 'message-attachments';
+
+function parseAttachmentMessage(body) {
+  const prefix = '__CAREERLYST_ATTACHMENT__:';
+  if (typeof body !== 'string' || !body.startsWith(prefix)) return null;
+
+  try {
+    const payload = JSON.parse(body.slice(prefix.length));
+    return payload?.attachment || null;
+  } catch {
+    return null;
+  }
+}
+
+export function Files() {
+  const [files, setFiles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadFiles() {
+      if (!supabase) {
+        if (mounted) {
+          setFiles([]);
+          setLoading(false);
+          setError('Supabase is not configured.');
+        }
+        return;
+      }
+
+      setLoading(true);
+      setError('');
+
+      try {
+        const { data: sessionData, error: sessionError } =
+          await supabase.auth.getSession();
+        if (sessionError) throw sessionError;
+
+        const user = sessionData?.session?.user;
+        if (!user) throw new Error('Please sign in to view your files.');
+
+        const { data: orderData, error: orderError } = await supabase
+          .from('orders')
+          .select('id, service_name, package_name, created_at')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
+
+        if (orderError) throw orderError;
+
+        const orderIds = (orderData || []).map((order) => order.id);
+        if (!orderIds.length) {
+          if (mounted) setFiles([]);
+          return;
+        }
+
+        const { data: messageData, error: messageError } = await supabase
+          .from('messages')
+          .select('id, order_id, sender_id, body, created_at')
+          .in('order_id', orderIds)
+          .order('created_at', { ascending: false });
+
+        if (messageError) throw messageError;
+
+        const orderMap = Object.fromEntries(
+          (orderData || []).map((order) => [String(order.id), order])
+        );
+
+        const extracted = (messageData || [])
+          .map((message) => {
+            const attachment = parseAttachmentMessage(message.body);
+            if (!attachment?.path) return null;
+            return {
+              ...attachment,
+              messageId: message.id,
+              orderId: message.order_id,
+              senderId: message.sender_id,
+              createdAt: message.created_at,
+              order: orderMap[String(message.order_id)] || null
+            };
+          })
+          .filter(Boolean);
+
+        if (mounted) setFiles(extracted);
+      } catch (loadError) {
+        console.error('Client files load error:', loadError);
+        if (mounted) setError(loadError?.message || 'Files could not be loaded.');
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    }
+
+    void loadFiles();
+    return () => { mounted = false; };
+  }, []);
+
+  return (
+    <DashboardShell>
+      <main className="careerlyst-files-page">
+        <div className="dash-head">
+          <div>
+            <p className="eyebrow">FILES</p>
+            <h1>Your project files.</h1>
+            <p>Files shared with you through your Careerlyst conversations.</p>
+          </div>
+        </div>
+
+        {error && <div className="admin-messages-error" role="alert">{error}</div>}
+
+        <section className="panel">
+          {loading ? (
+            <div className="empty"><h3>Loading files…</h3></div>
+          ) : !files.length ? (
+            <div className="empty">
+              <h3>No files yet.</h3>
+              <p>Files attached to your project conversations will appear here.</p>
+            </div>
+          ) : (
+            <div className="file-list">
+              {files.map((file) => (
+                <div className="file-row" key={`${file.messageId}-${file.path}`}>
+                  <span>📎</span>
+                  <div className="file-row-copy">
+                    <strong>{file.name}</strong>
+                    <small>
+                      Order #{file.orderId}
+                      {file.order?.service_name ? ` · ${file.order.service_name}` : ''}
+                      {file.size ? ` · ${formatFileSize(file.size)}` : ''}
+                    </small>
+                  </div>
+                  <ClientFileLink file={file} />
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </main>
+    </DashboardShell>
+  );
+}
 
 /* =========================================================
    PAYMENTS
@@ -2287,45 +3203,371 @@ export function Payments() {
 
 export function Notifications() {
 
+  const localState = load();
+  const [notifications, setNotifications] = useState([]);
+  const [loading, setLoading] = useState(Boolean(supabase));
+  const [error, setError] = useState('');
+  const [userId, setUserId] = useState('');
+
+  function formatNotificationTime(value) {
+    if (!value) return 'Recently';
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'Recently';
+
+    const diff = Date.now() - date.getTime();
+    const minute = 60 * 1000;
+    const hour = 60 * minute;
+    const day = 24 * hour;
+
+    if (diff < minute) return 'Just now';
+    if (diff < hour) return `${Math.floor(diff / minute)}m ago`;
+    if (diff < day) return `${Math.floor(diff / hour)}h ago`;
+    if (diff < 7 * day) return `${Math.floor(diff / day)}d ago`;
+
+    try {
+      return new Intl.DateTimeFormat('en-US', {
+        month: 'short',
+        day: 'numeric'
+      }).format(date);
+    } catch {
+      return 'Recently';
+    }
+  }
+
+  function notificationTypeLabel(type) {
+    const labels = {
+      message: 'MESSAGE',
+      order: 'ORDER',
+      project: 'PROJECT',
+      payment: 'PAYMENT',
+      file: 'FILE',
+      account: 'ACCOUNT',
+      security: 'SECURITY'
+    };
+
+    return labels[String(type || '').toLowerCase()] || 'UPDATE';
+  }
+
+  function notificationIcon(type) {
+    const icons = {
+      message: '✦',
+      order: '↗',
+      project: '◌',
+      payment: '$',
+      file: '⌁',
+      account: '◎',
+      security: '◈'
+    };
+
+    return icons[String(type || '').toLowerCase()] || '•';
+  }
+
+  useEffect(() => {
+    let mounted = true;
+    let channel = null;
+
+    async function loadNotifications() {
+      if (!supabase) {
+        const fallback = Array.isArray(localState.notifications)
+          ? localState.notifications
+          : [];
+
+        if (mounted) {
+          setNotifications(fallback);
+          setLoading(false);
+        }
+        return;
+      }
+
+      setLoading(true);
+      setError('');
+
+      try {
+        const { data: sessionData, error: sessionError } =
+          await supabase.auth.getSession();
+
+        if (sessionError) throw sessionError;
+
+        const user = sessionData?.session?.user;
+        if (!user) throw new Error('Please sign in to view notifications.');
+
+        if (mounted) setUserId(user.id);
+
+        const { data, error: notificationError } = await supabase
+          .from('notifications')
+          .select('id, user_id, order_id, type, title, body, read_at, created_at, metadata')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
+
+        if (notificationError) throw notificationError;
+
+        if (mounted) {
+          setNotifications(data || []);
+          setError('');
+        }
+
+        channel = supabase
+          .channel(`client-notifications-${user.id}`)
+          .on(
+            'postgres_changes',
+            {
+              event: 'INSERT',
+              schema: 'public',
+              table: 'notifications',
+              filter: `user_id=eq.${user.id}`
+            },
+            (payload) => {
+              setNotifications((current) => {
+                if (current.some((item) => String(item.id) === String(payload.new.id))) {
+                  return current;
+                }
+                return [payload.new, ...current];
+              });
+            }
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: 'UPDATE',
+              schema: 'public',
+              table: 'notifications',
+              filter: `user_id=eq.${user.id}`
+            },
+            (payload) => {
+              setNotifications((current) =>
+                current.map((item) =>
+                  String(item.id) === String(payload.new.id)
+                    ? payload.new
+                    : item
+                )
+              );
+            }
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: 'DELETE',
+              schema: 'public',
+              table: 'notifications'
+            },
+            (payload) => {
+              setNotifications((current) =>
+                current.filter((item) => String(item.id) !== String(payload.old.id))
+              );
+            }
+          )
+          .subscribe();
+      } catch (loadError) {
+        console.error('Notifications load error:', loadError);
+
+        if (mounted) {
+          setNotifications([]);
+          setError(
+            loadError?.message?.includes('notifications')
+              ? 'Notifications are not configured yet. Run the notification SQL migration first.'
+              : 'We could not load your notifications right now.'
+          );
+        }
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    }
+
+    loadNotifications();
+
+    return () => {
+      mounted = false;
+      if (channel && supabase) {
+        supabase.removeChannel(channel);
+      }
+    };
+  }, []);
+
+  async function markAsRead(notificationId) {
+    if (!supabase || !notificationId) return;
+
+    const { data, error: updateError } = await supabase
+      .from('notifications')
+      .update({ read_at: new Date().toISOString() })
+      .eq('id', notificationId)
+      .eq('user_id', userId)
+      .is('read_at', null)
+      .select('id, user_id, order_id, type, title, body, read_at, created_at, metadata')
+      .maybeSingle();
+
+    if (updateError) {
+      console.error('Notification read update error:', updateError);
+      return;
+    }
+
+    if (data) {
+      setNotifications((current) =>
+        current.map((item) =>
+          String(item.id) === String(data.id) ? data : item
+        )
+      );
+    }
+  }
+
+  async function markAllAsRead() {
+    const unreadIds = notifications
+      .filter((item) => !item.read_at)
+      .map((item) => item.id);
+
+    if (!unreadIds.length) return;
+
+    if (!supabase) {
+      setNotifications((current) =>
+        current.map((item) => ({
+          ...item,
+          read_at: item.read_at || new Date().toISOString()
+        }))
+      );
+      return;
+    }
+
+    const readAt = new Date().toISOString();
+    const { error: updateError } = await supabase
+      .from('notifications')
+      .update({ read_at: readAt })
+      .eq('user_id', userId)
+      .is('read_at', null);
+
+    if (updateError) {
+      console.error('Mark all notifications read error:', updateError);
+      return;
+    }
+
+    setNotifications((current) =>
+      current.map((item) => ({
+        ...item,
+        read_at: item.read_at || readAt
+      }))
+    );
+  }
+
+  function notificationDestination(notification) {
+    const orderId = notification?.order_id;
+    const type = String(notification?.type || '').toLowerCase();
+
+    if (type === 'message' || type === 'file') {
+      return orderId
+        ? `/dashboard/messages?order=${encodeURIComponent(orderId)}`
+        : '/dashboard/messages';
+    }
+
+    if (orderId) {
+      return `/dashboard/orders?order=${encodeURIComponent(orderId)}`;
+    }
+
+    return null;
+  }
+
+  const unreadCount = notifications.filter((item) => !item.read_at).length;
+
   return (
     <DashboardShell>
 
-      <div className="dash-head">
-
+      <div className="dash-head notifications-page-header">
         <div>
-
-          <p className="eyebrow">
-            NOTIFICATIONS
+          <p className="eyebrow">NOTIFICATIONS</p>
+          <h1>Updates from your team.</h1>
+          <p className="notifications-page-subtitle">
+            Messages, project updates, files, payments and order activity in one place.
           </p>
-
-          <h1>
-            Updates from your team.
-          </h1>
-
         </div>
 
+        {unreadCount > 0 && (
+          <button
+            type="button"
+            className="btn dark notifications-mark-all"
+            onClick={markAllAsRead}
+          >
+            Mark all as read ↗
+          </button>
+        )}
       </div>
 
+      <div className="panel notifications-panel">
+        {loading ? (
+          <div className="notifications-empty">
+            <div className="notifications-empty-mark">•</div>
+            <h3>Loading notifications…</h3>
+            <p>Checking the latest updates from your Careerlyst workspace.</p>
+          </div>
+        ) : error ? (
+          <div className="notifications-empty notifications-empty-error">
+            <div className="notifications-empty-mark">!</div>
+            <h3>Notifications need setup.</h3>
+            <p>{error}</p>
+          </div>
+        ) : notifications.length === 0 ? (
+          <div className="notifications-empty">
+            <div className="notifications-empty-mark">✓</div>
+            <h3>You're all caught up.</h3>
+            <p>New messages, files and project updates will appear here.</p>
+          </div>
+        ) : (
+          <div className="notifications-list">
+            {notifications.map((notification) => {
+              const destination = notificationDestination(notification);
+              const unread = !notification.read_at;
+              const content = (
+                <>
+                  <div className="notification-item-icon" aria-hidden="true">
+                    {notificationIcon(notification.type)}
+                  </div>
 
-      <div className="panel notification">
+                  <div className="notification-item-content">
+                    <div className="notification-item-topline">
+                      <span className="notification-item-type">
+                        {notificationTypeLabel(notification.type)}
+                      </span>
+                      <span className="notification-item-time">
+                        {formatNotificationTime(notification.created_at)}
+                      </span>
+                    </div>
 
-        <div>
+                    <h3>{notification.title || 'Careerlyst update'}</h3>
+                    <p>{notification.body || ''}</p>
 
-          <b>
-            Careerlyst team
-          </b>
+                    {notification.order_id && (
+                      <span className="notification-item-order">
+                        Order #{notification.order_id}
+                      </span>
+                    )}
+                  </div>
 
-          <p>
-            Your project workspace is ready.
-            Upload your current resume to begin.
-          </p>
+                  <div className="notification-item-status">
+                    {unread && <span className="notification-unread-dot" />}
+                    {destination && <span className="notification-item-arrow">↗</span>}
+                  </div>
+                </>
+              );
 
-        </div>
-
-        <small>
-          Today
-        </small>
-
+              return destination ? (
+                <Link
+                  key={notification.id}
+                  to={destination}
+                  className={`notification-item ${unread ? 'is-unread' : ''}`}
+                  onClick={() => markAsRead(notification.id)}
+                >
+                  {content}
+                </Link>
+              ) : (
+                <button
+                  key={notification.id}
+                  type="button"
+                  className={`notification-item notification-item-button ${unread ? 'is-unread' : ''}`}
+                  onClick={() => markAsRead(notification.id)}
+                >
+                  {content}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
     </DashboardShell>
@@ -2339,66 +3581,363 @@ export function Notifications() {
 
 export function Settings() {
 
+  const s = load();
+  const [emailNotifications, setEmailNotifications] = useState(
+    s.settings?.emailNotifications ?? true
+  );
+  const [language, setLanguage] = useState(
+    s.settings?.language || 'English'
+  );
+  const [theme, setTheme] = useState(
+    localStorage.getItem('careerlyst-theme') || 'system'
+  );
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [savingPreferences, setSavingPreferences] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+
+    function applyTheme() {
+      const resolved = theme === 'system'
+        ? (media.matches ? 'dark' : 'light')
+        : theme;
+      root.dataset.theme = resolved;
+    }
+
+    applyTheme();
+    localStorage.setItem('careerlyst-theme', theme);
+
+    if (theme !== 'system') return undefined;
+
+    media.addEventListener?.('change', applyTheme);
+    return () => media.removeEventListener?.('change', applyTheme);
+  }, [theme]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadSettings() {
+      if (!supabase) return;
+
+      const { data, error: sessionError } = await supabase.auth.getSession();
+      if (!mounted || sessionError) return;
+
+      const stored = data?.session?.user?.user_metadata?.careerlyst_settings;
+      if (!stored || typeof stored !== 'object') return;
+
+      if (typeof stored.emailNotifications === 'boolean') {
+        setEmailNotifications(stored.emailNotifications);
+      }
+      if (stored.language) setLanguage(stored.language);
+      if (stored.theme) setTheme(stored.theme);
+    }
+
+    void loadSettings();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  async function savePreferences(e) {
+    e.preventDefault();
+    setMessage('');
+    setError('');
+    setSavingPreferences(true);
+
+    try {
+      const nextSettings = {
+        ...(s.settings || {}),
+        emailNotifications,
+        language,
+        theme
+      };
+
+      if (supabase) {
+        const { data: sessionData, error: sessionError } =
+          await supabase.auth.getSession();
+
+        if (sessionError || !sessionData?.session?.user) {
+          throw new Error('Your session could not be verified. Please sign in again.');
+        }
+
+        const { error: updateError } = await supabase.auth.updateUser({
+          data: {
+            ...(sessionData.session.user.user_metadata || {}),
+            careerlyst_settings: nextSettings
+          }
+        });
+
+        if (updateError) throw updateError;
+      }
+
+      patch((current) => ({
+        ...current,
+        settings: nextSettings
+      }));
+
+      setMessage('Preferences saved.');
+    } catch (saveError) {
+      console.error('Settings save error:', saveError);
+      setError(saveError?.message || 'We could not save your settings.');
+    } finally {
+      setSavingPreferences(false);
+    }
+  }
+
+  async function changePassword(e) {
+    e.preventDefault();
+    setMessage('');
+    setError('');
+
+    if (!supabase) {
+      setError('Password changes are currently unavailable.');
+      return;
+    }
+
+    if (!currentPassword) {
+      setError('Enter your current password.');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setError('New password must be at least 6 characters.');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setError('New passwords do not match.');
+      return;
+    }
+
+    setChangingPassword(true);
+
+    try {
+      const { data: sessionData, error: sessionError } =
+        await supabase.auth.getSession();
+      const user = sessionData?.session?.user;
+
+      if (sessionError || !user?.email) {
+        throw new Error('Your session could not be verified. Please sign in again.');
+      }
+
+      const { error: reauthError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: currentPassword
+      });
+
+      if (reauthError) throw new Error('Current password is incorrect.');
+
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+
+      if (updateError) throw updateError;
+
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setMessage('Password changed successfully.');
+    } catch (passwordError) {
+      console.error('Password change error:', passwordError);
+      setError(passwordError?.message || 'We could not change your password.');
+    } finally {
+      setChangingPassword(false);
+    }
+  }
+
   return (
     <DashboardShell>
-
-      <div className="dash-head">
-
-        <div>
-
-          <p className="eyebrow">
-            SETTINGS
+      <div className="settings-page-v2">
+        <header className="settings-hero-v2">
+          <div>
+            <p className="eyebrow">ACCOUNT / SETTINGS</p>
+            <h1>Everything in<br /><span>one place.</span></h1>
+          </div>
+          <p className="settings-hero-copy">
+            Manage your Careerlyst preferences, security and account without leaving your workspace.
           </p>
+        </header>
 
-          <h1>
-            Account settings.
-          </h1>
+        {(message || error) && (
+          <div
+            className={`settings-feedback-v2 ${error ? 'is-error' : 'is-success'}`}
+            role={error ? 'alert' : 'status'}
+          >
+            <span>{error ? '!' : '✓'}</span>
+            <strong>{error || message}</strong>
+          </div>
+        )}
 
+        <div className="settings-v2-grid">
+          <aside className="settings-index-v2">
+            <span className="settings-index-label">SETTINGS</span>
+            <a href="#preferences">01&nbsp;&nbsp; Preferences</a>
+            <a href="#security">02&nbsp;&nbsp; Security</a>
+            <a href="#account">03&nbsp;&nbsp; Account</a>
+          </aside>
+
+          <div className="settings-content-v2">
+            <form id="preferences" className="settings-section-v2" onSubmit={savePreferences}>
+              <div className="settings-section-number">01</div>
+              <div className="settings-section-body">
+                <div className="settings-section-title">
+                  <div>
+                    <p className="settings-kicker">PREFERENCES</p>
+                    <h2>Your experience.</h2>
+                  </div>
+                  <span className="settings-section-icon">✦</span>
+                </div>
+
+                <div className="settings-options-v2">
+                  <label className="settings-toggle-v2">
+                    <span className="settings-option-icon">@</span>
+                    <span className="settings-option-copy">
+                      <strong>Email notifications</strong>
+                      <small>Important project, order and account updates.</small>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={emailNotifications}
+                      onChange={(e) => setEmailNotifications(e.target.checked)}
+                    />
+                    <span className="settings-switch-v2" aria-hidden="true"><i /></span>
+                  </label>
+
+                  <label className="settings-select-v2">
+                    <span className="settings-option-icon">文</span>
+                    <span className="settings-option-copy">
+                      <strong>Language</strong>
+                      <small>Choose the language used across your account.</small>
+                    </span>
+                    <select value={language} onChange={(e) => setLanguage(e.target.value)}>
+                      <option>English</option>
+                    </select>
+                  </label>
+
+                  <label className="settings-select-v2">
+                    <span className="settings-option-icon">◐</span>
+                    <span className="settings-option-copy">
+                      <strong>Appearance</strong>
+                      <small>Use your device preference or choose a fixed theme.</small>
+                    </span>
+                    <select value={theme} onChange={(e) => setTheme(e.target.value)}>
+                      <option value="system">System</option>
+                      <option value="light">Light</option>
+                      <option value="dark">Dark</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div className="settings-section-footer-v2">
+                  <span>Changes are saved to your Careerlyst account.</span>
+                  <button className="btn dark" type="submit" disabled={savingPreferences}>
+                    {savingPreferences ? 'Saving…' : 'Save changes ↗'}
+                  </button>
+                </div>
+              </div>
+            </form>
+
+            <form id="security" className="settings-section-v2" onSubmit={changePassword}>
+              <div className="settings-section-number">02</div>
+              <div className="settings-section-body">
+                <div className="settings-section-title">
+                  <div>
+                    <p className="settings-kicker">SECURITY</p>
+                    <h2>Keep it protected.</h2>
+                  </div>
+                  <span className="settings-section-icon">⌁</span>
+                </div>
+
+                <div className="settings-security-grid-v2">
+                  {[
+                    ['Current password', currentPassword, setCurrentPassword, showCurrent, setShowCurrent, 'current-password', 'Enter current password'],
+                    ['New password', newPassword, setNewPassword, showNew, setShowNew, 'new-password', 'At least 6 characters'],
+                    ['Confirm new password', confirmPassword, setConfirmPassword, showConfirm, setShowConfirm, 'new-password', 'Repeat new password']
+                  ].map(([label, value, setter, visible, setVisible, autoComplete, placeholder]) => (
+                    <label className="settings-password-v2" key={label}>
+                      <span>{label}</span>
+                      <div>
+                        <input
+                          type={visible ? 'text' : 'password'}
+                          value={value}
+                          onChange={(e) => setter(e.target.value)}
+                          autoComplete={autoComplete}
+                          minLength={6}
+                          placeholder={placeholder}
+                          required
+                        />
+                        <button type="button" onClick={() => setVisible((v) => !v)}>
+                          {visible ? 'Hide' : 'Show'}
+                        </button>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+
+                <div className="settings-security-foot-v2">
+                  <div>
+                    <strong>Authentication handled by Supabase.</strong>
+                    <span>Your password is never stored in Careerlyst profile data.</span>
+                  </div>
+                  <button className="btn dark" type="submit" disabled={changingPassword}>
+                    {changingPassword ? 'Updating…' : 'Update password ↗'}
+                  </button>
+                </div>
+              </div>
+            </form>
+
+            <section id="account" className="settings-section-v2 account-section-v2">
+              <div className="settings-section-number">03</div>
+              <div className="settings-section-body">
+                <div className="settings-section-title">
+                  <div>
+                    <p className="settings-kicker">ACCOUNT</p>
+                    <h2>Your account.</h2>
+                  </div>
+                  <span className="settings-section-icon">↗</span>
+                </div>
+
+                <div className="settings-account-list-v2">
+                  <Link to="/dashboard/profile" className="settings-account-row-v2">
+                    <span className="settings-account-icon">◎</span>
+                    <span>
+                      <strong>Edit profile</strong>
+                      <small>Update your professional information.</small>
+                    </span>
+                    <b>↗</b>
+                  </Link>
+
+                  <button
+                    type="button"
+                    className="settings-account-row-v2"
+                    onClick={async () => {
+                      if (supabase) await supabase.auth.signOut();
+                      window.location.href = '/login';
+                    }}
+                  >
+                    <span className="settings-account-icon">→</span>
+                    <span>
+                      <strong>Sign out</strong>
+                      <small>End your current Careerlyst session.</small>
+                    </span>
+                    <b>↗</b>
+                  </button>
+                </div>
+              </div>
+            </section>
+          </div>
         </div>
-
       </div>
-
-
-      <div className="panel form-panel">
-
-        <label>
-
-          Email notifications
-
-          <select>
-            <option>
-              On
-            </option>
-
-            <option>
-              Off
-            </option>
-          </select>
-
-        </label>
-
-
-        <label>
-
-          Language
-
-          <select>
-
-            <option>
-              English
-            </option>
-
-          </select>
-
-        </label>
-
-
-        <button className="btn dark">
-          Save settings ↗
-        </button>
-
-      </div>
-
     </DashboardShell>
   );
 }

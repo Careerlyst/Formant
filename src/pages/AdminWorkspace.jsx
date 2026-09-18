@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import DashboardShell from '../components/DashboardShell';
 import { supabase } from '../lib/supabase';
@@ -183,6 +183,152 @@ function EditDrawer({ order, brief, clientName, role, saving, onClose, onSave })
   );
 }
 
+
+function TeamConversationDrawer({
+  order,
+  clientName,
+  staffUserId,
+  role,
+  messages,
+  loading,
+  sending,
+  text,
+  connection,
+  error,
+  onTextChange,
+  onKeyDown,
+  onSend,
+  onClose,
+  bodyRef,
+  textareaRef
+}) {
+  if (!order) return null;
+
+  return (
+    <div
+      className="team-drawer-overlay"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <aside
+        className="team-drawer team-chat-drawer"
+        aria-label="Client conversation"
+      >
+        <header className="team-drawer-head team-chat-head">
+          <div>
+            <p className="eyebrow">CONVERSATION · ORDER #{order.id}</p>
+            <h2>{clientName}</h2>
+            <p>
+              {order.service_name || 'Careerlyst service'}
+              {order.package_name ? ` · ${order.package_name}` : ''}
+            </p>
+          </div>
+
+          <div className="team-chat-head-actions">
+            <span className="team-chat-connection">
+              <i className={connection === 'online' ? 'is-online' : ''} />
+              {connection === 'online'
+                ? 'Live'
+                : connection === 'connecting'
+                  ? 'Connecting…'
+                  : 'Offline'}
+            </span>
+            <button
+              type="button"
+              className="team-close"
+              onClick={onClose}
+              aria-label="Close conversation"
+            >
+              ×
+            </button>
+          </div>
+        </header>
+
+        <div className="team-chat-drawer-body">
+          <div className="team-chat-meta-strip">
+            <span>{prettyStatus(order.status)}</span>
+            <span>{clientName}</span>
+          </div>
+
+          <div className="team-chat-messages" ref={bodyRef}>
+            <div className="team-chat-system-note">
+              This thread is shared with the client in their Careerlyst dashboard.
+            </div>
+
+            {loading ? (
+              <div className="team-chat-empty">
+                Loading conversation…
+              </div>
+            ) : !messages.length ? (
+              <div className="team-chat-empty">
+                <strong>No messages yet.</strong>
+                <span>Send the first project update to the client.</span>
+              </div>
+            ) : (
+              messages.map((message) => {
+                const isTeam = message.sender_id !== order.user_id;
+                return (
+                  <div
+                    className={`team-chat-row ${isTeam ? 'is-team' : 'is-client'}`}
+                    key={message.id}
+                  >
+                    <div className="team-chat-bubble">
+                      <p>{message.body}</p>
+                      <small>
+                        {isTeam ? 'Careerlyst Team' : clientName}
+                        {' · '}
+                        {formatDate(message.created_at, true)}
+                      </small>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <form className="team-chat-composer" onSubmit={onSend}>
+            {role === 'finance' && (
+              <div className="team-permission-note">Finance access is read-only for client conversations.</div>
+            )}
+            {error && (
+              <div className="team-chat-error" role="alert">
+                {error}
+              </div>
+            )}
+
+            <textarea
+              ref={textareaRef}
+              value={text}
+              onChange={onTextChange}
+              onKeyDown={onKeyDown}
+              placeholder={role === 'finance' ? 'Read-only conversation' : 'Write an update or reply…'}
+              rows="1"
+              maxLength={2000}
+              disabled={sending || role === 'finance'}
+              aria-label="Message client"
+            />
+
+            <div className="team-chat-composer-footer">
+              <span>
+                Enter to send · Shift + Enter for a new line · {text.length}/2000
+              </span>
+              <button
+                type="submit"
+                className="btn dark"
+                disabled={sending || !text.trim() || !staffUserId || role === 'finance'}
+              >
+                {sending ? 'Sending…' : 'Send ↗'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
 export default function AdminWorkspace() {
   const navigate = useNavigate();
   const [authorized, setAuthorized] = useState(null);
@@ -199,6 +345,16 @@ export default function AdminWorkspace() {
   const [savingId, setSavingId] = useState(null);
   const [toast, setToast] = useState('');
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [staffUserId, setStaffUserId] = useState('');
+  const [conversationOrder, setConversationOrder] = useState(null);
+  const [conversationMessages, setConversationMessages] = useState([]);
+  const [conversationText, setConversationText] = useState('');
+  const [conversationLoading, setConversationLoading] = useState(false);
+  const [conversationSending, setConversationSending] = useState(false);
+  const [conversationConnection, setConversationConnection] = useState('offline');
+  const [conversationError, setConversationError] = useState('');
+  const conversationBodyRef = useRef(null);
+  const conversationTextareaRef = useRef(null);
 
   const showToast = useCallback((message) => {
     setToast(message);
@@ -226,6 +382,7 @@ export default function AdminWorkspace() {
       const currentRole = roleRow?.role || '';
       if (!STAFF_ROLES.includes(currentRole)) { setAuthorized(false); return; }
       setRole(currentRole);
+      setStaffUserId(user.id);
       setAuthorized(true);
 
       const { data: orderData, error: orderError } = await supabase
@@ -268,6 +425,240 @@ export default function AdminWorkspace() {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [authorized, loadWorkspace]);
+
+
+  function scrollConversationToBottom(behavior = 'smooth') {
+    const node = conversationBodyRef.current;
+    if (!node) return;
+    node.scrollTo({ top: node.scrollHeight, behavior });
+  }
+
+  function resizeConversationComposer() {
+    const node = conversationTextareaRef.current;
+    if (!node) return;
+    node.style.height = 'auto';
+    const maxHeight = 168;
+    const nextHeight = Math.min(Math.max(node.scrollHeight, 48), maxHeight);
+    node.style.height = `${nextHeight}px`;
+    node.style.overflowY = node.scrollHeight > maxHeight ? 'auto' : 'hidden';
+  }
+
+  function appendConversationMessage(nextMessage) {
+    if (!nextMessage?.id) return;
+    setConversationMessages((current) => {
+      if (current.some((item) => String(item.id) === String(nextMessage.id))) {
+        return current.map((item) =>
+          String(item.id) === String(nextMessage.id) ? nextMessage : item
+        );
+      }
+      return [...current, nextMessage].sort(
+        (a, b) =>
+          new Date(a.created_at || 0).getTime() -
+          new Date(b.created_at || 0).getTime()
+      );
+    });
+  }
+
+  async function markConversationRead(orderId) {
+    if (!supabase || !staffUserId || !orderId) return;
+
+    const { data, error: readError } = await supabase
+      .from('messages')
+      .update({ read_at: new Date().toISOString() })
+      .eq('order_id', Number(orderId))
+      .neq('sender_id', staffUserId)
+      .is('read_at', null)
+      .select('id, order_id, sender_id, body, created_at, read_at');
+
+    if (readError) {
+      console.error('Admin conversation read update error:', readError);
+      return;
+    }
+
+    (data || []).forEach(appendConversationMessage);
+  }
+
+  useEffect(() => {
+    if (!conversationOrder || !supabase || !staffUserId) {
+      setConversationMessages([]);
+      setConversationConnection(supabase && staffUserId ? 'offline' : 'offline');
+      return undefined;
+    }
+
+    let active = true;
+    let channel;
+    const orderId = String(conversationOrder.id);
+
+    async function loadConversation() {
+      setConversationLoading(true);
+      setConversationError('');
+      setConversationConnection('connecting');
+      setConversationMessages([]);
+
+      try {
+        const { data, error: messageError } = await supabase
+          .from('messages')
+          .select('id, order_id, sender_id, body, created_at, read_at')
+          .eq('order_id', Number(orderId))
+          .order('created_at', { ascending: true });
+
+        if (!active) return;
+        if (messageError) throw messageError;
+
+        setConversationMessages(data || []);
+        await markConversationRead(orderId);
+        requestAnimationFrame(() => scrollConversationToBottom('auto'));
+      } catch (messageError) {
+        console.error('Admin conversation load error:', messageError);
+        if (active) {
+          setConversationMessages([]);
+          setConversationError(
+            messageError?.message || 'Could not load this client conversation.'
+          );
+        }
+      } finally {
+        if (active) setConversationLoading(false);
+      }
+    }
+
+    loadConversation();
+
+    channel = supabase
+      .channel(`careerlyst-admin-messages-${orderId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `order_id=eq.${orderId}`
+        },
+        (payload) => {
+          if (!active || !payload.new) return;
+          appendConversationMessage(payload.new);
+          if (String(payload.new.sender_id) !== String(conversationOrder.user_id)) {
+            // A staff-authored realtime insert is already read by the client-facing thread.
+          } else {
+            markConversationRead(orderId);
+          }
+          requestAnimationFrame(() => scrollConversationToBottom('smooth'));
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'messages',
+          filter: `order_id=eq.${orderId}`
+        },
+        (payload) => {
+          if (!active || !payload.new) return;
+          appendConversationMessage(payload.new);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'messages',
+          filter: `order_id=eq.${orderId}`
+        },
+        (payload) => {
+          if (!active || !payload.old) return;
+          setConversationMessages((current) =>
+            current.filter(
+              (item) => String(item.id) !== String(payload.old.id)
+            )
+          );
+        }
+      )
+      .subscribe((status) => {
+        if (!active) return;
+        if (status === 'SUBSCRIBED') {
+          setConversationConnection('online');
+        } else if (
+          status === 'CHANNEL_ERROR' ||
+          status === 'TIMED_OUT' ||
+          status === 'CLOSED'
+        ) {
+          setConversationConnection('offline');
+        }
+      });
+
+    return () => {
+      active = false;
+      if (channel) supabase.removeChannel(channel);
+    };
+  }, [conversationOrder, staffUserId]);
+
+  useEffect(() => {
+    if (!conversationOrder || conversationLoading) return;
+    requestAnimationFrame(() => scrollConversationToBottom('smooth'));
+  }, [conversationMessages.length, conversationLoading, conversationOrder]);
+
+  useEffect(() => {
+    if (conversationOrder) {
+      requestAnimationFrame(() => resizeConversationComposer());
+    }
+  }, [conversationOrder, conversationText]);
+
+  function handleConversationKeyDown(event) {
+    if (event.key !== 'Enter' || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) {
+      return;
+    }
+    if (event.nativeEvent?.isComposing) return;
+    event.preventDefault();
+    if (!conversationSending && conversationText.trim() && conversationOrder && role !== 'finance') {
+      event.currentTarget.form?.requestSubmit();
+    }
+  }
+
+  function closeConversation() {
+    if (conversationSending) return;
+    setConversationOrder(null);
+    setConversationMessages([]);
+    setConversationText('');
+    setConversationError('');
+    setConversationConnection('offline');
+  }
+
+  async function sendConversationMessage(event) {
+    event.preventDefault();
+    const cleanText = conversationText.trim();
+    if (!cleanText || !conversationOrder || !staffUserId || conversationSending || role === 'finance') return;
+
+    setConversationSending(true);
+    setConversationError('');
+
+    try {
+      const { data, error: insertError } = await supabase
+        .from('messages')
+        .insert({
+          order_id: Number(conversationOrder.id),
+          sender_id: staffUserId,
+          body: cleanText
+        })
+        .select('id, order_id, sender_id, body, created_at, read_at')
+        .single();
+
+      if (insertError) throw insertError;
+      if (data) appendConversationMessage(data);
+      setConversationText('');
+      requestAnimationFrame(() => {
+        resizeConversationComposer();
+        scrollConversationToBottom('smooth');
+      });
+    } catch (sendError) {
+      console.error('Admin conversation send error:', sendError);
+      setConversationError(
+        sendError?.message || 'Could not send this message.'
+      );
+    } finally {
+      setConversationSending(false);
+    }
+  }
 
   const filteredOrders = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -393,6 +784,7 @@ export default function AdminWorkspace() {
                       <div className="team-order-tags"><StatusPill status={order.status} />{order.queue_position != null && <span>Queue #{order.queue_position}</span>}<span className={brief ? 'brief-ready' : 'brief-missing'}>{brief ? 'Brief ready' : 'Brief missing'}</span></div>
                     </div>
                     <div className="team-order-actions">
+                      <button type="button" className="text-button team-message-action" onClick={() => setConversationOrder(order)}>Message →</button>
                       <button type="button" className="text-button" onClick={() => setSelectedOrder(order)}>View brief →</button>
                       <button type="button" className="text-button" onClick={() => setEditingOrder(order)}>Manage →</button>
                     </div>
@@ -406,6 +798,26 @@ export default function AdminWorkspace() {
       </main>
       {selectedOrder && <BriefPanel order={selectedOrder} brief={briefs[selectedOrder.id]} clientName={profiles[selectedOrder.user_id]?.name || 'Client'} onClose={() => setSelectedOrder(null)} />}
       {editingOrder && <EditDrawer order={editingOrder} brief={briefs[editingOrder.id]} clientName={profiles[editingOrder.user_id]?.name || 'Client'} role={role} saving={savingId === editingOrder.id} onClose={() => setEditingOrder(null)} onSave={(changes) => saveOrderChanges(editingOrder, changes)} />}
+      {conversationOrder && (
+        <TeamConversationDrawer
+          order={conversationOrder}
+          clientName={profiles[conversationOrder.user_id]?.name || 'Client'}
+          staffUserId={staffUserId}
+          role={role}
+          messages={conversationMessages}
+          loading={conversationLoading}
+          sending={conversationSending}
+          text={conversationText}
+          connection={conversationConnection}
+          error={conversationError}
+          onTextChange={(event) => setConversationText(event.target.value)}
+          onKeyDown={handleConversationKeyDown}
+          onSend={sendConversationMessage}
+          onClose={closeConversation}
+          bodyRef={conversationBodyRef}
+          textareaRef={conversationTextareaRef}
+        />
+      )}
     </DashboardShell>
   );
 }

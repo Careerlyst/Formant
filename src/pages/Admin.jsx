@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Link,
   useNavigate
@@ -484,13 +484,939 @@ export function AdminPayments() {
 }
 
 
-export function AdminMessages() {
-  return (
-    <AdminList
-      title="Messages"
-      kind="messages"
-    />
+function AdminMessagesPage() {
+  const [staffUserId, setStaffUserId] = useState('');
+  const [staffRole, setStaffRole] = useState('');
+  const [orders, setOrders] = useState([]);
+  const [profiles, setProfiles] = useState({});
+  const [messageMap, setMessageMap] = useState({});
+  const [selectedOrderId, setSelectedOrderId] = useState(null);
+  const [text, setText] = useState('');
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [connection, setConnection] = useState('connecting');
+  const [error, setError] = useState('');
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [messageToast, setMessageToast] = useState(null);
+  const seenRealtimeMessageIdsRef = useRef(new Set());
+
+  const selectedOrder = orders.find(
+    (order) => String(order.id) === String(selectedOrderId)
+  ) || null;
+
+  const selectedMessages = selectedOrder
+    ? (messageMap[selectedOrder.id] || [])
+    : [];
+
+  const groupedClients = (() => {
+    const query = search.trim().toLowerCase();
+    const groups = [];
+
+    orders.forEach((order) => {
+      const clientName = profiles[order.user_id]?.name || 'Client';
+      const service = String(order.service_name || 'Careerlyst service');
+      const packageName = String(order.package_name || '');
+      const thread = messageMap[String(order.id)] || [];
+      const last = thread[thread.length - 1];
+      const unread = thread.filter(
+        (message) =>
+          String(message.sender_id) === String(order.user_id) &&
+          !message.read_at
+      ).length;
+
+      const searchable = [
+        clientName,
+        service,
+        packageName,
+        String(order.id)
+      ].join(' ').toLowerCase();
+
+      if (query && !searchable.includes(query)) return;
+
+      let group = groups.find(
+        (item) => String(item.userId) === String(order.user_id)
+      );
+
+      if (!group) {
+        group = {
+          userId: order.user_id,
+          clientName,
+          orders: [],
+          unread: 0,
+          latestAt: last?.created_at || order.updated_at || order.created_at
+        };
+        groups.push(group);
+      }
+
+      group.orders.push({
+        order,
+        thread,
+        last,
+        unread
+      });
+      group.unread += unread;
+
+      const currentLatest = new Date(group.latestAt || 0).getTime();
+      const nextLatest = new Date(
+        last?.created_at || order.updated_at || order.created_at || 0
+      ).getTime();
+      if (nextLatest > currentLatest) {
+        group.latestAt = last?.created_at || order.updated_at || order.created_at;
+      }
+    });
+
+    groups.forEach((group) => {
+      group.orders.sort((a, b) => {
+        const aTime = new Date(
+          a.last?.created_at || a.order.updated_at || a.order.created_at || 0
+        ).getTime();
+        const bTime = new Date(
+          b.last?.created_at || b.order.updated_at || b.order.created_at || 0
+        ).getTime();
+        return bTime - aTime;
+      });
+    });
+
+    groups.sort(
+      (a, b) =>
+        new Date(b.latestAt || 0).getTime() -
+        new Date(a.latestAt || 0).getTime()
+    );
+
+    return groups;
+  })();
+
+  const visibleOrderCount = groupedClients.reduce(
+    (total, group) => total + group.orders.length,
+    0
   );
+
+  const notifications = orders
+    .map((order) => {
+      const thread = messageMap[String(order.id)] || [];
+      const unreadMessages = thread.filter(
+        (message) =>
+          String(message.sender_id) === String(order.user_id) &&
+          !message.read_at
+      );
+      const latest = unreadMessages[unreadMessages.length - 1];
+
+      return latest
+        ? {
+            order,
+            clientName: profiles[order.user_id]?.name || 'Client',
+            latest,
+            unread: unreadMessages.length
+          }
+        : null;
+    })
+    .filter(Boolean)
+    .sort(
+      (a, b) =>
+        new Date(b.latest.created_at || 0).getTime() -
+        new Date(a.latest.created_at || 0).getTime()
+    );
+
+  const unreadTotal = notifications.reduce(
+    (total, item) => total + item.unread,
+    0
+  );
+
+  useEffect(() => {
+    let mounted = true;
+    let channel = null;
+
+    async function loadInbox() {
+      if (!supabase) {
+        if (mounted) {
+          setError('Supabase is not configured.');
+          setConnection('offline');
+          setLoading(false);
+        }
+        return;
+      }
+
+      setLoading(true);
+      setError('');
+
+      try {
+        const {
+          data: sessionData,
+          error: sessionError
+        } = await supabase.auth.getSession();
+
+        if (sessionError) throw sessionError;
+
+        const user = sessionData?.session?.user;
+        if (!user) {
+          throw new Error(
+            'Your staff session could not be verified. Please sign in again.'
+          );
+        }
+
+        const {
+          data: roleRow,
+          error: roleError
+        } = await supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (roleError) throw roleError;
+
+        if (!STAFF_ROLES.includes(roleRow?.role)) {
+          throw new Error('This account does not have staff access.');
+        }
+
+        if (!mounted) return;
+        setStaffUserId(user.id);
+        setStaffRole(roleRow.role);
+
+        const {
+          data: orderData,
+          error: orderError
+        } = await supabase
+          .from('orders')
+          .select(
+            'id, user_id, service_name, package_name, status, payment_status, created_at, updated_at'
+          )
+          .order('created_at', { ascending: false });
+
+        if (orderError) throw orderError;
+
+        const nextOrders = orderData || [];
+        if (!mounted) return;
+        setOrders(nextOrders);
+
+        const userIds = [
+          ...new Set(
+            nextOrders
+              .map((order) => order.user_id)
+              .filter(Boolean)
+          )
+        ];
+
+        let nextProfiles = {};
+
+        if (userIds.length) {
+          const {
+            data: profileData,
+            error: profileError
+          } = await supabase
+            .from('profiles')
+            .select('id, name')
+            .in('id', userIds);
+
+          if (profileError) throw profileError;
+          if (!mounted) return;
+
+          nextProfiles = Object.fromEntries(
+            (profileData || []).map((profile) => [
+              profile.id,
+              profile
+            ])
+          );
+          setProfiles(nextProfiles);
+        } else {
+          setProfiles({});
+        }
+
+        const orderIds = nextOrders
+          .map((order) => order.id)
+          .filter(Boolean);
+
+        if (orderIds.length) {
+          const {
+            data: messageData,
+            error: messageError
+          } = await supabase
+            .from('messages')
+            .select(
+              'id, order_id, sender_id, body, created_at, read_at'
+            )
+            .in('order_id', orderIds)
+            .order('created_at', { ascending: true });
+
+          if (messageError) throw messageError;
+
+          const grouped = {};
+
+          (messageData || []).forEach((message) => {
+            const key = String(message.order_id);
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push(message);
+          });
+
+          (messageData || []).forEach((message) => {
+            if (message?.id != null) {
+              seenRealtimeMessageIdsRef.current.add(String(message.id));
+            }
+          });
+
+          if (!mounted) return;
+          setMessageMap(grouped);
+
+          const firstThread = nextOrders.find(
+            (order) => grouped[String(order.id)]?.length
+          ) || nextOrders[0];
+
+          setSelectedOrderId(
+            (current) => current || firstThread?.id || null
+          );
+        } else {
+          setMessageMap({});
+          setSelectedOrderId(null);
+        }
+
+        setConnection('connecting');
+
+        channel = supabase
+          .channel(`careerlyst-admin-messages-${user.id}`)
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'messages'
+            },
+            (payload) => {
+              if (!mounted || (!payload?.new && !payload?.old)) {
+                return;
+              }
+
+              const next = payload.new || payload.old;
+              const orderId = next?.order_id;
+              if (!orderId) return;
+
+              if (payload.eventType === 'INSERT') {
+                const inserted = payload.new;
+                const messageId = inserted?.id != null ? String(inserted.id) : '';
+
+                // Realtime can deliver the same INSERT more than once.
+                // The first delivery updates the inbox and creates one notification;
+                // later deliveries are ignored completely.
+                if (messageId && seenRealtimeMessageIdsRef.current.has(messageId)) {
+                  return;
+                }
+                if (messageId) {
+                  seenRealtimeMessageIdsRef.current.add(messageId);
+                }
+
+                const order = nextOrders.find(
+                  (item) => String(item.id) === String(inserted?.order_id)
+                );
+                const isClientMessage =
+                  Boolean(order) &&
+                  String(inserted?.sender_id) === String(order.user_id);
+
+                if (isClientMessage) {
+                  setMessageToast({
+                    id: inserted.id,
+                    orderId: order.id,
+                    clientName: nextProfiles[order.user_id]?.name || 'Client',
+                    preview: String(inserted.body || '').trim() || 'Sent a new message.'
+                  });
+                }
+              }
+
+              setMessageMap((current) => {
+                const key = String(orderId);
+                const thread = Array.isArray(current[key])
+                  ? [...current[key]]
+                  : [];
+
+                if (payload.eventType === 'INSERT') {
+                  if (
+                    !thread.some(
+                      (item) =>
+                        String(item.id) ===
+                        String(payload.new.id)
+                    )
+                  ) {
+                    thread.push(payload.new);
+                  }
+                } else if (payload.eventType === 'UPDATE') {
+                  const index = thread.findIndex(
+                    (item) =>
+                      String(item.id) ===
+                      String(payload.new.id)
+                  );
+
+                  if (index >= 0) {
+                    thread[index] = payload.new;
+                  } else {
+                    thread.push(payload.new);
+                  }
+                } else if (payload.eventType === 'DELETE') {
+                  return {
+                    ...current,
+                    [key]: thread.filter(
+                      (item) =>
+                        String(item.id) !==
+                        String(payload.old.id)
+                    )
+                  };
+                }
+
+                thread.sort(
+                  (a, b) =>
+                    new Date(a.created_at || 0) -
+                    new Date(b.created_at || 0)
+                );
+
+                return {
+                  ...current,
+                  [key]: thread
+                };
+              });
+            }
+          )
+          .subscribe((status) => {
+            if (!mounted) return;
+
+            if (status === 'SUBSCRIBED') {
+              setConnection('online');
+            } else if (
+              status === 'CHANNEL_ERROR' ||
+              status === 'TIMED_OUT' ||
+              status === 'CLOSED'
+            ) {
+              setConnection('offline');
+            }
+          });
+      } catch (loadError) {
+        console.error(
+          'Admin messages load error:',
+          loadError
+        );
+
+        if (mounted) {
+          setError(
+            loadError?.message ||
+            'Could not load client conversations.'
+          );
+          setConnection('offline');
+        }
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    }
+
+    loadInbox();
+
+    return () => {
+      mounted = false;
+      if (channel) supabase?.removeChannel(channel);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!messageToast) return undefined;
+    const timer = window.setTimeout(() => setMessageToast(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [messageToast]);
+
+  useEffect(() => {
+    const node = document.querySelector(
+      '.admin-messages-thread-body'
+    );
+
+    if (!node) return;
+
+    requestAnimationFrame(() => {
+      node.scrollTop = node.scrollHeight;
+    });
+  }, [selectedOrderId, selectedMessages.length]);
+
+  function formatMessageTime(value) {
+    if (!value) return '';
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+
+    return new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric',
+      minute: '2-digit'
+    }).format(date);
+  }
+
+  function formatOrderDate(value) {
+    if (!value) return '';
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric'
+    }).format(date);
+  }
+
+  function handleComposerKeyDown(event) {
+    if (
+      event.nativeEvent?.isComposing ||
+      event.isComposing
+    ) {
+      return;
+    }
+
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      sendMessage();
+    }
+  }
+
+  async function sendMessage() {
+    const body = text.trim();
+
+    if (
+      !body ||
+      !selectedOrder ||
+      !staffUserId ||
+      staffRole === 'finance' ||
+      sending ||
+      !supabase
+    ) {
+      return;
+    }
+
+    setSending(true);
+    setError('');
+
+    try {
+      const {
+        data,
+        error: sendError
+      } = await supabase
+        .from('messages')
+        .insert({
+          order_id: selectedOrder.id,
+          sender_id: staffUserId,
+          body
+        })
+        .select(
+          'id, order_id, sender_id, body, created_at, read_at'
+        )
+        .single();
+
+      if (sendError) throw sendError;
+
+      if (data) {
+        setMessageMap((current) => {
+          const key = String(selectedOrder.id);
+          const currentThread = current[key] || [];
+
+          if (
+            currentThread.some(
+              (item) =>
+                String(item.id) ===
+                String(data.id)
+            )
+          ) {
+            return current;
+          }
+
+          return {
+            ...current,
+            [key]: [...currentThread, data]
+          };
+        });
+      }
+
+      setText('');
+    } catch (sendError) {
+      console.error(
+        'Admin message send error:',
+        sendError
+      );
+
+      setError(
+        sendError?.message ||
+        'Message could not be sent.'
+      );
+    } finally {
+      setSending(false);
+    }
+  }
+
+  function selectOrder(orderId) {
+    setSelectedOrderId(orderId);
+    setText('');
+    setError('');
+  }
+
+  function getOrderLabel(order) {
+    const service = order.service_name || 'Careerlyst service';
+    const packageName = order.package_name
+      ? ` · ${order.package_name}`
+      : '';
+
+    return `${service}${packageName}`;
+  }
+
+  return (
+    <DashboardShell admin>
+      <main className="admin-messages-page">
+        <header className="admin-messages-head">
+          <div>
+            <p className="eyebrow">ADMIN</p>
+            <h1>Messages</h1>
+            <p>
+              Conversations organized by client and project.
+            </p>
+          </div>
+
+          <div className="admin-messages-head-actions">
+            <div className="admin-messages-notification-wrap">
+              <button
+                type="button"
+                className="admin-messages-notification-button"
+                onClick={() => setNotificationsOpen((value) => !value)}
+                aria-label={`Notifications${unreadTotal ? `, ${unreadTotal} unread` : ''}`}
+                aria-expanded={notificationsOpen}
+              >
+                <span className="admin-messages-notification-icon" aria-hidden="true">🔔</span>
+                {unreadTotal > 0 && <b>{unreadTotal > 99 ? '99+' : unreadTotal}</b>}
+              </button>
+              {notificationsOpen && (
+                <div className="admin-messages-notification-panel">
+                  <div className="admin-messages-notification-head">
+                    <strong>Notifications</strong>
+                    <span>{unreadTotal} unread</span>
+                  </div>
+                  {!notifications.length ? (
+                    <div className="admin-messages-notification-empty">No unread client messages.</div>
+                  ) : notifications.map((notification) => (
+                    <button
+                      type="button"
+                      className="admin-messages-notification-item"
+                      key={`${notification.order.id}-${notification.latest.id}`}
+                      onClick={() => {
+                        selectOrder(notification.order.id);
+                        setNotificationsOpen(false);
+                      }}
+                    >
+                      <span className="admin-messages-notification-dot" />
+                      <span>
+                        <strong>{notification.clientName}</strong>
+                        <small>Order #{notification.order.id} · {notification.latest.body || 'New message'}</small>
+                      </span>
+                      <b>{notification.unread}</b>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <span className={`admin-messages-live ${connection}`}>
+              <i />
+              {connection === 'online' ? 'LIVE' : connection === 'connecting' ? 'CONNECTING' : 'OFFLINE'}
+            </span>
+          </div>
+        </header>
+
+        {error && (
+          <div
+            className="admin-messages-error"
+            role="alert"
+          >
+            <span>{error}</span>
+            <button
+              type="button"
+              onClick={() => setError('')}
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
+        {messageToast && (
+          <button
+            type="button"
+            className="admin-messages-toast"
+            onClick={() => {
+              selectOrder(messageToast.orderId);
+              setNotificationsOpen(false);
+              setMessageToast(null);
+            }}
+          >
+            <span className="admin-messages-toast-icon">●</span>
+            <span className="admin-messages-toast-copy">
+              <strong>New message from {messageToast.clientName}</strong>
+              <small>Order #{messageToast.orderId} · {messageToast.preview}</small>
+            </span>
+            <span className="admin-messages-toast-close" aria-hidden="true">×</span>
+          </button>
+        )}
+
+        <section className="admin-messages-shell panel">
+          <aside className="admin-messages-inbox">
+            <div className="admin-messages-inbox-head">
+              <div>
+                <span>CLIENTS</span>
+                <strong>{groupedClients.length}</strong>
+              </div>
+
+              <small>
+                {visibleOrderCount} project
+                {visibleOrderCount === 1 ? '' : 's'}
+              </small>
+            </div>
+
+            <label className="admin-messages-search">
+              <span>⌕</span>
+              <input
+                value={search}
+                onChange={(event) =>
+                  setSearch(event.target.value)
+                }
+                placeholder="Search clients or projects…"
+              />
+            </label>
+
+            <div className="admin-messages-client-list">
+              {loading ? (
+                <div className="admin-messages-empty-list">
+                  Loading clients…
+                </div>
+              ) : !groupedClients.length ? (
+                <div className="admin-messages-empty-list">
+                  No matching clients.
+                </div>
+              ) : (
+                groupedClients.map((group) => (
+                  <section
+                    className="admin-client-group"
+                    key={String(group.userId)}
+                  >
+                    <div className="admin-client-group-head">
+                      <div className="admin-client-group-identity">
+                        <span className="admin-client-group-avatar">
+                          {group.clientName
+                            .charAt(0)
+                            .toUpperCase()}
+                        </span>
+
+                        <div>
+                          <strong>{group.clientName}</strong>
+                          <small>
+                            {group.orders.length} project
+                            {group.orders.length === 1
+                              ? ''
+                              : 's'}
+                          </small>
+                        </div>
+                      </div>
+
+                      {group.unread > 0 && (
+                        <span className="admin-client-group-unread">
+                          {group.unread}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="admin-client-projects">
+                      {group.orders.map(({ order, last, unread }) => {
+                        const active =
+                          String(order.id) ===
+                          String(selectedOrderId);
+
+                        return (
+                          <button
+                            className={`admin-client-project ${active ? 'is-active' : ''}`}
+                            type="button"
+                            key={order.id}
+                            onClick={() =>
+                              selectOrder(order.id)
+                            }
+                          >
+                            <span className="admin-client-project-copy">
+                              <span className="admin-client-project-top">
+                                <small>
+                                  ORDER #{order.id}
+                                </small>
+                                <small>
+                                  {last
+                                    ? formatMessageTime(
+                                        last.created_at
+                                      )
+                                    : formatOrderDate(
+                                        order.created_at
+                                      )}
+                                </small>
+                              </span>
+
+                              <strong>
+                                {getOrderLabel(order)}
+                              </strong>
+
+                              <span>
+                                {last?.body ||
+                                  'No messages yet — start the conversation.'}
+                              </span>
+                            </span>
+
+                            {unread > 0 && (
+                              <b>{unread}</b>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))
+              )}
+            </div>
+          </aside>
+
+          <section className="admin-messages-conversation">
+            {!selectedOrder ? (
+              <div className="admin-messages-no-selection">
+                <span className="admin-messages-no-selection-number">
+                  01
+                </span>
+                <h2>Select a project.</h2>
+                <p>
+                  Choose a project under a client to open
+                  the conversation.
+                </p>
+              </div>
+            ) : (
+              <>
+                <header className="admin-messages-conversation-head">
+                  <div className="admin-messages-client">
+                    <span className="admin-messages-client-avatar">
+                      {(profiles[selectedOrder.user_id]?.name ||
+                        'Client')
+                        .charAt(0)
+                        .toUpperCase()}
+                    </span>
+
+                    <div>
+                      <strong>
+                        {profiles[selectedOrder.user_id]?.name ||
+                          'Client'}
+                      </strong>
+                      <span>
+                        Order #{selectedOrder.id} ·{' '}
+                        {getOrderLabel(selectedOrder)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="admin-messages-conversation-meta">
+                    <span>
+                      {String(
+                        selectedOrder.status || 'pending'
+                      ).replace(/_/g, ' ')}
+                    </span>
+                    <Link to="/admin/workspace">
+                      Open workspace →
+                    </Link>
+                  </div>
+                </header>
+
+                <div className="admin-messages-thread-body">
+                  <div className="admin-messages-system-note">
+                    This conversation is shared with the client
+                    in their Careerlyst dashboard.
+                  </div>
+
+                  {!selectedMessages.length ? (
+                    <div className="admin-messages-empty-thread">
+                      <span>NO MESSAGES YET</span>
+                      <h2>Start the project conversation.</h2>
+                      <p>
+                        Send the first update, question or
+                        next-step instruction to the client.
+                      </p>
+                    </div>
+                  ) : (
+                    selectedMessages.map((message) => {
+                      const isTeam =
+                        String(message.sender_id) ===
+                        String(staffUserId);
+
+                      return (
+                        <div
+                          className={`admin-message-row ${isTeam ? 'is-team' : 'is-client'}`}
+                          key={message.id}
+                        >
+                          <div className="admin-message-bubble">
+                            <p>{message.body}</p>
+                            <small>
+                              {isTeam
+                                ? 'Careerlyst Team'
+                                : profiles[
+                                    selectedOrder.user_id
+                                  ]?.name || 'Client'}
+                              {' · '}
+                              {formatMessageTime(
+                                message.created_at
+                              )}
+                            </small>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {staffRole === 'finance' && (
+                  <div className="admin-messages-read-only" role="status">
+                    Finance has read-only access to client conversations.
+                  </div>
+                )}
+
+                <form
+                  className="admin-messages-composer"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    sendMessage();
+                  }}
+                >
+                  <textarea
+                    value={text}
+                    onChange={(event) =>
+                      setText(event.target.value)
+                    }
+                    onKeyDown={handleComposerKeyDown}
+                    placeholder={`Write to ${profiles[selectedOrder.user_id]?.name || 'your client'}…`}
+                    maxLength={2000}
+                    rows="2"
+                    disabled={sending || staffRole === 'finance'}
+                  />
+
+                  <div className="admin-messages-composer-bottom">
+                    <span>
+                      Enter to send · Shift + Enter for a new
+                      line · {text.length}/2000
+                    </span>
+
+                    <button
+                      className="btn dark"
+                      type="submit"
+                      disabled={
+                        sending || staffRole === 'finance' || !text.trim()
+                      }
+                    >
+                      {sending ? 'Sending…' : 'Send ↗'}
+                    </button>
+                  </div>
+                </form>
+              </>
+            )}
+          </section>
+        </section>
+      </main>
+    </DashboardShell>
+  );
+}
+
+export function AdminMessages() {
+  return <AdminMessagesPage />;
 }
 
 
