@@ -1,10 +1,39 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import PublicNav from '../components/PublicNav';
 import Footer from '../components/Footer';
 import { services } from '../lib/store';
 
 export default function Home() {
+  const [heroIllustration, setHeroIllustration] = useState(() =>
+    document.documentElement.dataset.theme === 'dark'
+      ? '/assets/hero-illustration-dark.png'
+      : '/assets/hero-illustration.png'
+  );
+
+  useEffect(() => {
+    const root = document.documentElement;
+
+    const updateHeroIllustration = () => {
+      setHeroIllustration(
+        root.dataset.theme === 'dark'
+          ? '/assets/hero-illustration-dark.png'
+          : '/assets/hero-illustration.png'
+      );
+    };
+
+    updateHeroIllustration();
+
+    const observer = new MutationObserver(updateHeroIllustration);
+
+    observer.observe(root, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
+
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <>
       <PublicNav />
@@ -51,7 +80,7 @@ export default function Home() {
 
             <div className="hero-art">
               <img
-                src="/assets/hero-illustration.png"
+                src={heroIllustration}
                 alt="Careerlyst career preparation illustration"
               />
             </div>

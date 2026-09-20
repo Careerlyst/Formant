@@ -1,11 +1,13 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   BrowserRouter,
   Routes,
-  Route
+  Route,
+  useLocation
 } from 'react-router-dom';
 
+import { applyStoredTheme } from './lib/theme';
 import './styles.css';
 
 import Preloader from './components/Preloader';
@@ -51,6 +53,42 @@ import {
   AdminWorkspace
 } from './pages/Admin';
 
+// Apply the saved preference synchronously as soon as the app entry module executes.
+// This keeps startup theme initialization independent of the Settings route.
+applyStoredTheme();
+
+function ScrollManager() {
+  const { pathname, hash } = useLocation();
+
+  useEffect(() => {
+    if ('scrollRestoration' in window.history) {
+      window.history.scrollRestoration = 'manual';
+    }
+  }, []);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      if (hash) {
+        const targetId = decodeURIComponent(hash.slice(1));
+        const target = document.getElementById(targetId);
+
+        if (target) {
+          target.scrollIntoView({
+            block: 'start',
+            behavior: 'auto'
+          });
+          return;
+        }
+      }
+
+      window.scrollTo(0, 0);
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [pathname, hash]);
+
+  return null;
+}
 
 function App() {
   return (
@@ -346,6 +384,7 @@ createRoot(
     <Preloader />
 
     <BrowserRouter>
+      <ScrollManager />
       <App />
     </BrowserRouter>
   </>

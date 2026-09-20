@@ -3,6 +3,14 @@ import { Link } from 'react-router-dom';
 import DashboardShell from '../components/DashboardShell';
 import { load, patch } from '../lib/store';
 import { supabase } from '../lib/supabase';
+import {
+  applyTheme,
+  getStoredThemePreference,
+  hasStoredThemePreference,
+  normalizeThemePreference,
+  saveThemePreference,
+  watchSystemTheme
+} from '../lib/theme';
 
 /* =========================================================
    SHARED
@@ -3588,9 +3596,7 @@ export function Settings() {
   const [language, setLanguage] = useState(
     s.settings?.language || 'English'
   );
-  const [theme, setTheme] = useState(
-    localStorage.getItem('careerlyst-theme') || 'system'
-  );
+  const [theme, setTheme] = useState(() => getStoredThemePreference());
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -3603,23 +3609,16 @@ export function Settings() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const root = document.documentElement;
-    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const normalized = normalizeThemePreference(theme);
 
-    function applyTheme() {
-      const resolved = theme === 'system'
-        ? (media.matches ? 'dark' : 'light')
-        : theme;
-      root.dataset.theme = resolved;
+    if (normalized !== theme) {
+      setTheme(normalized);
+      return undefined;
     }
 
-    applyTheme();
-    localStorage.setItem('careerlyst-theme', theme);
+    applyTheme(normalized);
 
-    if (theme !== 'system') return undefined;
-
-    media.addEventListener?.('change', applyTheme);
-    return () => media.removeEventListener?.('change', applyTheme);
+    return watchSystemTheme(normalized);
   }, [theme]);
 
   useEffect(() => {
@@ -3638,7 +3637,14 @@ export function Settings() {
         setEmailNotifications(stored.emailNotifications);
       }
       if (stored.language) setLanguage(stored.language);
-      if (stored.theme) setTheme(stored.theme);
+
+      // localStorage is the immediate startup source of truth. Only hydrate
+      // from Supabase when no valid local preference exists.
+      if (stored.theme && !hasStoredThemePreference()) {
+        const storedTheme = normalizeThemePreference(stored.theme);
+        saveThemePreference(storedTheme);
+        setTheme(storedTheme);
+      }
     }
 
     void loadSettings();
@@ -3830,7 +3836,14 @@ export function Settings() {
                       <strong>Appearance</strong>
                       <small>Use your device preference or choose a fixed theme.</small>
                     </span>
-                    <select value={theme} onChange={(e) => setTheme(e.target.value)}>
+                    <select
+                      value={theme}
+                      onChange={(e) => {
+                        const nextTheme = normalizeThemePreference(e.target.value);
+                        saveThemePreference(nextTheme);
+                        setTheme(nextTheme);
+                      }}
+                    >
                       <option value="system">System</option>
                       <option value="light">Light</option>
                       <option value="dark">Dark</option>

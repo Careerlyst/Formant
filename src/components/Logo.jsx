@@ -1,2 +1,3 @@
 import React from 'react';
-export default function Logo(){return <a className="logo" href="/"><span className="logo-mark"><i/><i/><i/></span><span>Careerlyst</span></a>}
+import { Link } from 'react-router-dom';
+export default function Logo(){return <Link className="logo" to="/"><span className="logo-mark"><i/><i/><i/></span><span>Careerlyst</span></Link>}

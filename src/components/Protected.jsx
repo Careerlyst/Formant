@@ -11,88 +11,37 @@ export default function Protected({ children }) {
   useEffect(() => {
 
     let mounted = true;
+    let authResolved = false;
 
-    async function checkSession() {
+    function syncDashboardStore(nextSession) {
+      if (!nextSession?.user) return;
 
-      /*
-        If Supabase is configured,
-        Supabase becomes the source of truth.
-      */
+      const user = nextSession.user;
+      const name =
+        user.user_metadata?.name ||
+        user.email?.split('@')[0] ||
+        'Client';
 
-      if (supabase) {
-
-        const {
-          data: {
-            session
-          }
-        } = await supabase.auth.getSession();
-
-        if (!mounted) return;
-
-        setSession(session);
-
-        /*
-          Keep the existing dashboard store
-          temporarily synchronized.
-        */
-
-        if (session?.user) {
-
-          const user =
-            session.user;
-
-          const name =
-            user.user_metadata?.name ||
-            user.email?.split('@')[0] ||
-            'Client';
-
-          patch((current) => ({
-            ...current,
-
-            user: {
-              email: user.email,
-              name
-            },
-
-            profile: {
-              ...(current.profile || {}),
-              email: user.email,
-              name
-            }
-          }));
+      patch((current) => ({
+        ...current,
+        user: {
+          email: user.email,
+          name
+        },
+        profile: {
+          ...(current.profile || {}),
+          email: user.email,
+          name
         }
-
-        setLoading(false);
-
-        return;
-      }
-
-
-      /*
-        Demo fallback
-      */
-
-      const current = load();
-
-      if (!mounted) return;
-
-      setSession(
-        current.user
-          ? { user: current.user }
-          : null
-      );
-
-      setLoading(false);
+      }));
     }
 
-
-    checkSession();
-
-
     /*
-      Listen for login/logout/session changes.
+      Supabase is the source of truth when configured.
+      Keep the route blocked until the initial auth state has
+      been resolved. This prevents a transient null session from
+      causing an immediate redirect during a page refresh.
     */
-
     if (supabase) {
 
       const {
@@ -100,25 +49,86 @@ export default function Protected({ children }) {
           subscription
         }
       } = supabase.auth.onAuthStateChange(
-        (_event, newSession) => {
+        (event, nextSession) => {
 
           if (!mounted) return;
 
-          setSession(newSession);
+          /*
+            INITIAL_SESSION is Supabase's first answer about the
+            persisted browser session. Do not redirect before it.
+          */
+          if (!authResolved) {
+            /*
+              During startup, wait for getSession() to finish. The
+              INITIAL_SESSION event can briefly report null while the
+              persisted browser session is still being resolved.
+            */
+            return;
+          }
 
+          /*
+            After the initial check, normal auth changes are trusted.
+            SIGNED_IN / TOKEN_REFRESHED keep the existing user in place;
+            SIGNED_OUT clears the session and allows the login redirect.
+          */
+          setSession(nextSession);
+          syncDashboardStore(nextSession);
         }
       );
 
+      /*
+        Also explicitly ask Supabase for the current session. This
+        covers the case where the persisted session is available before
+        the auth listener finishes initializing.
+      */
+      supabase.auth.getSession()
+        .then(({ data, error }) => {
+          if (!mounted) return;
+
+          if (error) {
+            console.error('Auth session check failed:', error);
+          }
+
+          const nextSession = data?.session || null;
+
+          /*
+            Prefer the concrete getSession result for the initial route
+            decision. A null result is only accepted once this check has
+            completed; the app never redirects while it is still pending.
+          */
+          authResolved = true;
+          setSession(nextSession);
+          syncDashboardStore(nextSession);
+          setLoading(false);
+        })
+        .catch((error) => {
+          if (!mounted) return;
+
+          console.error('Auth session initialization failed:', error);
+          authResolved = true;
+          setSession(null);
+          setLoading(false);
+        });
 
       return () => {
-
         mounted = false;
-
         subscription.unsubscribe();
-
       };
     }
 
+    /*
+      Demo/local fallback.
+    */
+    const current = load();
+
+    if (!mounted) return undefined;
+
+    setSession(
+      current.user
+        ? { user: current.user }
+        : null
+    );
+    setLoading(false);
 
     return () => {
       mounted = false;
@@ -128,10 +138,8 @@ export default function Protected({ children }) {
 
 
   /*
-    Don't render protected content
-    while authentication is being checked.
+    Never redirect until the initial authentication check has finished.
   */
-
   if (loading) {
 
     return (
@@ -150,11 +158,6 @@ export default function Protected({ children }) {
     );
   }
 
-
-  /*
-    Not authenticated
-    → go to login.
-  */
 
   if (!session) {
     return <Navigate to="/login" replace />;
