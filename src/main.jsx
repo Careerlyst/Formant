@@ -49,6 +49,8 @@ import {
   AdminPayments,
   AdminMessages,
   AdminFiles,
+  AdminServices,
+
   AdminSimple,
   AdminWorkspace
 } from './pages/Admin';
@@ -323,13 +325,13 @@ function App() {
       />
 
       <Route
-        path="/admin/services"
-        element={
-          <Protected>
-            <AdminSimple title="Services" />
-          </Protected>
-        }
-      />
+  path="/admin/services"
+  element={
+    <Protected>
+      <AdminServices />
+    </Protected>
+  }
+/>
 
       <Route
         path="/admin/reviews"

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import DashboardShell from '../components/DashboardShell';
 import { supabase } from '../lib/supabase';
 
@@ -62,7 +62,7 @@ function Field({ label, value, full = false, link = false }) {
   );
 }
 
-function BriefPanel({ order, brief, clientName, onClose }) {
+function BriefPanel({ order, brief, clientName, clientEmail, onClose }) {
   if (!order) return null;
   return (
     <div className="team-drawer-overlay" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -88,6 +88,7 @@ function BriefPanel({ order, brief, clientName, onClose }) {
             <p className="team-section-kicker">CLIENT</p>
             <div className="team-field-grid">
               <Field label="Name" value={clientName} />
+              <Field label="Email" value={clientEmail} />
               <Field label="User ID" value={order.user_id} />
               <Field label="Client notes" value={order.client_notes} full />
             </div>
@@ -329,8 +330,7 @@ function TeamConversationDrawer({
   );
 }
 
-export default function AdminWorkspace() {
-  const navigate = useNavigate();
+export default function AdminProjects() {
   const [authorized, setAuthorized] = useState(null);
   const [role, setRole] = useState('');
   const [orders, setOrders] = useState([]);
@@ -340,6 +340,8 @@ export default function AdminWorkspace() {
   const [editingOrder, setEditingOrder] = useState(null);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
+  const [viewMode, setViewMode] = useState('board');
+  const [attentionOnly, setAttentionOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [savingId, setSavingId] = useState(null);
@@ -395,7 +397,7 @@ export default function AdminWorkspace() {
 
       const userIds = [...new Set(nextOrders.map((o) => o.user_id).filter(Boolean))];
       if (userIds.length) {
-        const { data: profileData, error: profileError } = await supabase.from('profiles').select('id, name').in('id', userIds);
+        const { data: profileData, error: profileError } = await supabase.from('profiles').select('id, name, email').in('id', userIds);
         if (profileError) throw profileError;
         setProfiles(Object.fromEntries((profileData || []).map((p) => [p.id, p])));
       } else setProfiles({});
@@ -505,7 +507,15 @@ export default function AdminWorkspace() {
         if (!active) return;
         if (messageError) throw messageError;
 
-        setConversationMessages(data || []);
+        setConversationMessages((current) => {
+          const merged = new Map((data || []).map((message) => [String(message.id), message]));
+          current.forEach((message) => merged.set(String(message.id), message));
+          return [...merged.values()].sort(
+            (a, b) =>
+              new Date(a.created_at || 0).getTime() -
+              new Date(b.created_at || 0).getTime()
+          );
+        });
         await markConversationRead(orderId);
         requestAnimationFrame(() => scrollConversationToBottom('auto'));
       } catch (messageError) {
@@ -660,24 +670,58 @@ export default function AdminWorkspace() {
     }
   }
 
+  const isAttentionOrder = useCallback((order) => {
+    const status = String(order?.status || 'pending').toLowerCase();
+    if (['completed', 'cancelled', 'canceled'].includes(status)) return false;
+    if (!briefs[order?.id]) return true;
+    if (['client_review', 'revision'].includes(status)) return true;
+
+    const deadline = briefs[order?.id]?.deadline;
+    if (deadline) {
+      const parsed = new Date(deadline);
+      if (!Number.isNaN(parsed.getTime()) && parsed.getTime() < Date.now()) return true;
+    }
+    return false;
+  }, [briefs]);
+
   const filteredOrders = useMemo(() => {
     const q = search.trim().toLowerCase();
     return orders.filter((order) => {
       const status = String(order.status || 'pending').toLowerCase();
       const client = String(profiles[order.user_id]?.name || 'Client').toLowerCase();
+      const email = String(profiles[order.user_id]?.email || '').toLowerCase();
       const service = String(order.service_name || '').toLowerCase();
       const matchesFilter = filter === 'all' || status === filter || (filter === 'needs_brief' && !briefs[order.id]);
-      const matchesSearch = !q || String(order.id).includes(q) || client.includes(q) || service.includes(q) || String(order.package_name || '').toLowerCase().includes(q);
-      return matchesFilter && matchesSearch;
+      const matchesSearch = !q || String(order.id).includes(q) || client.includes(q) || email.includes(q) || service.includes(q) || String(order.package_name || '').toLowerCase().includes(q);
+      return matchesFilter && matchesSearch && (!attentionOnly || isAttentionOrder(order));
     });
-  }, [orders, profiles, briefs, search, filter]);
+  }, [orders, profiles, briefs, search, filter, attentionOnly, isAttentionOrder]);
 
   const stats = useMemo(() => ({
     active: orders.filter((o) => ACTIVE_STATUSES.includes(String(o.status || 'pending').toLowerCase())).length,
     queued: orders.filter((o) => String(o.status || '').toLowerCase() === 'queued').length,
-    needsBrief: orders.filter((o) => !briefs[o.id] && !['completed', 'cancelled'].includes(String(o.status || '').toLowerCase())).length,
+    needsBrief: orders.filter((o) => !briefs[o.id] && !['completed', 'cancelled', 'canceled'].includes(String(o.status || '').toLowerCase())).length,
+    clientReview: orders.filter((o) => ['client_review', 'revision'].includes(String(o.status || '').toLowerCase())).length,
+    completed: orders.filter((o) => String(o.status || '').toLowerCase() === 'completed').length,
     paid: orders.filter((o) => String(o.payment_status || '').toLowerCase() === 'paid').length,
-  }), [orders, briefs]);
+    attention: orders.filter(isAttentionOrder).length,
+  }), [orders, briefs, isAttentionOrder]);
+
+  const boardColumns = useMemo(() => [
+    ['pending', 'Pending'],
+    ['information_required', 'Needs brief'],
+    ['queued', 'Queued'],
+    ['in_progress', 'In progress'],
+    ['internal_review', 'Internal review'],
+    ['client_review', 'Client review'],
+    ['revision', 'Revision'],
+    ['completed', 'Completed'],
+    ['cancelled', 'Cancelled'],
+  ].map(([key, label]) => ({
+    key,
+    label,
+    items: filteredOrders.filter((order) => String(order.status || 'pending').toLowerCase() === key),
+  })), [filteredOrders]);
 
   async function saveOrderChanges(order, changes) {
     setSavingId(order.id);
@@ -732,12 +776,15 @@ export default function AdminWorkspace() {
 
   return (
     <DashboardShell admin>
-      <main className="team-workspace">
-        <div className="team-head">
+      <main className="team-workspace team-projects-workspace">
+        <div className="team-head team-projects-head">
           <div>
-            <p className="eyebrow">TEAM WORKSPACE · {role.toUpperCase() || 'STAFF'}</p>
-            <h1>Run the work.</h1>
-            <p>Live orders, client briefs and delivery status in one place.</p>
+            <div className="team-projects-title-row">
+              <p className="eyebrow">PROJECT OPERATIONS · {role.toUpperCase() || 'STAFF'}</p>
+              <span className="team-live-badge"><i /> Live workspace</span>
+            </div>
+            <h1>Projects.</h1>
+            <p>Run delivery from paid order to final handoff without losing the client context.</p>
           </div>
           <div className="team-head-actions">
             <button type="button" className="btn" onClick={exportOrders} disabled={!filteredOrders.length}>Export CSV</button>
@@ -745,58 +792,124 @@ export default function AdminWorkspace() {
           </div>
         </div>
 
-        <section className="team-stats">
-          <div><span>Active orders</span><strong>{loading ? '—' : stats.active}</strong><small>Capacity {Math.min(stats.active, ACTIVE_CAPACITY)} / {ACTIVE_CAPACITY}</small></div>
-          <div><span>Queue</span><strong>{loading ? '—' : stats.queued}</strong><small>Waiting for capacity</small></div>
-          <div><span>Briefs needed</span><strong>{loading ? '—' : stats.needsBrief}</strong><small>Active orders without brief</small></div>
-          <div><span>Paid</span><strong>{loading ? '—' : stats.paid}</strong><small>Payment confirmed</small></div>
+        <section className="team-stats team-projects-stats">
+          <div><span>Active</span><strong>{loading ? '—' : stats.active}</strong><small>{stats.queued} queued</small></div>
+          <div className={stats.attention ? 'is-alert' : ''}><span>Needs attention</span><strong>{loading ? '—' : stats.attention}</strong><small>Briefs, reviews or overdue</small></div>
+          <div><span>Client review</span><strong>{loading ? '—' : stats.clientReview}</strong><small>Review + revision</small></div>
+          <div><span>Completed</span><strong>{loading ? '—' : stats.completed}</strong><small>{stats.paid} paid orders</small></div>
         </section>
 
-        <section className="team-capacity panel">
-          <div><p className="eyebrow">CAPACITY</p><h2>{Math.min(stats.active, ACTIVE_CAPACITY)} of {ACTIVE_CAPACITY} active slots in use</h2><p>{stats.queued ? `${stats.queued} order${stats.queued === 1 ? '' : 's'} waiting in the queue.` : 'No orders are currently waiting for capacity.'}</p></div>
-          <div className="team-capacity-track"><i style={{ width: `${Math.min(100, (stats.active / ACTIVE_CAPACITY) * 100)}%` }} /></div>
+        <section className="team-capacity panel team-projects-capacity">
+          <div>
+            <p className="eyebrow">DELIVERY CAPACITY</p>
+            <h2>{Math.min(stats.active, ACTIVE_CAPACITY)} of {ACTIVE_CAPACITY} active slots in use</h2>
+            <p>{stats.queued ? `${stats.queued} order${stats.queued === 1 ? '' : 's'} waiting in the queue.` : 'No orders are currently waiting for capacity.'}</p>
+          </div>
+          <div className="team-capacity-track" aria-label={`${Math.min(stats.active, ACTIVE_CAPACITY)} of ${ACTIVE_CAPACITY} active slots in use`}><i style={{ width: `${Math.min(100, (stats.active / ACTIVE_CAPACITY) * 100)}%` }} /></div>
         </section>
 
-        <section className="team-toolbar panel">
-          <div className="team-search-wrap"><span>⌕</span><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search order, client, service or package…" /></div>
-          <select value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filter orders">
-            <option value="all">All orders</option><option value="needs_brief">Needs brief</option>
+        <section className="team-toolbar panel team-projects-toolbar">
+          <div className="team-search-wrap"><span>⌕</span><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search project, client, email, service or package…" /></div>
+          <select value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filter projects">
+            <option value="all">All projects</option><option value="needs_brief">Needs brief</option>
             {STATUS_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
+          <button type="button" className={`team-attention-toggle ${attentionOnly ? 'is-active' : ''}`} onClick={() => setAttentionOnly((value) => !value)}>
+            {attentionOnly ? '✓ Needs attention' : 'Needs attention'} <span>{stats.attention}</span>
+          </button>
+          <div className="team-view-toggle" role="group" aria-label="Project view">
+            <button type="button" className={viewMode === 'board' ? 'is-active' : ''} onClick={() => setViewMode('board')}>Board</button>
+            <button type="button" className={viewMode === 'list' ? 'is-active' : ''} onClick={() => setViewMode('list')}>List</button>
+          </div>
         </section>
 
         {error && <div className="team-error"><strong>Workspace error</strong><span>{error}</span><button type="button" onClick={() => setError('')}>×</button></div>}
         {toast && <div className="team-toast">{toast}</div>}
 
-        <section className="panel team-orders-panel">
-          <div className="team-panel-head"><div><p className="eyebrow">ORDER QUEUE</p><h2>Projects</h2></div><span>{filteredOrders.length} shown{lastUpdated ? ` · synced ${formatDate(lastUpdated, true)}` : ''}</span></div>
-          {loading ? <div className="team-empty"><h3>Loading workspace…</h3><p>Fetching live orders, profiles and project briefs.</p></div> : !filteredOrders.length ? <div className="team-empty"><h3>No matching orders.</h3><p>Try another filter or search term.</p></div> : (
+        {loading ? (
+          <section className="panel team-empty team-projects-loading"><h3>Loading projects…</h3><p>Fetching live orders, client profiles and project briefs.</p></section>
+        ) : !filteredOrders.length ? (
+          <section className="panel team-empty team-projects-loading"><h3>No matching projects.</h3><p>Try another status, search term, or turn off the attention filter.</p></section>
+        ) : viewMode === 'board' ? (
+          <section className="team-project-board" aria-label="Project workflow board">
+            {boardColumns.map((column) => (
+              <div className="team-project-column" key={column.key}>
+                <div className="team-project-column-head">
+                  <div><span className="team-project-column-dot" data-status={column.key} /><strong>{column.label}</strong></div>
+                  <span>{column.items.length}</span>
+                </div>
+                <div className="team-project-column-body">
+                  {column.items.length ? column.items.map((order) => {
+                    const brief = briefs[order.id];
+                    const profile = profiles[order.user_id] || {};
+                    const client = profile.name || 'Client';
+                    const attention = isAttentionOrder(order);
+                    const deadline = brief?.deadline;
+                    const parsedDeadline = deadline ? new Date(deadline) : null;
+                    const overdue = parsedDeadline && !Number.isNaN(parsedDeadline.getTime()) && parsedDeadline.getTime() < Date.now() && !['completed', 'cancelled'].includes(String(order.status || '').toLowerCase());
+                    return (
+                      <article className={`team-project-card ${attention ? 'is-attention' : ''}`} key={order.id}>
+                        <div className="team-project-card-top">
+                          <span>#{order.id}</span>
+                          {attention && <span className="team-project-attention">Attention</span>}
+                        </div>
+                        <h3>{order.service_name || 'Careerlyst service'}</h3>
+                        <p className="team-project-client">{client}</p>
+                        {profile.email && <p className="team-project-email">{profile.email}</p>}
+                        <div className="team-project-meta">
+                          <span>{money(order)}</span>
+                          <span className={String(order.payment_status || '').toLowerCase() === 'paid' ? 'is-paid' : ''}>{order.payment_status || 'Payment pending'}</span>
+                        </div>
+                        <div className="team-project-tags">
+                          {brief ? <span className="brief-ready">Brief ready</span> : <span className="brief-missing">Brief needed</span>}
+                          {order.queue_position != null && <span>Queue #{order.queue_position}</span>}
+                          {overdue && <span className="is-overdue">Overdue</span>}
+                        </div>
+                        <div className="team-project-card-footer">
+                          <span>{brief?.deadline ? `Due ${formatDate(brief.deadline)}` : `Updated ${formatDate(order.updated_at || order.created_at)}`}</span>
+                          <button type="button" className="text-button" onClick={() => setSelectedOrder(order)}>Open →</button>
+                        </div>
+                        <div className="team-project-card-actions">
+                          <button type="button" className="text-button" onClick={() => setConversationOrder(order)}>Message</button>
+                          <button type="button" className="text-button" onClick={() => setEditingOrder(order)}>Manage</button>
+                        </div>
+                      </article>
+                    );
+                  }) : <div className="team-project-column-empty">No projects here.</div>}
+                </div>
+              </div>
+            ))}
+          </section>
+        ) : (
+          <section className="panel team-orders-panel team-project-list-panel">
+            <div className="team-panel-head"><div><p className="eyebrow">PROJECT DIRECTORY</p><h2>All projects</h2></div><span>{filteredOrders.length} shown{lastUpdated ? ` · synced ${formatDate(lastUpdated, true)}` : ''}</span></div>
             <div className="team-order-list">
               {filteredOrders.map((order) => {
                 const brief = briefs[order.id];
-                const client = profiles[order.user_id]?.name || 'Client';
+                const profile = profiles[order.user_id] || {};
+                const client = profile.name || 'Client';
                 return (
-                  <article className="team-order-card" key={order.id}>
+                  <article className={`team-order-card ${isAttentionOrder(order) ? 'is-attention-row' : ''}`} key={order.id}>
                     <div className="team-order-main">
-                      <div className="team-order-kicker"><span>ORDER #{order.id}</span><span>{formatDate(order.created_at)}</span></div>
+                      <div className="team-order-kicker"><span>PROJECT #{order.id}</span><span>{formatDate(order.updated_at || order.created_at)}</span></div>
                       <h3>{order.service_name || 'Careerlyst service'}{order.package_name ? ` · ${order.package_name}` : ''}</h3>
-                      <p>{client} · {money(order)} · Payment {order.payment_status || 'Pending'}</p>
-                      <div className="team-order-tags"><StatusPill status={order.status} />{order.queue_position != null && <span>Queue #{order.queue_position}</span>}<span className={brief ? 'brief-ready' : 'brief-missing'}>{brief ? 'Brief ready' : 'Brief missing'}</span></div>
+                      <p>{client}{profile.email ? ` · ${profile.email}` : ''} · {money(order)}</p>
+                      <div className="team-order-tags"><StatusPill status={order.status} /><span className={String(order.payment_status || '').toLowerCase() === 'paid' ? 'brief-ready' : ''}>{order.payment_status || 'Payment pending'}</span>{order.queue_position != null && <span>Queue #{order.queue_position}</span>}<span className={brief ? 'brief-ready' : 'brief-missing'}>{brief ? 'Brief ready' : 'Brief needed'}</span></div>
                     </div>
                     <div className="team-order-actions">
-                      <button type="button" className="text-button team-message-action" onClick={() => setConversationOrder(order)}>Message →</button>
-                      <button type="button" className="text-button" onClick={() => setSelectedOrder(order)}>View brief →</button>
+                      <button type="button" className="text-button" onClick={() => setConversationOrder(order)}>Message →</button>
+                      <button type="button" className="text-button" onClick={() => setSelectedOrder(order)}>Open →</button>
                       <button type="button" className="text-button" onClick={() => setEditingOrder(order)}>Manage →</button>
                     </div>
                   </article>
                 );
               })}
             </div>
-          )}
-        </section>
+          </section>
+        )}
         <div className="team-back-row"><Link to="/admin">← Back to control panel</Link></div>
       </main>
-      {selectedOrder && <BriefPanel order={selectedOrder} brief={briefs[selectedOrder.id]} clientName={profiles[selectedOrder.user_id]?.name || 'Client'} onClose={() => setSelectedOrder(null)} />}
+      {selectedOrder && <BriefPanel order={selectedOrder} brief={briefs[selectedOrder.id]} clientName={profiles[selectedOrder.user_id]?.name || 'Client'} clientEmail={profiles[selectedOrder.user_id]?.email || ''} onClose={() => setSelectedOrder(null)} />}
       {editingOrder && <EditDrawer order={editingOrder} brief={briefs[editingOrder.id]} clientName={profiles[editingOrder.user_id]?.name || 'Client'} role={role} saving={savingId === editingOrder.id} onClose={() => setEditingOrder(null)} onSave={(changes) => saveOrderChanges(editingOrder, changes)} />}
       {conversationOrder && (
         <TeamConversationDrawer

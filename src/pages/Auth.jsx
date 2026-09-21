@@ -156,9 +156,9 @@ export default function Auth({ signup = false }) {
         ----------------------------------------------- */
 
         if (error) {
-          setMessage(error.message)
-          return
-        }
+  setMessage('Invalid login credentials — check your email or password.')
+  return
+}
 
 
         /* -----------------------------------------------
