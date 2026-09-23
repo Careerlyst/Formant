@@ -4,10 +4,10 @@ import {
   Link,
   useNavigate
 } from 'react-router-dom';
-
+import AdminNotificationsPage from './AdminNotifications';
 import AdminProjectsPage from './AdminProjects';
 import AdminServicesPage from './AdminServices';
-
+import { AdminReviewsPage } from './AdminReviews';
 import DashboardShell from '../components/DashboardShell';
 import { supabase } from '../lib/supabase';
 import { load } from '../lib/store';
@@ -1660,7 +1660,9 @@ import { load } from '../lib/store';
       />
     );
   }
-
+export function AdminReviews() {
+  return <AdminReviewsPage />;
+}
 
   function AdminMessagesPage() {
     const [staffUserId, setStaffUserId] = useState('');
@@ -2595,6 +2597,10 @@ import { load } from '../lib/store';
 
   export function AdminMessages() {
     return <AdminMessagesPage />;
+  }
+
+  export function AdminNotifications() {
+    return <AdminNotificationsPage />;
   }
 
 
@@ -3645,7 +3651,7 @@ function AdminFilesManager() {
   }
 
   return (
-    <DashboardShell>
+    <DashboardShell admin>
       <main className="admin-files-page">
         <div className="dash-head admin-files-head">
           <div>
@@ -4011,6 +4017,8 @@ function AdminFilesManager() {
   );
 }
 
+
+  export { default as AdminSettings } from './AdminSettings';
 
   export function AdminFiles() {
     return <AdminFilesManager />;

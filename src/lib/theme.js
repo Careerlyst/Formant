@@ -1,23 +1,13 @@
 const THEME_STORAGE_KEY = 'careerlyst-theme';
 
-const VALID_THEMES = new Set(['dark', 'light', 'system']);
+const VALID_THEMES = new Set(['light']);
 
 export function normalizeThemePreference(value) {
-  return VALID_THEMES.has(value) ? value : 'system';
+  return 'light';
 }
 
 export function getStoredThemePreference() {
-  if (typeof window === 'undefined') {
-    return 'system';
-  }
-
-  try {
-    return normalizeThemePreference(
-      window.localStorage.getItem(THEME_STORAGE_KEY)
-    );
-  } catch {
-    return 'system';
-  }
+  return 'light';
 }
 
 export function hasStoredThemePreference() {
@@ -26,49 +16,32 @@ export function hasStoredThemePreference() {
   }
 
   try {
-    const value = window.localStorage.getItem(THEME_STORAGE_KEY);
-
-    return VALID_THEMES.has(value);
+    return window.localStorage.getItem(
+      THEME_STORAGE_KEY
+    ) === 'light';
   } catch {
     return false;
   }
 }
 
-export function resolveThemePreference(preference) {
-  const normalized = normalizeThemePreference(preference);
-
-  if (normalized === 'dark' || normalized === 'light') {
-    return normalized;
-  }
-
-  if (typeof window === 'undefined' || !window.matchMedia) {
-    return 'light';
-  }
-
-  return window.matchMedia('(prefers-color-scheme: dark)').matches
-    ? 'dark'
-    : 'light';
+export function resolveThemePreference() {
+  return 'light';
 }
 
-export function applyTheme(preference) {
-  const normalized = normalizeThemePreference(preference);
-  const resolved = resolveThemePreference(normalized);
-
+export function applyTheme() {
   if (typeof document !== 'undefined') {
-    document.documentElement.dataset.theme = resolved;
+    document.documentElement.dataset.theme = 'light';
   }
 
-  return resolved;
+  return 'light';
 }
 
-export function saveThemePreference(preference) {
-  const normalized = normalizeThemePreference(preference);
-
+export function saveThemePreference() {
   if (typeof window !== 'undefined') {
     try {
       window.localStorage.setItem(
         THEME_STORAGE_KEY,
-        normalized
+        'light'
       );
     } catch {
       // Theme application should still work
@@ -76,79 +49,31 @@ export function saveThemePreference(preference) {
     }
   }
 
-  applyTheme(normalized);
-
-  return normalized;
+  return applyTheme();
 }
 
 export function applyStoredTheme() {
   if (typeof window !== 'undefined') {
     try {
-      const stored = window.localStorage.getItem(
-        THEME_STORAGE_KEY
+      // Remove any old dark/system preference.
+      window.localStorage.setItem(
+        THEME_STORAGE_KEY,
+        'light'
       );
-
-      // No valid local preference:
-      // use system theme, but DON'T save "system" to localStorage.
-      // This allows Supabase preference to hydrate later.
-      if (!VALID_THEMES.has(stored)) {
-        if (stored !== null) {
-          window.localStorage.removeItem(
-            THEME_STORAGE_KEY
-          );
-        }
-
-        return applyTheme('system');
-      }
-
-      return applyTheme(stored);
     } catch {
-      return applyTheme('system');
+      // Ignore storage failures.
     }
   }
 
-  return applyTheme('system');
+  return applyTheme();
 }
 
-export function watchSystemTheme(preference) {
-  if (
-    typeof window === 'undefined' ||
-    !window.matchMedia
-  ) {
-    return undefined;
-  }
-
-  const normalized = normalizeThemePreference(preference);
-
-  // Only watch system preference when user selected "system".
-  if (normalized !== 'system') {
-    return undefined;
-  }
-
-  const media = window.matchMedia(
-    '(prefers-color-scheme: dark)'
-  );
-
-  const handleChange = () => {
-    applyTheme('system');
-  };
-
-  if (media.addEventListener) {
-    media.addEventListener('change', handleChange);
-  } else {
-    media.addListener?.(handleChange);
-  }
-
-  return () => {
-    if (media.removeEventListener) {
-      media.removeEventListener(
-        'change',
-        handleChange
-      );
-    } else {
-      media.removeListener?.(handleChange);
-    }
-  };
+/*
+ * Kept for compatibility with existing Dashboard imports.
+ * System theme is disabled, so there is nothing to watch.
+ */
+export function watchSystemTheme() {
+  return undefined;
 }
 
 export { THEME_STORAGE_KEY };
