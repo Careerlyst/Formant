@@ -50,7 +50,9 @@ import {
   AdminMessages,
   AdminFiles,
   AdminServices,
-
+  AdminReviews,
+  AdminNotifications,
+  AdminSettings,
   AdminSimple,
   AdminWorkspace
 } from './pages/Admin';
@@ -325,19 +327,19 @@ function App() {
       />
 
       <Route
-  path="/admin/services"
-  element={
-    <Protected>
-      <AdminServices />
-    </Protected>
-  }
-/>
+        path="/admin/services"
+        element={
+          <Protected>
+            <AdminServices />
+          </Protected>
+        }
+      />
 
       <Route
         path="/admin/reviews"
         element={
           <Protected>
-            <AdminSimple title="Reviews" />
+            <AdminReviews />
           </Protected>
         }
       />
@@ -355,7 +357,7 @@ function App() {
         path="/admin/notifications"
         element={
           <Protected>
-            <AdminSimple title="Notifications" />
+            <AdminNotifications />
           </Protected>
         }
       />
@@ -364,7 +366,7 @@ function App() {
         path="/admin/settings"
         element={
           <Protected>
-            <AdminSimple title="Settings" />
+            <AdminSettings />
           </Protected>
         }
       />
