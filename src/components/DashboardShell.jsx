@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   NavLink,
   Link,
@@ -10,6 +10,7 @@ import {
   load,
   logout
 } from '../lib/store';
+import { supabase } from '../lib/supabase';
 
 /* =========================================================
    NAVIGATION
@@ -74,6 +75,14 @@ const adminNav = [
     label: 'Users',
     icon: 'users'
   },
+
+  // NEW: Lead assessment / qualification responses
+  {
+    to: '/admin/leads',
+    label: 'Lead Assessments',
+    icon: 'users'
+  },
+
   {
     to: '/admin/orders',
     label: 'Orders',
@@ -270,6 +279,9 @@ export default function DashboardShell({
   admin = false
 }) {
   const navigate = useNavigate();
+
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
   const s = load();
 
   const items = admin
@@ -278,6 +290,22 @@ export default function DashboardShell({
 
   const firstLetter =
     s.user?.name?.trim()?.charAt(0)?.toUpperCase() || 'U';
+
+  const handleSignOut = async () => {
+    setIsLoggingOut(true);
+
+    try {
+      if (supabase) {
+        await supabase.auth.signOut();
+      }
+    } catch (error) {
+      console.error('Error signing out:', error);
+    } finally {
+      logout();
+      navigate('/');
+      setIsLoggingOut(false);
+    }
+  };
 
   return (
     <div className="app-shell">
@@ -297,6 +325,7 @@ export default function DashboardShell({
         </div>
 
         <nav className="sidebar-nav">
+
           {items.map((item) => (
             <NavLink
               key={item.to}
@@ -318,6 +347,7 @@ export default function DashboardShell({
               </span>
             </NavLink>
           ))}
+
         </nav>
 
         {/* ===================================================
@@ -333,6 +363,7 @@ export default function DashboardShell({
             </div>
 
             <div className="sidebar-account-copy">
+
               <strong>
                 {s.user?.name || 'Client'}
               </strong>
@@ -342,6 +373,7 @@ export default function DashboardShell({
                   ? 'Administrator'
                   : s.user?.email || 'Careerlyst member'}
               </span>
+
             </div>
 
           </div>
@@ -349,13 +381,24 @@ export default function DashboardShell({
           <button
             type="button"
             className="sidebar-signout"
-            onClick={() => {
-              logout();
-              navigate('/');
+            onClick={handleSignOut}
+            disabled={isLoggingOut}
+            style={{
+              opacity: isLoggingOut ? 0.6 : 1,
+              cursor: isLoggingOut
+                ? 'not-allowed'
+                : 'pointer'
             }}
           >
-            <span>Sign out</span>
-            <span>↗</span>
+            <span>
+              {isLoggingOut
+                ? 'Signing out...'
+                : 'Sign out'}
+            </span>
+
+            {!isLoggingOut && (
+              <span>↗</span>
+            )}
           </button>
 
           {!admin && (

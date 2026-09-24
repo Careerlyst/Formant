@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import Logo from './Logo';
 import { supabase } from '../lib/supabase';
 
@@ -33,6 +33,7 @@ function getAvatarUrl(user) {
 
 export default function PublicNav() {
   const navigate = useNavigate();
+  const location = useLocation();
   const navRef = useRef(null);
 
   const [menuOpen, setMenuOpen] = useState(false);
@@ -142,11 +143,15 @@ export default function PublicNav() {
         <Logo />
 
         <nav className="desktop-nav">
-          <Link to="/services">Services</Link>
-          <a href="/#process">How it works</a>
-          <Link to="/pricing">Pricing</Link>
-          <Link to="/about">About</Link>
-          <Link to="/contact">Contact</Link>
+          <NavLink to="/services">Services</NavLink>
+          <a
+            className={location.pathname === '/' && location.hash === '#process' ? 'active' : ''}
+            href="/#process"
+          >
+            How it works
+          </a>
+          <NavLink to="/pricing">Pricing</NavLink>
+          <NavLink to="/about">About</NavLink>
         </nav>
 
         <div className="nav-actions">
@@ -164,7 +169,12 @@ export default function PublicNav() {
           )}
 
           {authReady && isAuthenticated && (
-            <div className="account-menu">
+            <>
+              <NavLink className="authenticated-dashboard-link" to="/dashboard">
+                Dashboard
+              </NavLink>
+
+              <div className="account-menu">
               <button
                 className="account-avatar-button"
                 type="button"
@@ -222,7 +232,8 @@ export default function PublicNav() {
                   </button>
                 </div>
               )}
-            </div>
+              </div>
+            </>
           )}
         </div>
 
@@ -254,10 +265,6 @@ export default function PublicNav() {
           </Link>
           <Link to="/about" onClick={closeMenu}>
             <span>About</span>
-            <span>↗</span>
-          </Link>
-          <Link to="/contact" onClick={closeMenu}>
-            <span>Contact</span>
             <span>↗</span>
           </Link>
         </nav>

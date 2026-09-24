@@ -1,0 +1,99 @@
+[1mdiff --git a/package-lock.json b/package-lock.json[m
+[1mindex 6cd48ae..283c13e 100644[m
+[1m--- a/package-lock.json[m
+[1m+++ b/package-lock.json[m
+[36m@@ -1,1963 +1,2239 @@[m
+[31m-{[m
+[31m-  "name": "careerlyst-platform",[m
+[31m-  "version": "1.0.0",[m
+[31m-  "lockfileVersion": 3,[m
+[31m-  "requires": true,[m
+[31m-  "packages": {[m
+[31m-    "": {[m
+[31m-      "name": "careerlyst-platform",[m
+[31m-      "version": "1.0.0",[m
+[31m-      "dependencies": {[m
+[31m-        "@supabase/supabase-js": "^2.116.0",[m
+[31m-        "react": "^19.1.1",[m
+[31m-        "react-dom": "^19.1.1",[m
+[31m-        "react-router-dom": "^7.8.2"[m
+[31m-      },[m
+[31m-      "devDependencies": {[m
+[31m-        "@vitejs/plugin-react": "^5.0.2",[m
+[31m-        "vite": "^7.1.3"[m
+[31m-      }[m
+[31m-    },[m
+[31m-    "node_modules/@babel/code-frame": {[m
+[31m-      "version": "7.29.7",[m
+[31m-      "resolved": "https://registry.npmjs.org/@babel/code-frame/-/code-frame-7.29.7.tgz",[m
+[31m-      "integrity": "sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw==",[m
+[31m-      "dev": true,[m
+[31m-      "license": "MIT",[m
+[31m-      "dependencies": {[m
+[31m-        "@babel/helper-validator-identifier": "^7.29.7",[m
+[31m-        "js-tokens": "^4.0.0",[m
+[31m-        "picocolors": "^1.1.1"[m
+[31m-      },[m
+[31m-      "engines": {[m
+[31m-        "node": ">=6.9.0"[m
+[31m-      }[m
+[31m-    },[m
+[31m-    "node_modules/@babel/compat-data": {[m
+[31m-      "version": "7.29.7",[m
+[31m-      "resolved": "https://registry.npmjs.org/@babel/compat-data/-/compat-data-7.29.7.tgz",[m
+[31m-      "integrity": "sha512-locTkQyKvwIEgBzVrn8693ebc97F2U8ZHjbXwDXJ5Fn2TCpNwTlKcaKLkdHop5c/icOFE7qt7Q9JC5hnKNa6Gg==",[m
+[31m-      "dev": true,[m
+[31m-      "license": "MIT",[m
+[31m-      "engines": {[m
+[31m-        "node": ">=6.9.0"[m
+[31m-      }[m
+[31m-    },[m
+[31m-    "node_modules/@babel/core": {[m
+[31m-      "version": "7.29.7",[m
+[31m-      "resolved": "https://registry.npmjs.org/@babel/core/-/core-7.29.7.tgz",[m
+[31m-      "integrity": "sha512-RgHBCvtjbOK2gXSNBNIkNoEc9qoVEtau3hj8gEqKQuL3HZAibKarWFEI3Lfm6EYKkLalOh8eSrj9b+ch9H/VBA==",[m
+[31m-      "dev": true,[m
+[31m-      "license": "MIT",[m
+[31m-      "dependencies": {[m
+[31m-        "@babel/code-frame": "^7.29.7",[m
+[31m-        "@babel/generator": "^7.29.7",[m
+[31m-        "@babel/helper-compilation-targets": "^7.29.7",[m
+[31m-        "@babel/helper-module-transforms": "^7.29.7",[m
+[31m-        "@babel/helpers": "^7.29.7",[m
+[31m-        "@babel/parser": "^7.29.7",[m
+[31m-        "@babel/template": "^7.29.7",[m
+[31m-        "@babel/traverse": "^7.29.7",[m
+[31m-        "@babel/types": "^7.29.7",[m
+[31m-        "@jridgewell/remapping": "^2.3.5",[m
+[31m-        "convert-source-map": "^2.0.0",[m
+[31m-        "debug": "^4.1.0",[m
+[31m-        "gensync": "^1.0.0-beta.2",[m
+[31m-        "json5": "^2.2.3",[m
+[31m-        "semver": "^6.3.1"[m
+[31m-      },[m
+[31m-      "engines": {[m
+[31m-        "node": ">=6.9.0"[m
+[31m-      },[m
+[31m-      "funding": {[m
+[31m-        "type": "opencollective",[m
+[31m-        "url": "https://opencollective.com/babel"[m
+[31m-      }[m
+[31m-    },[m
+[31m-    "node_modules/@babel/generator": {[m
+[31m-      "version": "7.29.8",[m
+[31m-      "resolved": "https://registry.npmjs.org/@babel/generator/-/generator-7.29.8.tgz",[m
+[31m-      "integrity": "sha512-gZbepsdh3WDtgZKWL+vTPh71LSBrm/Y4/QDZBVCcYfmeTEEuoOYwlSy+G1StfJg+/Zy550u/3TATbm7qDbbMtg==",[m
+[31m-      "dev": true,[m
+[31m-      "license": "MIT",[m
+[31m-      "dependencies": {[m
+[31m-        "@babel/parser": "^7.29.8",[m
+[31m-        "@babel/types": "^7.29.8",[m
+[31m-        "@jridgewell/gen-mapping": "^0.3.12",[m
+[31m-        "@jridgewell/trace-mapping": "^0.3.28",[m
+[31m-        "jsesc": "^3.0.2"[m
+[31m-      },[m
+[31m-      "engines": {[m
+[31m-        "node": ">=6.9.0"[m
+[31m-      }[m
+[31m-    },[m
+[31m-    

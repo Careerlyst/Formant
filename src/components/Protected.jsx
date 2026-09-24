@@ -44,11 +44,7 @@ export default function Protected({ children }) {
     */
     if (supabase) {
 
-      const {
-        data: {
-          subscription
-        }
-      } = supabase.auth.onAuthStateChange(
+      const { data } = supabase.auth.onAuthStateChange(
         (event, nextSession) => {
 
           if (!mounted) return;
@@ -82,14 +78,14 @@ export default function Protected({ children }) {
         the auth listener finishes initializing.
       */
       supabase.auth.getSession()
-        .then(({ data, error }) => {
+        .then(({ data: sessionData, error }) => {
           if (!mounted) return;
 
           if (error) {
             console.error('Auth session check failed:', error);
           }
 
-          const nextSession = data?.session || null;
+          const nextSession = sessionData?.session || null;
 
           /*
             Prefer the concrete getSession result for the initial route
@@ -112,7 +108,10 @@ export default function Protected({ children }) {
 
       return () => {
         mounted = false;
-        subscription.unsubscribe();
+        // Safe unsubscribe check
+        if (data?.subscription) {
+          data.subscription.unsubscribe();
+        }
       };
     }
 
@@ -148,9 +147,9 @@ export default function Protected({ children }) {
           minHeight: '100vh',
           display: 'grid',
           placeItems: 'center',
-          background: '#f5f4ee',
-          color: '#11120f',
-          fontFamily: 'DM Sans, sans-serif'
+          background: 'var(--cream, #fbfaf3)', // Updated to canonical design token
+          color: 'var(--ink, #11120f)',
+          fontFamily: "'DM Sans', sans-serif"
         }}
       >
         Checking your account...

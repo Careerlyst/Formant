@@ -1,10 +1,19 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
+import { load } from '../lib/store';
 import PublicNav from '../components/PublicNav';
 import Footer from '../components/Footer';
 import { services } from '../lib/store';
 
-export default function Home() {
+function PublicHome({ user = null }) {
+  const firstName =
+    user?.user_metadata?.name?.split(' ')[0] ||
+    user?.user_metadata?.full_name?.split(' ')[0] ||
+    user?.name?.split(' ')[0] ||
+    user?.email?.split('@')[0] ||
+    'there';
+
   const [heroIllustration, setHeroIllustration] = useState(() =>
     document.documentElement.dataset.theme === 'dark'
       ? '/assets/hero-illustration-dark.png'
@@ -47,23 +56,34 @@ export default function Home() {
 
             <div className="hero-copy">
               <p className="eyebrow">
-                A STRONGER YOU. A BRIGHTER TOMORROW.
+                {user ? 'YOUR CAREERLYST. YOUR NEXT MOVE.' : 'A STRONGER YOU. A BRIGHTER TOMORROW.'}
               </p>
 
               <h1>
-                Get ready for
-                <br />
-                the role <span>you want.</span>
+                {user ? (
+                  <>
+                    Welcome back,
+                    <br />
+                    <span>{firstName}.</span>
+                  </>
+                ) : (
+                  <>
+                    Get ready for
+                    <br />
+                    the role <span>you want.</span>
+                  </>
+                )}
               </h1>
 
               <p className="lede">
-                Resume, LinkedIn, GitHub, portfolio and interview preparation —
-                prepared as one coherent professional profile.
+                {user
+                  ? 'Keep building a professional profile that is clear, credible and ready for the opportunities you want next.'
+                  : 'Resume, LinkedIn, GitHub, portfolio and interview preparation — prepared as one coherent professional profile.'}
               </p>
 
               <div className="actions">
-                <Link className="btn lime" to="/signup">
-                  Start your profile <span>↗</span>
+                <Link className="btn lime" to={user ? '/services' : '/signup'}>
+                  {user ? 'Start a project' : 'Start your profile'} <span>↗</span>
                 </Link>
 
                 <a className="watch" href="#process">
@@ -74,7 +94,9 @@ export default function Home() {
 
               <p className="micro">
                 <i />
-                Built by career experts. Designed around your target role.
+                {user
+                  ? 'Everything you need to make your professional story work together.'
+                  : 'Built by career experts. Designed around your target role.'}
               </p>
             </div>
 
@@ -423,6 +445,33 @@ export default function Home() {
 
 </section>
 
+        {user && (
+          <section className="client-home-context">
+            <div className="client-home-context-inner">
+              <div className="client-home-context-heading">
+                <span>YOUR CAREERLYST</span>
+                <h2>
+                  Your career,
+                  <br />
+                  <span>in one place.</span>
+                </h2>
+              </div>
+
+              <div className="client-home-context-copy">
+                <p>
+                  Keep your work, projects and conversations close while you build the professional profile you want next.
+                </p>
+
+                <div className="client-home-context-links">
+                  <Link to="/dashboard">Overview <span>↗</span></Link>
+                  <Link to="/dashboard/orders">My orders <span>↗</span></Link>
+                  <Link to="/dashboard/messages">Messages <span>↗</span></Link>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
        <section className="profile-statement">
 
   <div className="profile-statement-inner">
@@ -539,3 +588,61 @@ export default function Home() {
     </>
   );
 }
+
+export default function Home() {
+  const [session, setSession] = useState(null);
+  const [checkingSession, setCheckingSession] = useState(Boolean(supabase));
+
+  useEffect(() => {
+    let mounted = true;
+    let subscription = null;
+
+    async function resolveSession() {
+      if (!supabase) {
+        const localState = load();
+        if (mounted) {
+          setSession(localState.user ? { user: localState.user } : null);
+          setCheckingSession(false);
+        }
+        return;
+      }
+
+      const { data, error } = await supabase.auth.getSession();
+
+      if (!mounted) return;
+
+      if (error) {
+        console.error('Home auth session check failed:', error);
+      }
+
+      setSession(data?.session || null);
+      setCheckingSession(false);
+    }
+
+    resolveSession();
+
+    if (supabase) {
+      const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+        if (!mounted) return;
+        setSession(nextSession || null);
+      });
+      subscription = data?.subscription;
+    }
+
+    return () => {
+      mounted = false;
+      subscription?.unsubscribe();
+    };
+  }, []);
+
+  if (checkingSession) {
+    return (
+      <div className="home-auth-loading">
+        <span>Loading Careerlyst…</span>
+      </div>
+    );
+  }
+
+  return <PublicHome user={session?.user || null} />;
+}
+

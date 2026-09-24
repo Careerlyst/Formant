@@ -29,6 +29,9 @@ import Auth, {
 } from './pages/Auth';
 
 import Protected from './components/Protected';
+import LeadAssessment from './pages/LeadAssessment';
+import AdminLeads from './pages/AdminLeads';
+import AdminSettings from './pages/AdminSettings';
 
 import {
   Dashboard,
@@ -52,7 +55,6 @@ import {
   AdminServices,
   AdminReviews,
   AdminNotifications,
-  AdminSettings,
   AdminSimple,
   AdminWorkspace
 } from './pages/Admin';
@@ -174,6 +176,20 @@ function App() {
 
 
       {/* =====================================================
+          LEAD ASSESSMENT
+      ===================================================== */}
+
+      <Route
+        path="/assessment"
+        element={
+          <Protected>
+            <LeadAssessment />
+          </Protected>
+        }
+      />
+
+
+      {/* =====================================================
           CLIENT DASHBOARD
       ===================================================== */}
 
@@ -277,6 +293,15 @@ function App() {
         element={
           <Protected>
             <AdminUsers />
+          </Protected>
+        }
+      />
+
+      <Route
+        path="/admin/leads"
+        element={
+          <Protected>
+            <AdminLeads />
           </Protected>
         }
       />

@@ -4,10 +4,108 @@ import Logo from '../components/Logo'
 import { demoLogin, patch } from '../lib/store'
 import { supabase } from '../lib/supabase'
 
+/* =========================================================
+   RESEND LINK COMPONENT
+========================================================= */
+
+function ResendLink({ email }) {
+  const [timeLeft, setTimeLeft] = useState(30);
+  const [canResend, setCanResend] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [status, setStatus] = useState({ text: "", type: "" });
+
+  useEffect(() => {
+    if (timeLeft > 0) {
+      const timerId = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
+      return () => clearTimeout(timerId);
+    } else {
+      setCanResend(true);
+    }
+  }, [timeLeft]);
+
+  const handleResend = async () => {
+    if (!email) return;
+    setIsLoading(true);
+    setStatus({ text: "", type: "" });
+
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: email,
+    });
+
+    if (error) {
+      setStatus({ text: error.message, type: "error" });
+    } else {
+      setStatus({ text: "Confirmation link resent successfully!", type: "success" });
+      setCanResend(false);
+      setTimeLeft(30);
+    }
+    setIsLoading(false);
+  };
+
+  return (
+    <div style={{ marginTop: 'var(--space-4, 16px)', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', width: '100%' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-2, 8px)', fontSize: 'var(--font-body-sm, 12px)', fontFamily: "'DM Sans', sans-serif", color: 'var(--muted, #6d7069)' }}>
+        <span>Didn't receive the link?</span>
+
+        {canResend ? (
+          <button
+            type="button"
+            onClick={handleResend}
+            disabled={isLoading}
+            style={{
+              padding: '4px 12px',
+              borderRadius: '2px', 
+              border: '1px solid var(--line, #deded5)', 
+              background: 'var(--paper, #fff)',
+              color: 'var(--ink, #11120f)',
+              fontWeight: '600',
+              cursor: isLoading ? 'not-allowed' : 'pointer',
+              opacity: isLoading ? 0.6 : 1,
+              fontFamily: "'DM Sans', sans-serif",
+              boxShadow: 'none',
+              transition: 'background 180ms ease'
+            }}
+          >
+            {isLoading ? "Sending..." : "Resend"}
+          </button>
+        ) : (
+          <span>
+            Resend in <strong style={{ color: 'var(--ink, #11120f)' }}>{timeLeft}s</strong>
+          </span>
+        )}
+      </div>
+
+      {status.text && (
+        <p style={{
+          marginTop: 'var(--space-2, 8px)',
+          fontSize: 'var(--font-sm, 11px)', 
+          color: status.type === 'error' ? 'var(--danger, #b94a48)' : 'var(--green, #8fb61c)',
+          fontFamily: "'DM Sans', sans-serif",
+          fontWeight: '500'
+        }}>
+          {status.text}
+        </p>
+      )}
+    </div>
+  );
+}
+
 
 /* =========================================================
    AUTH
 ========================================================= */
+
+/*
+  Send users to the lead assessment until they complete it.
+  Completed users can go directly to the dashboard.
+*/
+function getPostAuthPath(user) {
+  const completed =
+    user?.user_metadata?.careerlyst_assessment_completed === true
+
+  return completed ? '/dashboard' : '/assessment'
+}
 
 export default function Auth({ signup = false }) {
   const nav = useNavigate()
@@ -20,6 +118,9 @@ export default function Auth({ signup = false }) {
 
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
+  
+  // Track unverified email to show the Resend Link UI
+  const [unverifiedEmail, setUnverifiedEmail] = useState(null)
 
 
   /* =======================================================
@@ -31,6 +132,7 @@ export default function Auth({ signup = false }) {
 
     setMessage('')
     setLoading(true)
+    setUnverifiedEmail(null) // Reset on new submission
 
     const cleanEmail = email.trim()
     const cleanName = name.trim()
@@ -89,7 +191,7 @@ export default function Auth({ signup = false }) {
             setMessage(
               'Account created successfully. Please check your email and confirm your account before logging in.'
             )
-
+            setUnverifiedEmail(cleanEmail) // Trigger Resend component
             return
           }
 
@@ -132,7 +234,7 @@ export default function Auth({ signup = false }) {
              GO TO DASHBOARD
           ----------------------------------------------- */
 
-          nav('/dashboard')
+          nav(getPostAuthPath(user))
 
           return
         }
@@ -156,9 +258,14 @@ export default function Auth({ signup = false }) {
         ----------------------------------------------- */
 
         if (error) {
-  setMessage('Invalid login credentials — check your email or password.')
-  return
-}
+          if (error.message.includes('Email not confirmed')) {
+            setMessage('Please confirm your email address before logging in.')
+            setUnverifiedEmail(cleanEmail) // Trigger Resend component
+          } else {
+            setMessage('Invalid login credentials — check your email or password.')
+          }
+          return
+        }
 
 
         /* -----------------------------------------------
@@ -211,7 +318,7 @@ export default function Auth({ signup = false }) {
            GO TO DASHBOARD
         ----------------------------------------------- */
 
-        nav('/dashboard')
+        nav(getPostAuthPath(user))
 
         return
       }
@@ -226,7 +333,7 @@ export default function Auth({ signup = false }) {
         cleanName || 'Demo Client'
       )
 
-      nav('/dashboard')
+      nav('/assessment')
 
     } catch (error) {
 
@@ -473,6 +580,13 @@ export default function Auth({ signup = false }) {
                 </div>
               )}
 
+              {/* =================================================
+                 RESEND LINK
+              ================================================= */}
+
+              {unverifiedEmail && (
+                <ResendLink email={unverifiedEmail} />
+              )}
 
               {/* =================================================
                  SUBMIT
