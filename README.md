@@ -1,6 +1,6 @@
-# Careerlyst — Full Platform Build
+# Formant — Full Platform Build
 
-This build preserves the current Careerlyst visual direction: warm cream, black typography, lime accent, restrained borders, editorial spacing, and the existing hero illustration.
+This build preserves the current Formant visual direction: warm cream, black typography, lime accent, restrained borders, editorial spacing, and the existing hero illustration.
 
 ## Included
 - Public marketing site: Home, Services, Service Detail, Pricing, About, Contact, Legal placeholders

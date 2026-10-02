@@ -1,11 +1,14 @@
 .preloader {
-  --preloader-bg: #f5f4ee;
-  --preloader-ink: #11120f;
-  --preloader-muted: #7c8077;
-  --preloader-lime: #c7f72f;
+  --preloader-bg: var(--cream, #fbfaf3);
+  --preloader-ink: var(--ink, #11120f);
+  --preloader-muted: var(--muted, #6d7069);
+  --preloader-lime: var(--lime, #c7f72f);
 
   position: fixed;
   inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 100dvh;
   z-index: 99999;
   overflow: hidden;
   display: grid;
@@ -15,18 +18,19 @@
   isolation: isolate;
   opacity: 1;
   visibility: visible;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
   transform: translate3d(0, 0, 0);
   transition:
-    transform 620ms cubic-bezier(.76, 0, .24, 1),
-    opacity 180ms ease 440ms,
-    visibility 0s linear 620ms;
+    transform 580ms cubic-bezier(0.7, 0, 0.2, 1),
+    opacity 160ms ease 420ms,
+    visibility 0s linear 580ms;
+  will-change: transform, opacity;
 }
 
 .preloader--leaving {
   transform: translate3d(0, -100%, 0);
   opacity: 0;
   visibility: hidden;
-  pointer-events: none;
 }
 
 .preloader__inner {
@@ -34,18 +38,24 @@
   z-index: 3;
   width: min(1100px, calc(100% - 48px));
   text-align: center;
+  transition: transform 580ms cubic-bezier(0.7, 0, 0.2, 1), opacity 320ms ease;
+}
+
+.preloader--leaving .preloader__inner {
+  transform: translate3d(0, -32px, 0);
+  opacity: 0.85;
 }
 
 .preloader__eyebrow {
-  margin: 0 0 26px;
+  margin: 0 0 24px;
   color: var(--preloader-muted);
   font-family: "DM Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: .18em;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .16em;
   line-height: 1;
   text-transform: uppercase;
-  animation: preloader-slide-up 720ms cubic-bezier(.16,1,.3,1) both;
+  animation: preloader-fade-up 600ms cubic-bezier(.16, 1, .3, 1) both;
 }
 
 .preloader__copy {
@@ -61,139 +71,97 @@
 }
 
 .preloader__slogan {
-  font-size: clamp(19px, 2vw, 30px);
+  font-size: clamp(20px, 2.2vw, 30px);
   font-weight: 500;
-  letter-spacing: -.03em;
-  animation: preloader-slide-up 760ms 90ms cubic-bezier(.16,1,.3,1) both;
+  letter-spacing: -.025em;
+  animation: preloader-fade-up 640ms 80ms cubic-bezier(.16, 1, .3, 1) both;
 }
 
 .preloader__subline {
   max-width: 560px;
   color: var(--preloader-muted);
-  font-size: clamp(12px, 1vw, 15px);
+  font-size: clamp(13px, 1.1vw, 15px);
   line-height: 1.6;
-  animation: preloader-slide-up 760ms 160ms cubic-bezier(.16,1,.3,1) both;
+  animation: preloader-fade-up 640ms 140ms cubic-bezier(.16, 1, .3, 1) both;
 }
 
 .preloader__brand {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 14px;
-  margin: 42px 0 0;
+  margin: 40px 0 0;
+  max-width: 100%;
   font-family: "Manrope", "DM Sans", system-ui, sans-serif;
-  font-size: clamp(56px, 10vw, 132px);
+  font-size: clamp(52px, 9vw, 120px);
   font-weight: 700;
-  line-height: .9;
-  letter-spacing: -.075em;
-  animation: preloader-brand-slide-up 900ms 250ms cubic-bezier(.12,.8,.18,1) both;
+  line-height: 1;
+  letter-spacing: -.035em;
+  animation: preloader-brand-fade-up 750ms 200ms cubic-bezier(.16, 1, .3, 1) both;
 }
 
+.preloader__symbol,
 .preloader__mark {
-  display: inline-flex;
-  align-items: flex-end;
-  gap: 4px;
-  height: .67em;
-  transform: translateY(-.03em);
-}
-
-.preloader__mark i {
   display: block;
-  width: clamp(5px, .65vw, 9px);
-  border-radius: 999px 999px 2px 2px;
-  background: var(--preloader-lime);
+  width: .72em;
+  height: auto;
+  aspect-ratio: 540 / 510;
+  flex-shrink: 0;
+  transform: translateY(-.02em);
 }
-
-.preloader__mark i:nth-child(1) { height: 46%; }
-.preloader__mark i:nth-child(2) { height: 72%; }
-.preloader__mark i:nth-child(3) { height: 100%; }
 
 .preloader__glow {
   position: absolute;
   z-index: 1;
-  width: min(44vw, 620px);
+  width: min(44vw, 540px);
   aspect-ratio: 1;
   border-radius: 50%;
   pointer-events: none;
-  filter: blur(26px);
-  opacity: .42;
-  mix-blend-mode: multiply;
-}
-
-.preloader__glow::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background:
-    radial-gradient(circle at 50% 50%, rgba(199,247,47,.55) 0 4%, rgba(199,247,47,.16) 13%, transparent 31%),
-    conic-gradient(from 0deg, transparent 0 16%, rgba(199,247,47,.42) 23%, transparent 32% 50%, rgba(255,255,255,.42) 58%, transparent 68% 100%);
-  animation: preloader-radial-spin 10s linear infinite;
-}
-
-.preloader__glow::after {
-  content: "";
-  position: absolute;
-  inset: 18%;
-  border-radius: 50%;
-  border: 1px solid rgba(17,18,15,.08);
-  box-shadow:
-    0 0 0 40px rgba(17,18,15,.018),
-    0 0 0 80px rgba(17,18,15,.014),
-    0 0 0 120px rgba(17,18,15,.01);
+  opacity: .18;
+  background: radial-gradient(circle, rgba(199,247,47,.22) 0%, rgba(199,247,47,.04) 50%, transparent 70%);
 }
 
 .preloader__glow--one {
-  top: -18%;
-  left: -8%;
-  animation: preloader-orbit-one 7.5s ease-in-out infinite alternate;
+  top: -12%;
+  left: -6%;
 }
 
 .preloader__glow--two {
-  right: -8%;
-  bottom: -21%;
-  transform: scale(.82);
-  opacity: .28;
-  animation: preloader-orbit-two 8.5s ease-in-out infinite alternate;
+  right: -6%;
+  bottom: -15%;
+  opacity: .12;
 }
 
 .preloader__progress {
   position: absolute;
   right: 24px;
-  bottom: 22px;
+  bottom: max(22px, calc(env(safe-area-inset-bottom, 0px) + 10px));
   left: 24px;
   z-index: 4;
   height: 1px;
   overflow: hidden;
   background: rgba(17,18,15,.09);
+  transition: opacity 200ms ease;
+}
+
+.preloader--leaving .preloader__progress {
+  opacity: 0;
 }
 
 .preloader__progress span {
   display: block;
-  width: 34%;
+  width: 100%;
   height: 100%;
   background: var(--preloader-ink);
-  animation: preloader-progress 1900ms cubic-bezier(.65,0,.25,1) forwards;
+  transform-origin: left center;
+  transform: scaleX(0);
+  animation: preloader-progress 1400ms cubic-bezier(.65, 0, .25, 1) forwards;
 }
 
-@keyframes preloader-radial-spin {
-  from { transform: rotate(0deg) scale(1); }
-  to { transform: rotate(360deg) scale(1.04); }
-}
-
-@keyframes preloader-orbit-one {
-  from { transform: translate3d(-3%, 0, 0) scale(1); }
-  to { transform: translate3d(9%, 7%, 0) scale(1.08); }
-}
-
-@keyframes preloader-orbit-two {
-  from { transform: translate3d(4%, 3%, 0) scale(.82); }
-  to { transform: translate3d(-8%, -7%, 0) scale(.94); }
-}
-
-@keyframes preloader-slide-up {
+@keyframes preloader-fade-up {
   from {
     opacity: 0;
-    transform: translate3d(0, 70px, 0);
+    transform: translate3d(0, 18px, 0);
   }
   to {
     opacity: 1;
@@ -201,66 +169,78 @@
   }
 }
 
-@keyframes preloader-brand-slide-up {
+@keyframes preloader-brand-fade-up {
   from {
     opacity: 0;
-    transform: translate3d(0, 95px, 0) scale(.96);
-    letter-spacing: -.055em;
+    transform: translate3d(0, 24px, 0) scale(.98);
   }
   to {
     opacity: 1;
     transform: translate3d(0, 0, 0) scale(1);
-    letter-spacing: -.075em;
   }
 }
 
 @keyframes preloader-progress {
-  from { width: 0; }
-  to { width: 100%; }
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .preloader,
+  .preloader__inner,
   .preloader__eyebrow,
   .preloader__slogan,
   .preloader__subline,
   .preloader__brand,
+  .preloader__symbol,
+  .preloader__mark,
   .preloader__glow,
-  .preloader__glow::before,
   .preloader__progress span {
     animation: none !important;
-    transition: none !important;
+  }
+
+  .preloader {
+    transition: opacity 180ms ease, visibility 0s linear 180ms !important;
+    transform: none !important;
+  }
+
+  .preloader--leaving {
+    transform: none !important;
+    opacity: 0 !important;
+  }
+
+  .preloader--leaving .preloader__inner {
+    transform: none !important;
+    opacity: 0 !important;
   }
 
   .preloader__progress span {
-    width: 100%;
+    transform: scaleX(1) !important;
   }
 }
 
 @media (max-width: 640px) {
   .preloader__inner {
-    width: min(100% - 32px, 520px);
+    width: min(100% - 32px, 500px);
   }
 
   .preloader__eyebrow {
-    margin-bottom: 22px;
-    font-size: 8px;
+    margin-bottom: 18px;
+    font-size: 9px;
   }
 
   .preloader__brand {
-    gap: 9px;
-    margin-top: 34px;
-    font-size: clamp(48px, 15vw, 82px);
-  }
-
-  .preloader__glow {
-    width: 78vw;
-    filter: blur(20px);
+    gap: 10px;
+    margin-top: 28px;
+    font-size: clamp(44px, 13vw, 72px);
   }
 
   .preloader__progress {
-    right: 16px;
-    bottom: 16px;
-    left: 16px;
+    right: 18px;
+    left: 18px;
   }
 }

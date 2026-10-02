@@ -1,4 +1,4 @@
--- Careerlyst production starting schema (review before deployment)
+-- Formant production starting schema (review before deployment)
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   name text,

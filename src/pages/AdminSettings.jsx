@@ -8,7 +8,7 @@ const STAFF_ROLES = ['admin', 'expert', 'support', 'finance'];
 
 const DEFAULT_SETTINGS = {
   general: {
-    platformName: 'Careerlyst',
+    platformName: 'Formant',
     supportEmail: '',
     supportPhone: '',
     businessAddress: '',
@@ -16,7 +16,7 @@ const DEFAULT_SETTINGS = {
     timezone: 'Asia/Dhaka',
     language: 'en',
     maintenanceMode: false,
-    maintenanceMessage: 'Careerlyst is temporarily unavailable. Please check back soon.'
+    maintenanceMessage: 'Formant is temporarily unavailable. Please check back soon.'
   },
   security: {
     requireEmailVerification: true,
@@ -47,7 +47,7 @@ const DEFAULT_SETTINGS = {
   },
   email: {
     enabled: true,
-    senderName: 'Careerlyst',
+    senderName: 'Formant',
     senderEmail: '',
     replyTo: '',
     orderConfirmation: true,
@@ -359,7 +359,7 @@ export default function AdminSettings() {
           <div>
             <p className="eyebrow">ADMIN / SETTINGS</p>
             <h1>Platform settings</h1>
-            <p>Control Careerlyst's global behavior, staff access, payments, orders, notifications and security from one place.</p>
+            <p>Control Formant's global behavior, staff access, payments, orders, notifications and security from one place.</p>
           </div>
           <div className="admin-settings-header-meta">
             <span className={`admin-settings-role ${canEdit ? 'admin' : 'readonly'}`}>
@@ -458,7 +458,7 @@ export default function AdminSettings() {
 
             {section === 'orders' && (
               <section className="admin-settings-card">
-                <SettingRow title="Accept new orders" description="Global switch for accepting new Careerlyst service orders."><Toggle checked={settings.orders.acceptNewOrders} onChange={(v) => update('orders', 'acceptNewOrders', v)} disabled={!canEdit} /></SettingRow>
+                <SettingRow title="Accept new orders" description="Global switch for accepting new Formant service orders."><Toggle checked={settings.orders.acceptNewOrders} onChange={(v) => update('orders', 'acceptNewOrders', v)} disabled={!canEdit} /></SettingRow>
                 <SettingRow title="Require admin approval" description="Hold newly created orders until staff approves them."><Toggle checked={settings.orders.requireAdminApproval} onChange={(v) => update('orders', 'requireAdminApproval', v)} disabled={!canEdit} /></SettingRow>
                 <SettingRow title="Require client confirmation" description="Require client confirmation before an order is considered fully completed."><Toggle checked={settings.orders.requireClientConfirmation} onChange={(v) => update('orders', 'requireClientConfirmation', v)} disabled={!canEdit} /></SettingRow>
                 <div className="admin-settings-grid">

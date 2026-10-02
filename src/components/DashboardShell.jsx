@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   NavLink,
   Link,
-  useNavigate
+  useNavigate,
+  useLocation
 } from 'react-router-dom';
 
 import Logo from './Logo';
@@ -279,8 +280,17 @@ export default function DashboardShell({
   admin = false
 }) {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const mobileMenuButtonRef = React.useRef(null);
+  const sidebarRef = React.useRef(null);
+
+  const [unreadCounts, setUnreadCounts] = useState({
+    messages: 0,
+    notifications: 0
+  });
 
   const s = load();
 
@@ -290,6 +300,301 @@ export default function DashboardShell({
 
   const firstLetter =
     s.user?.name?.trim()?.charAt(0)?.toUpperCase() || 'U';
+
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location.pathname, location.search, location.hash]);
+
+  useEffect(() => {
+    const desktopQuery = window.matchMedia('(min-width: 901px)');
+    const closeOnDesktop = (event) => {
+      if (event.matches) setMobileNavOpen(false);
+    };
+
+    desktopQuery.addEventListener('change', closeOnDesktop);
+    return () => desktopQuery.removeEventListener('change', closeOnDesktop);
+  }, []);
+
+  useEffect(() => {
+    if (!mobileNavOpen) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const getFocusableItems = () => Array.from(
+      sidebarRef.current?.querySelectorAll(
+        'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      ) || []
+    ).filter((element) => element.getClientRects().length > 0);
+
+    const firstNavLink = sidebarRef.current?.querySelector('.sidebar-nav a[href]');
+    (firstNavLink || getFocusableItems()[0])?.focus();
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setMobileNavOpen(false);
+        mobileMenuButtonRef.current?.focus();
+        return;
+      }
+
+      if (event.key !== 'Tab') return;
+
+      const focusableItems = getFocusableItems();
+      if (!focusableItems.length) {
+        event.preventDefault();
+        return;
+      }
+
+      const firstItem = focusableItems[0];
+      const lastItem = focusableItems[focusableItems.length - 1];
+
+      if (event.shiftKey && document.activeElement === firstItem) {
+        event.preventDefault();
+        lastItem.focus();
+      } else if (!event.shiftKey && document.activeElement === lastItem) {
+        event.preventDefault();
+        firstItem.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [mobileNavOpen]);
+
+  const closeMobileNav = (restoreFocus = false) => {
+    setMobileNavOpen(false);
+    if (restoreFocus) mobileMenuButtonRef.current?.focus();
+  };
+
+  const toggleMobileNav = () => {
+    if (mobileNavOpen) {
+      closeMobileNav(true);
+    } else {
+      setMobileNavOpen(true);
+    }
+  };
+
+  useEffect(() => {
+    let mounted = true;
+    let notificationChannel = null;
+    let messageChannel = null;
+
+    async function loadUnreadCounts() {
+      if (!supabase) {
+        if (!mounted) return;
+
+        const local = load();
+
+        setUnreadCounts({
+          messages: Array.isArray(local.messages)
+            ? local.messages.filter((message) => !message.read).length
+            : 0,
+          notifications: Array.isArray(local.notifications)
+            ? local.notifications.filter(
+                (notification) => !notification.read && !notification.read_at
+              ).length
+            : 0
+        });
+
+        return;
+      }
+
+      try {
+        const {
+          data: sessionData,
+          error: sessionError
+        } = await supabase.auth.getSession();
+
+        if (sessionError) throw sessionError;
+
+        const user = sessionData?.session?.user;
+
+        if (!user) {
+          if (mounted) {
+            setUnreadCounts({
+              messages: 0,
+              notifications: 0
+            });
+          }
+          return;
+        }
+
+        // These badges are for the client sidebar.
+        if (admin) {
+          if (mounted) {
+            setUnreadCounts({
+              messages: 0,
+              notifications: 0
+            });
+          }
+          return;
+        }
+
+        const [
+          notificationResult,
+          ordersResult
+        ] = await Promise.all([
+          supabase
+            .from('notifications')
+            .select('id', {
+              count: 'exact',
+              head: true
+            })
+            .eq('user_id', user.id)
+            .is('read_at', null),
+
+          supabase
+            .from('orders')
+            .select('id')
+            .eq('user_id', user.id)
+        ]);
+
+        if (notificationResult.error) {
+          console.error(
+            'Sidebar notification count error:',
+            notificationResult.error
+          );
+        }
+
+        if (ordersResult.error) {
+          throw ordersResult.error;
+        }
+
+        const orderIds = (ordersResult.data || [])
+          .map((order) => order.id)
+          .filter(Boolean);
+
+        let messageCount = 0;
+
+        if (orderIds.length) {
+          const {
+            count,
+            error: messageError
+          } = await supabase
+            .from('messages')
+            .select('id', {
+              count: 'exact',
+              head: true
+            })
+            .in('order_id', orderIds)
+            .neq('sender_id', user.id)
+            .is('read_at', null);
+
+          if (messageError) {
+            console.error(
+              'Sidebar message count error:',
+              messageError
+            );
+          } else {
+            messageCount = count || 0;
+          }
+        }
+
+        if (!mounted) return;
+
+        setUnreadCounts({
+          messages: messageCount,
+          notifications: notificationResult.count || 0
+        });
+
+        notificationChannel = supabase
+          .channel(`sidebar-notifications-${user.id}`)
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'notifications',
+              filter: `user_id=eq.${user.id}`
+            },
+            () => {
+              loadUnreadCounts();
+            }
+          )
+          .subscribe();
+
+        messageChannel = supabase
+          .channel(`sidebar-messages-${user.id}`)
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'messages'
+            },
+            () => {
+              loadUnreadCounts();
+            }
+          )
+          .subscribe();
+      } catch (error) {
+        console.error(
+          'Sidebar unread count error:',
+          error
+        );
+      }
+    }
+
+    loadUnreadCounts();
+
+    const handleVisibilityRefresh = () => {
+      if (document.visibilityState === 'visible') {
+        loadUnreadCounts();
+      }
+    };
+
+    const handleStoreChange = () => {
+      if (!supabase) {
+        loadUnreadCounts();
+      }
+    };
+
+    window.addEventListener(
+      'careerlyst-store',
+      handleStoreChange
+    );
+
+    document.addEventListener(
+      'visibilitychange',
+      handleVisibilityRefresh
+    );
+
+    window.addEventListener(
+      'focus',
+      loadUnreadCounts
+    );
+
+    return () => {
+      mounted = false;
+
+      window.removeEventListener(
+        'careerlyst-store',
+        handleStoreChange
+      );
+
+      document.removeEventListener(
+        'visibilitychange',
+        handleVisibilityRefresh
+      );
+
+      window.removeEventListener(
+        'focus',
+        loadUnreadCounts
+      );
+
+      if (notificationChannel) {
+        supabase.removeChannel(notificationChannel);
+      }
+
+      if (messageChannel) {
+        supabase.removeChannel(messageChannel);
+      }
+    };
+  }, [admin]);
 
   const handleSignOut = async () => {
     setIsLoggingOut(true);
@@ -314,7 +619,25 @@ export default function DashboardShell({
           SIDEBAR
       ===================================================== */}
 
-      <aside className="dashboard-sidebar">
+      <aside
+        ref={sidebarRef}
+        id="dashboard-sidebar-navigation"
+        className={`dashboard-sidebar ${mobileNavOpen ? 'is-open' : ''}`}
+        role={mobileNavOpen ? 'dialog' : undefined}
+        aria-modal={mobileNavOpen ? 'true' : undefined}
+        aria-label={admin ? 'Admin navigation drawer' : 'Client navigation drawer'}
+      >
+
+        <button
+          type="button"
+          className="sidebar-close-button"
+          onClick={() => closeMobileNav(true)}
+          aria-label="Close navigation menu"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m6 6 12 12M18 6 6 18" />
+          </svg>
+        </button>
 
         <div className="sidebar-brand">
           <Logo />
@@ -324,7 +647,10 @@ export default function DashboardShell({
           {admin ? 'CONTROL PANEL' : 'CLIENT AREA'}
         </div>
 
-        <nav className="sidebar-nav">
+        <nav
+          className="sidebar-nav"
+          aria-label={admin ? 'Admin navigation' : 'Client dashboard navigation'}
+        >
 
           {items.map((item) => (
             <NavLink
@@ -337,6 +663,7 @@ export default function DashboardShell({
               className={({ isActive }) =>
                 `sidebar-link ${isActive ? 'active' : ''}`
               }
+              onClick={() => closeMobileNav(true)}
             >
               <span className="sidebar-icon">
                 <Icon name={item.icon} />
@@ -345,6 +672,64 @@ export default function DashboardShell({
               <span className="sidebar-link-label">
                 {item.label}
               </span>
+
+              {!admin && item.label === 'Messages' && unreadCounts.messages > 0 && (
+                <span
+                  className="sidebar-unread-badge"
+                  aria-label={`${unreadCounts.messages} unread messages`}
+                  style={{
+                    marginLeft: 'auto',
+                    minWidth: '18px',
+                    height: '18px',
+                    padding: '0 5px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxSizing: 'border-box',
+                    borderRadius: '999px',
+                    background: 'var(--lime)',
+                    color: 'var(--ink)',
+                    fontSize: '9px',
+                    lineHeight: 1,
+                    fontWeight: 800,
+                    letterSpacing: '-0.01em',
+                    flex: '0 0 auto'
+                  }}
+                >
+                  {unreadCounts.messages > 99
+                    ? '99+'
+                    : unreadCounts.messages}
+                </span>
+              )}
+
+              {!admin && item.label === 'Notifications' && unreadCounts.notifications > 0 && (
+                <span
+                  className="sidebar-unread-badge"
+                  aria-label={`${unreadCounts.notifications} unread notifications`}
+                  style={{
+                    marginLeft: 'auto',
+                    minWidth: '18px',
+                    height: '18px',
+                    padding: '0 5px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxSizing: 'border-box',
+                    borderRadius: '999px',
+                    background: 'var(--lime)',
+                    color: 'var(--ink)',
+                    fontSize: '9px',
+                    lineHeight: 1,
+                    fontWeight: 800,
+                    letterSpacing: '-0.01em',
+                    flex: '0 0 auto'
+                  }}
+                >
+                  {unreadCounts.notifications > 99
+                    ? '99+'
+                    : unreadCounts.notifications}
+                </span>
+              )}
             </NavLink>
           ))}
 
@@ -371,7 +756,7 @@ export default function DashboardShell({
               <span>
                 {admin
                   ? 'Administrator'
-                  : s.user?.email || 'Careerlyst member'}
+                  : s.user?.email || 'Formant member'}
               </span>
 
             </div>
@@ -415,6 +800,15 @@ export default function DashboardShell({
 
       </aside>
 
+      {mobileNavOpen && (
+        <button
+          type="button"
+          className="sidebar-backdrop"
+          aria-label="Close navigation menu"
+          onClick={() => closeMobileNav(true)}
+        />
+      )}
+
       {/* =====================================================
           MAIN
       ===================================================== */}
@@ -423,6 +817,21 @@ export default function DashboardShell({
 
         <div className="mobile-top">
           <Logo />
+          <button
+            ref={mobileMenuButtonRef}
+            type="button"
+            className={`mobile-menu-trigger ${mobileNavOpen ? 'is-open' : ''}`}
+            aria-label={mobileNavOpen ? 'Close navigation menu' : 'Open navigation menu'}
+            aria-expanded={mobileNavOpen}
+            aria-controls="dashboard-sidebar-navigation"
+            onClick={toggleMobileNav}
+          >
+            <span className="mobile-menu-icon" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </span>
+          </button>
         </div>
 
         {children}

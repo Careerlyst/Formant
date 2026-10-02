@@ -47,7 +47,7 @@ export default function ResendLink({ email }) {
             disabled={isLoading}
             style={{
               padding: '4px 12px',
-              borderRadius: '2px', // Careerlyst app shell button radius[cite: 3]
+              borderRadius: '2px', // Formant app shell button radius[cite: 3]
               border: '1px solid var(--line, #deded5)', // Thin border[cite: 3]
               background: 'var(--paper, #fff)',
               color: 'var(--ink, #11120f)',

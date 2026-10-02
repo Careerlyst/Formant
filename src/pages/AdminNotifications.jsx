@@ -155,6 +155,7 @@ export default function AdminNotifications() {
 
   const [loading, setLoading] = useState(true);
   const [usersLoading, setUsersLoading] = useState(true);
+  const [usersError, setUsersError] = useState('');
 
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -178,6 +179,33 @@ export default function AdminNotifications() {
     body: '',
     link: ''
   });
+
+  const [selectedUserIds, setSelectedUserIds] = useState([]);
+  const [userSearchTerm, setUserSearchTerm] = useState('');
+  const [sendInApp, setSendInApp] = useState(true);
+  const [sendPush, setSendPush] = useState(true);
+  const [deliveryReport, setDeliveryReport] = useState(null);
+
+  const filteredUsers = useMemo(() => {
+    if (!userSearchTerm.trim()) return users;
+    const term = userSearchTerm.toLowerCase();
+    return users.filter((u) => (u.name || u.id).toLowerCase().includes(term));
+  }, [users, userSearchTerm]);
+
+  const toggleUserSelection = (id) => {
+    setSelectedUserIds((current) =>
+      current.includes(id) ? current.filter((uid) => uid !== id) : [...current, id]
+    );
+  };
+
+  const selectAllFilteredUsers = () => {
+    const idsToAdd = filteredUsers.map((u) => u.id);
+    setSelectedUserIds((current) => Array.from(new Set([...current, ...idsToAdd])));
+  };
+
+  const clearSelectedUsers = () => {
+    setSelectedUserIds([]);
+  };
 
 
   const loadNotifications = useCallback(async () => {
@@ -208,23 +236,78 @@ export default function AdminNotifications() {
 
   const loadUsers = useCallback(async () => {
     setUsersLoading(true);
+    setUsersError('');
 
-    const {
-      data,
-      error: queryError
-    } = await supabase
-      .from('profiles')
-      .select('id,name')
-      .order('name', {
-        ascending: true
-      })
-      .limit(1000);
+    try {
+      // 1. Paginate user_roles where role = 'client' to avoid exceeding limits and exclude staff
+      const PAGE_SIZE = 1000;
+      let from = 0;
+      const clientRoleRows = [];
 
-    if (!queryError) {
-      setUsers(data || []);
+      while (true) {
+        const { data, error: rolesError } = await supabase
+          .from('user_roles')
+          .select('user_id, role')
+          .eq('role', 'client')
+          .range(from, from + PAGE_SIZE - 1);
+
+        if (rolesError) {
+          throw rolesError;
+        }
+
+        if (!data || data.length === 0) break;
+        clientRoleRows.push(...data);
+        if (data.length < PAGE_SIZE) break;
+        from += PAGE_SIZE;
+      }
+
+      const clientIds = clientRoleRows.map((r) => r.user_id).filter(Boolean);
+
+      if (clientIds.length === 0) {
+        setUsers([]);
+        setUsersLoading(false);
+        return;
+      }
+
+      // 2. Fetch profiles for resolved client IDs in chunks of 200 to prevent HTTP 414 URI length errors
+      const CHUNK_SIZE = 200;
+      const profilesMap = new Map();
+
+      for (let i = 0; i < clientIds.length; i += CHUNK_SIZE) {
+        const chunk = clientIds.slice(i, i + CHUNK_SIZE);
+        const { data: profs, error: profilesError } = await supabase
+          .from('profiles')
+          .select('id, name')
+          .in('id', chunk);
+
+        if (profilesError) {
+          throw profilesError;
+        }
+
+        if (profs) {
+          for (const p of profs) {
+            profilesMap.set(p.id, p.name || 'Unnamed Client');
+          }
+        }
+      }
+
+      // 3. Assemble and sort client list by display name
+      const clientUsers = clientIds.map((id) => ({
+        id,
+        name: profilesMap.get(id) || `Client (${id.slice(0, 8)})`
+      }));
+
+      clientUsers.sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+      );
+
+      setUsers(clientUsers);
+    } catch (err) {
+      setUsersError(err.message || 'Failed to load clients directory.');
+      setUsers([]);
+    } finally {
+      setUsersLoading(false);
     }
-
-    setUsersLoading(false);
   }, []);
 
 
@@ -551,6 +634,10 @@ export default function AdminNotifications() {
       body: '',
       link: ''
     });
+    setSelectedUserIds([]);
+    setUserSearchTerm('');
+    setSendInApp(true);
+    setSendPush(true);
   };
 
 
@@ -562,95 +649,147 @@ export default function AdminNotifications() {
       return;
     }
 
-    if (
-      form.recipientMode === 'user' &&
-      !form.userId
-    ) {
-      setError('Please select a recipient.');
+    if (!sendInApp && !sendPush) {
+      setError('Please select at least one delivery channel (In-App or Browser Push).');
       return;
+    }
+
+    let targetRecipients = [];
+    if (form.recipientMode === 'user') {
+      if (!form.userId) {
+        setError('Please select a recipient.');
+        return;
+      }
+      targetRecipients = [form.userId];
+    } else if (form.recipientMode === 'selected') {
+      if (!selectedUserIds.length) {
+        setError('Please select at least one client.');
+        return;
+      }
+      targetRecipients = selectedUserIds;
+    } else if (form.recipientMode === 'all') {
+      targetRecipients = users.map((item) => item.id);
+      if (!targetRecipients.length) {
+        setError('No clients are available in the directory.');
+        return;
+      }
     }
 
     setSending(true);
     setError('');
 
     const {
-      data: {
-        user
-      }
+      data: { user }
     } = await supabase.auth.getUser();
 
-    if (
-      form.recipientMode === 'all'
-    ) {
-      const recipients =
-        users.map((item) => item.id);
+    let inAppCreatedCount = 0;
+    let inAppErrorMsg = null;
 
-      if (!recipients.length) {
-        setError(
-          'No users are available.'
-        );
-        setSending(false);
-        return;
+    // 1. In-App persistence (chunked in batches of 500 to avoid PostgREST payload limits)
+    if (sendInApp) {
+      const IN_APP_BATCH_SIZE = 500;
+      const allRows = targetRecipients.map((recipientId) => ({
+        user_id: recipientId,
+        recipient_id: recipientId,
+        type: form.type,
+        priority: form.priority,
+        title: form.title.trim(),
+        body: form.body.trim() || null,
+        action_url: form.link.trim() || null,
+        link: form.link.trim() || null,
+        created_by: user?.id || null
+      }));
+
+      for (let i = 0; i < allRows.length; i += IN_APP_BATCH_SIZE) {
+        const batch = allRows.slice(i, i + IN_APP_BATCH_SIZE);
+        const { error: insertError } = await supabase
+          .from('notifications')
+          .insert(batch);
+
+        if (insertError) {
+          inAppErrorMsg = insertError.message;
+          break;
+        } else {
+          inAppCreatedCount += batch.length;
+        }
       }
+    }
 
-      const rows = recipients.map(
-        (recipientId) => ({
-          recipient_id: recipientId,
-          type: form.type,
-          priority: form.priority,
-          title: form.title.trim(),
-          body: form.body.trim() || null,
-          action_url:
-            form.link.trim() || null,
-          created_by: user?.id || null
-        })
-      );
+    // 2. Browser Push via Edge Function
+    let pushResult = null;
+    let pushErrorMsg = null;
 
-      const {
-        error: insertError
-      } = await supabase
-        .from('notifications')
-        .insert(rows);
-
-      if (insertError) {
-        setError(insertError.message);
-      } else {
-        setSuccessMessage(
-          `Notification sent to ${rows.length} users.`
+    if (sendPush) {
+      try {
+        const { data: pushData, error: pushInvokeError } = await supabase.functions.invoke(
+          'send-push-notification',
+          {
+            body: {
+              title: form.title.trim(),
+              body: form.body.trim(),
+              action_url: form.link.trim() || '/dashboard',
+              recipientMode: form.recipientMode,
+              recipients: form.recipientMode === 'all' ? [] : targetRecipients,
+              priority: form.priority
+            }
+          }
         );
 
-        resetForm();
-        setComposeOpen(false);
-      }
-    } else {
-      const {
-        error: insertError
-      } = await supabase
-        .from('notifications')
-        .insert({
-          recipient_id: form.userId,
-          type: form.type,
-          priority: form.priority,
-          title: form.title.trim(),
-          body: form.body.trim() || null,
-          action_url:
-            form.link.trim() || null,
-          created_by: user?.id || null
-        });
-
-      if (insertError) {
-        setError(insertError.message);
-      } else {
-        setSuccessMessage(
-          'Notification sent successfully.'
-        );
-
-        resetForm();
-        setComposeOpen(false);
+        if (pushInvokeError) {
+          pushErrorMsg = pushInvokeError.message;
+        } else if (pushData?.error) {
+          pushErrorMsg = pushData.error;
+        } else {
+          pushResult = pushData;
+        }
+      } catch (pErr) {
+        pushErrorMsg = pErr.message || 'Push delivery failed.';
       }
     }
 
     setSending(false);
+
+    if (inAppErrorMsg && !pushResult) {
+      setError(`Failed to create notifications: ${inAppErrorMsg}`);
+      return;
+    }
+
+    // 3. Assemble and show delivery report
+    const report = {
+      recipientsSelected: pushResult?.recipientsTargeted ?? targetRecipients.length,
+      inAppCreated: inAppCreatedCount,
+      subscriptionsFound: pushResult?.subscriptionsFound ?? 0,
+      pushAttempted: pushResult?.pushAttempted ?? 0,
+      pushAccepted: pushResult?.pushAccepted ?? 0,
+      pushFailed: pushResult?.pushFailed ?? 0,
+      invalidatedCount: pushResult?.invalidatedCount ?? 0,
+      pushError: pushErrorMsg,
+      inAppError: inAppErrorMsg,
+      timestamp: new Date().toLocaleTimeString()
+    };
+
+    setDeliveryReport(report);
+
+    let summaryText = '';
+    if (sendInApp && inAppCreatedCount > 0) {
+      summaryText += `${inAppCreatedCount} in-app notification${inAppCreatedCount > 1 ? 's' : ''} created. `;
+    }
+    if (sendPush) {
+      if (pushResult && pushResult.pushAccepted > 0) {
+        summaryText += `${pushResult.pushAccepted} push notification${pushResult.pushAccepted > 1 ? 's' : ''} accepted by push services.`;
+      } else if (pushResult && pushResult.subscriptionsFound === 0) {
+        summaryText += 'No active browser push subscriptions registered for selected client(s).';
+      } else if (pushErrorMsg) {
+        summaryText += `(Push note: ${pushErrorMsg})`;
+      }
+    }
+    if (inAppErrorMsg) {
+      summaryText += ` (In-app notice: ${inAppErrorMsg})`;
+    }
+
+    setSuccessMessage(summaryText.trim() || 'Notification dispatched.');
+    resetForm();
+    setComposeOpen(false);
   };
 
 
@@ -710,6 +849,76 @@ export default function AdminNotifications() {
           </div>
         )}
 
+        {deliveryReport && (
+          <section className="admin-notifications-report-card">
+            <div className="admin-notifications-report-head">
+              <div>
+                <span className="admin-notifications-report-kicker">DISPATCH METRICS</span>
+                <h3 className="admin-notifications-report-title">Push & In-App Delivery Summary</h3>
+                <p className="admin-notifications-report-time">Recorded at {deliveryReport.timestamp}</p>
+              </div>
+              <button
+                type="button"
+                className="admin-notifications-btn"
+                onClick={() => setDeliveryReport(null)}
+              >
+                Dismiss
+              </button>
+            </div>
+
+            <div className="admin-notifications-report-grid">
+              <div className="admin-notifications-report-stat">
+                <span className="report-stat-num">{deliveryReport.recipientsSelected}</span>
+                <span className="report-stat-label">Clients Targeted</span>
+              </div>
+              <div className="admin-notifications-report-stat">
+                <span className="report-stat-num">{deliveryReport.inAppCreated}</span>
+                <span className="report-stat-label">In-App Created</span>
+              </div>
+              <div className="admin-notifications-report-stat">
+                <span className="report-stat-num">{deliveryReport.subscriptionsFound}</span>
+                <span className="report-stat-label">Active Subscriptions</span>
+              </div>
+              <div className="admin-notifications-report-stat">
+                <span className="report-stat-num">{deliveryReport.pushAttempted}</span>
+                <span className="report-stat-label">Push Attempted</span>
+              </div>
+              <div className="admin-notifications-report-stat report-success">
+                <span className="report-stat-num">{deliveryReport.pushAccepted}</span>
+                <span className="report-stat-label">Push Accepted</span>
+              </div>
+              {deliveryReport.pushFailed > 0 && (
+                <div className="admin-notifications-report-stat report-warning">
+                  <span className="report-stat-num">{deliveryReport.pushFailed}</span>
+                  <span className="report-stat-label">Push Failed</span>
+                </div>
+              )}
+              {deliveryReport.invalidatedCount > 0 && (
+                <div className="admin-notifications-report-stat report-warning">
+                  <span className="report-stat-num">{deliveryReport.invalidatedCount}</span>
+                  <span className="report-stat-label">Expired Pruned</span>
+                </div>
+              )}
+            </div>
+
+            <p className="admin-notifications-report-disclaimer">
+              * Push notifications accepted by browser push services. Actual device delivery depends on client connectivity, browser state, and OS notification settings.
+            </p>
+
+            {deliveryReport.pushError && (
+              <div className="admin-notifications-report-error">
+                <strong>Browser Push Note:</strong> {deliveryReport.pushError}
+              </div>
+            )}
+
+            {deliveryReport.inAppError && (
+              <div className="admin-notifications-report-error">
+                <strong>In-App Notification Note:</strong> {deliveryReport.inAppError}
+              </div>
+            )}
+          </section>
+        )}
+
 
         <section className="admin-notifications-stats">
 
@@ -752,8 +961,7 @@ export default function AdminNotifications() {
                 <h2>Send notification</h2>
 
                 <p>
-                  Send an in-app notification to one
-                  user or everyone.
+                  Send in-app and browser push notifications to a specific client, selected clients, or everyone.
                 </p>
               </div>
 
@@ -769,6 +977,28 @@ export default function AdminNotifications() {
               </button>
             </div>
 
+            {usersError && (
+              <div
+                className="admin-notifications-notice error"
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: '1.25rem'
+                }}
+              >
+                <span>{usersError}</span>
+                <button
+                  type="button"
+                  className="admin-notifications-btn-mini"
+                  onClick={loadUsers}
+                  disabled={usersLoading}
+                >
+                  {usersLoading ? 'Retrying...' : 'Retry loading clients'}
+                </button>
+              </div>
+            )}
+
 
             <form
               className="admin-notification-form"
@@ -779,57 +1009,42 @@ export default function AdminNotifications() {
 
                 <label>
                   Recipient
-
                   <select
                     value={form.recipientMode}
                     onChange={(event) =>
                       setForm((current) => ({
                         ...current,
-                        recipientMode:
-                          event.target.value,
+                        recipientMode: event.target.value,
                         userId: ''
                       }))
                     }
                   >
-                    <option value="user">
-                      Specific user
-                    </option>
-
-                    <option value="all">
-                      All users
-                    </option>
+                    <option value="user">Specific client</option>
+                    <option value="selected">Multiple selected clients</option>
+                    <option value="all">All eligible clients ({users.length})</option>
                   </select>
                 </label>
 
 
                 {form.recipientMode === 'user' && (
                   <label>
-                    User
-
+                    Client
                     <select
                       value={form.userId}
                       onChange={(event) =>
                         setForm((current) => ({
                           ...current,
-                          userId:
-                            event.target.value
+                          userId: event.target.value
                         }))
                       }
                       disabled={usersLoading}
                     >
                       <option value="">
-                        {usersLoading
-                          ? 'Loading users...'
-                          : 'Select user'}
+                        {usersLoading ? 'Loading clients...' : 'Select client'}
                       </option>
-
                       {users.map((user) => (
-                        <option
-                          key={user.id}
-                          value={user.id}
-                        >
-                          {user.name ||
-                            user.id}
+                        <option key={user.id} value={user.id}>
+                          {user.name || user.id}
                         </option>
                       ))}
                     </select>
@@ -839,26 +1054,73 @@ export default function AdminNotifications() {
               </div>
 
 
+              {form.recipientMode === 'selected' && (
+                <div className="admin-notification-multiselect">
+                  <div className="admin-notification-multiselect-head">
+                    <input
+                      type="search"
+                      className="admin-notification-multiselect-search"
+                      placeholder="Filter clients by name..."
+                      value={userSearchTerm}
+                      onChange={(e) => setUserSearchTerm(e.target.value)}
+                    />
+                    <div className="admin-notification-multiselect-actions">
+                      <button
+                        type="button"
+                        className="admin-notifications-btn-mini"
+                        onClick={selectAllFilteredUsers}
+                      >
+                        Select all
+                      </button>
+                      <button
+                        type="button"
+                        className="admin-notifications-btn-mini"
+                        onClick={clearSelectedUsers}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                  <div className="admin-notification-multiselect-summary">
+                    {selectedUserIds.length} of {users.length} clients selected
+                  </div>
+                  <div className="admin-notification-multiselect-list">
+                    {filteredUsers.length === 0 ? (
+                      <div className="admin-notification-multiselect-empty">
+                        No clients match "{userSearchTerm}"
+                      </div>
+                    ) : (
+                      filteredUsers.map((u) => (
+                        <label key={u.id} className="admin-notification-multiselect-item">
+                          <input
+                            type="checkbox"
+                            checked={selectedUserIds.includes(u.id)}
+                            onChange={() => toggleUserSelection(u.id)}
+                          />
+                          <span>{u.name || u.id}</span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+
+
               <div className="admin-notification-form-row">
 
                 <label>
                   Type
-
                   <select
                     value={form.type}
                     onChange={(event) =>
                       setForm((current) => ({
                         ...current,
-                        type:
-                          event.target.value
+                        type: event.target.value
                       }))
                     }
                   >
                     {SEND_TYPES.map((item) => (
-                      <option
-                        key={item.value}
-                        value={item.value}
-                      >
+                      <option key={item.value} value={item.value}>
                         {item.label}
                       </option>
                     ))}
@@ -868,93 +1130,134 @@ export default function AdminNotifications() {
 
                 <label>
                   Priority
-
                   <select
                     value={form.priority}
                     onChange={(event) =>
                       setForm((current) => ({
                         ...current,
-                        priority:
-                          event.target.value
+                        priority: event.target.value
                       }))
                     }
                   >
-                    <option value="normal">
-                      Normal
-                    </option>
-
-                    <option value="important">
-                      Important
-                    </option>
-
-                    <option value="urgent">
-                      Urgent
-                    </option>
+                    <option value="normal">Normal</option>
+                    <option value="important">Important</option>
+                    <option value="urgent">Urgent</option>
                   </select>
                 </label>
 
               </div>
 
 
+              <div className="admin-notification-channels-group">
+                <span className="admin-notification-channels-title">Delivery Channels</span>
+                <div className="admin-notification-channels-row">
+                  <label className="admin-notification-channel-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={sendInApp}
+                      onChange={(e) => setSendInApp(e.target.checked)}
+                    />
+                    <span><strong>In-App Notification</strong> (Database & dashboard bell)</span>
+                  </label>
+                  <label className="admin-notification-channel-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={sendPush}
+                      onChange={(e) => setSendPush(e.target.checked)}
+                    />
+                    <span><strong>Browser Push Notification</strong> (Web Push via VAPID)</span>
+                  </label>
+                </div>
+              </div>
+
+
               <label>
                 Title
-
                 <input
                   type="text"
                   value={form.title}
                   onChange={(event) =>
                     setForm((current) => ({
                       ...current,
-                      title:
-                        event.target.value
+                      title: event.target.value
                     }))
                   }
                   placeholder="Notification title"
                   maxLength={140}
                 />
+                <small className="admin-notification-char-count">
+                  {form.title.length} / 140 characters
+                </small>
               </label>
 
 
               <label>
                 Message
-
                 <textarea
                   value={form.body}
                   onChange={(event) =>
                     setForm((current) => ({
                       ...current,
-                      body:
-                        event.target.value
+                      body: event.target.value
                     }))
                   }
                   placeholder="Write the notification message..."
-                  rows={4}
+                  rows={3}
                   maxLength={1000}
                 />
+                <small className="admin-notification-char-count">
+                  {form.body.length} / 1000 characters
+                </small>
               </label>
 
 
               <label>
                 Action link
-
                 <input
                   type="text"
                   value={form.link}
                   onChange={(event) =>
                     setForm((current) => ({
                       ...current,
-                      link:
-                        event.target.value
+                      link: event.target.value
                     }))
                   }
-                  placeholder="/admin/orders/123"
+                  placeholder="/dashboard/orders"
                 />
-
-                <small>
-                  Optional. Example:
-                  /admin/orders/123
-                </small>
+                <small>Optional relative destination. Example: /dashboard/orders</small>
               </label>
+
+
+              {/* Live Preview Card */}
+              <div className="admin-notification-preview-section">
+                <span className="admin-notification-preview-label">Live Preview</span>
+                <div className="admin-notification-preview-card">
+                  <div className="admin-notification-preview-card-head">
+                    <img
+                      src="/assets/formant-symbol-192.png"
+                      alt="Formant"
+                      className="admin-notification-preview-app-icon"
+                    />
+                    <div className="admin-notification-preview-app-info">
+                      <span className="admin-notification-preview-app-title">FORMANT</span>
+                      <span className="admin-notification-preview-dot">•</span>
+                      <span className="admin-notification-preview-app-sub">Just now</span>
+                    </div>
+                    <span className={`admin-notification-priority ${form.priority}`}>
+                      {form.priority}
+                    </span>
+                  </div>
+                  <div className="admin-notification-preview-card-body">
+                    <strong>{form.title.trim() || 'Notification title preview'}</strong>
+                    <p>{form.body.trim() || 'Notification message will appear here for the recipient.'}</p>
+                    {form.link && (
+                      <div className="admin-notification-preview-card-link">
+                        Destination: <span>{form.link}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
 
 
               <div className="admin-notification-form-footer">
@@ -976,7 +1279,7 @@ export default function AdminNotifications() {
                   disabled={sending}
                 >
                   {sending
-                    ? 'Sending...'
+                    ? 'Dispatching...'
                     : 'Send notification'}
                 </button>
 

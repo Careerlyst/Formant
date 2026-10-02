@@ -1,4 +1,4 @@
-    // Careerlyst — shared profile completion logic
+    // Formant — shared profile completion logic
 // Keep this list as the single source of truth for profile completion.
 
 export const PROFILE_COMPLETION_FIELDS = [

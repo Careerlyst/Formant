@@ -70,7 +70,7 @@ function BriefPanel({ order, brief, clientName, clientEmail, onClose }) {
         <header className="team-drawer-head">
           <div>
             <p className="eyebrow">ORDER #{order.id}</p>
-            <h2>{order.service_name || 'Careerlyst service'}</h2>
+            <h2>{order.service_name || 'Formant service'}</h2>
             <p>{order.package_name || 'Package'} · {clientName}</p>
           </div>
           <button type="button" className="team-close" onClick={onClose} aria-label="Close">×</button>
@@ -165,7 +165,7 @@ function EditDrawer({ order, brief, clientName, role, saving, onClose, onSave })
     <div className="team-drawer-overlay" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <aside className="team-drawer team-edit-drawer" aria-label="Edit order">
         <header className="team-drawer-head">
-          <div><p className="eyebrow">MANAGE ORDER #{order.id}</p><h2>{clientName}</h2><p>{order.service_name || 'Careerlyst service'} · {order.package_name || 'Package'}</p></div>
+          <div><p className="eyebrow">MANAGE ORDER #{order.id}</p><h2>{clientName}</h2><p>{order.service_name || 'Formant service'} · {order.package_name || 'Package'}</p></div>
           <button type="button" className="team-close" onClick={onClose} aria-label="Close">×</button>
         </header>
         <form className="team-drawer-body team-edit-form" onSubmit={(e) => { e.preventDefault(); onSave({ status, queue_position: queue === '' ? null : Math.max(1, Number(queue)), client_notes: notes }); }}>
@@ -222,7 +222,7 @@ function TeamConversationDrawer({
             <p className="eyebrow">CONVERSATION · ORDER #{order.id}</p>
             <h2>{clientName}</h2>
             <p>
-              {order.service_name || 'Careerlyst service'}
+              {order.service_name || 'Formant service'}
               {order.package_name ? ` · ${order.package_name}` : ''}
             </p>
           </div>
@@ -255,7 +255,7 @@ function TeamConversationDrawer({
 
           <div className="team-chat-messages" ref={bodyRef}>
             <div className="team-chat-system-note">
-              This thread is shared with the client in their Careerlyst dashboard.
+              This thread is shared with the client in their Formant dashboard.
             </div>
 
             {loading ? (
@@ -278,7 +278,7 @@ function TeamConversationDrawer({
                     <div className="team-chat-bubble">
                       <p>{message.body}</p>
                       <small>
-                        {isTeam ? 'Careerlyst Team' : clientName}
+                        {isTeam ? 'Formant Team' : clientName}
                         {' · '}
                         {formatDate(message.created_at, true)}
                       </small>
@@ -765,7 +765,7 @@ export default function AdminProjects() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `careerlyst-orders-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `formant-orders-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     showToast('Order CSV exported.');
@@ -853,7 +853,7 @@ export default function AdminProjects() {
                           <span>#{order.id}</span>
                           {attention && <span className="team-project-attention">Attention</span>}
                         </div>
-                        <h3>{order.service_name || 'Careerlyst service'}</h3>
+                        <h3>{order.service_name || 'Formant service'}</h3>
                         <p className="team-project-client">{client}</p>
                         {profile.email && <p className="team-project-email">{profile.email}</p>}
                         <div className="team-project-meta">
@@ -892,7 +892,7 @@ export default function AdminProjects() {
                   <article className={`team-order-card ${isAttentionOrder(order) ? 'is-attention-row' : ''}`} key={order.id}>
                     <div className="team-order-main">
                       <div className="team-order-kicker"><span>PROJECT #{order.id}</span><span>{formatDate(order.updated_at || order.created_at)}</span></div>
-                      <h3>{order.service_name || 'Careerlyst service'}{order.package_name ? ` · ${order.package_name}` : ''}</h3>
+                      <h3>{order.service_name || 'Formant service'}{order.package_name ? ` · ${order.package_name}` : ''}</h3>
                       <p>{client}{profile.email ? ` · ${profile.email}` : ''} · {money(order)}</p>
                       <div className="team-order-tags"><StatusPill status={order.status} /><span className={String(order.payment_status || '').toLowerCase() === 'paid' ? 'brief-ready' : ''}>{order.payment_status || 'Payment pending'}</span>{order.queue_position != null && <span>Queue #{order.queue_position}</span>}<span className={brief ? 'brief-ready' : 'brief-missing'}>{brief ? 'Brief ready' : 'Brief needed'}</span></div>
                     </div>

@@ -56,7 +56,7 @@ function PublicHome({ user = null }) {
 
             <div className="hero-copy">
               <p className="eyebrow">
-                {user ? 'YOUR CAREERLYST. YOUR NEXT MOVE.' : 'A STRONGER YOU. A BRIGHTER TOMORROW.'}
+                {user ? 'YOUR FORMANT. YOUR NEXT MOVE.' : 'A STRONGER YOU. A BRIGHTER TOMORROW.'}
               </p>
 
               <h1>
@@ -103,7 +103,7 @@ function PublicHome({ user = null }) {
             <div className="hero-art">
               <img
                 src={heroIllustration}
-                alt="Careerlyst career preparation illustration"
+                alt="Formant career preparation illustration"
               />
             </div>
 
@@ -115,6 +115,7 @@ function PublicHome({ user = null }) {
             HOW IT WORKS
         ========================== */}
         <section className="process-section" id="process">
+          <div id="how-it-works" style={{ position: 'relative', top: '-80px', visibility: 'hidden' }} />
 
           <div className="process-intro">
 
@@ -205,7 +206,7 @@ function PublicHome({ user = null }) {
 
                 <p>
                   Give feedback, request revisions and receive the finished
-                  work through your Careerlyst account.
+                  work through your Formant account.
                 </p>
               </div>
 
@@ -449,7 +450,7 @@ function PublicHome({ user = null }) {
           <section className="client-home-context">
             <div className="client-home-context-inner">
               <div className="client-home-context-heading">
-                <span>YOUR CAREERLYST</span>
+                <span>YOUR FORMANT</span>
                 <h2>
                   Your career,
                   <br />
@@ -491,7 +492,7 @@ function PublicHome({ user = null }) {
       <div className="profile-statement-side">
 
         <p>
-          Careerlyst is intentionally small. We limit active
+          Formant is intentionally small. We limit active
           projects so every client gets focused attention.
         </p>
 
@@ -638,7 +639,7 @@ export default function Home() {
   if (checkingSession) {
     return (
       <div className="home-auth-loading">
-        <span>Loading Careerlyst…</span>
+        <span>Loading Formant…</span>
       </div>
     );
   }

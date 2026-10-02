@@ -322,7 +322,7 @@ export default function AdminLeads() {
 
           <p>
             Review the answers clients give before
-            starting their Careerlyst journey.
+            starting their Formant journey.
           </p>
         </div>
 

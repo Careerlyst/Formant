@@ -1,8 +1,14 @@
-  import React, { useEffect, useRef, useState } from 'react';
+  import React, { useEffect, useMemo, useRef, useState } from 'react';
   import { Link } from 'react-router-dom';
   import DashboardShell from '../components/DashboardShell';
   import { load, patch } from '../lib/store';
   import { supabase } from '../lib/supabase';
+  import {
+    getProfileCompletion,
+    getMissingProfileFields,
+    PROFILE_COMPLETION_FIELDS
+  } from '../lib/profileCompletion';
+  import './my-profile.css';
   import {
     applyTheme,
     getStoredThemePreference,
@@ -11,6 +17,12 @@
     saveThemePreference,
     watchSystemTheme
   } from '../lib/theme';
+  import {
+    getPushStatus,
+    subscribeUserToPush,
+    unsubscribeUserFromPush,
+    isPushSupported
+  } from '../lib/pushNotifications';
 
   /* =========================================================
     SHARED
@@ -18,29 +30,47 @@
 
   const TARGET_ROLE_GROUPS = [
     {
-      title: 'DEVELOPMENT',
+      title: 'ENGINEERING & ARCHITECTURE',
       roles: [
         'Frontend Developer',
         'Backend Developer',
         'Full-Stack Developer',
         'Software Engineer',
-        'Mobile App Developer'
+        'Mobile App Developer',
+        'DevOps & Cloud Engineer',
+        'Solutions Architect',
+        'Engineering Manager'
       ]
     },
     {
-      title: 'DATA & AI',
+      title: 'DATA & ARTIFICIAL INTELLIGENCE',
       roles: [
         'Data Analyst',
         'Data Scientist',
         'Machine Learning Engineer',
-        'AI Engineer'
+        'AI Research Engineer',
+        'Data Engineer',
+        'Business Intelligence Analyst'
       ]
     },
     {
-      title: 'DESIGN',
+      title: 'PRODUCT & DESIGN',
       roles: [
         'UI/UX Designer',
-        'Product Designer'
+        'Product Designer',
+        'Lead Design Strategist',
+        'Product Manager',
+        'Technical Product Owner',
+        'Design Systems Engineer'
+      ]
+    },
+    {
+      title: 'OPERATIONS & MARKETING',
+      roles: [
+        'Technical Project Manager',
+        'Scrum Master / Agile Coach',
+        'Growth & Marketing Strategist',
+        'Customer Success Specialist'
       ]
     }
   ];
@@ -79,7 +109,7 @@
   }
 
   function OrderMini({ order }) {
-    const serviceName = order.service_name || 'Careerlyst service';
+    const serviceName = order.service_name || 'Formant service';
     const packageName = order.package_name || '';
     const status = order.status || 'pending';
     const displayStatus = status
@@ -106,7 +136,7 @@
               ? `You're in the queue${order.queue_position ? ` at position ${order.queue_position}` : ''}.`
               : status.toLowerCase() === 'pending'
                 ? 'Your order is confirmed and waiting for the next step.'
-                : 'Your project is currently being handled by the Careerlyst team.'}
+                : 'Your project is currently being handled by the Formant team.'}
           </p>
 
         </div>
@@ -185,26 +215,7 @@
 
     const totalFiles = s.files?.length || 0;
 
-    const profileKeys = [
-      'name',
-      'phone',
-      'target_role',
-      'experience',
-      'education',
-      'linkedin',
-      'github',
-      'portfolio',
-      'bio'
-    ];
-
-    const profileProgress = Math.round(
-      (
-        profileKeys.filter(
-          (key) => String(s.profile?.[key] || '').trim()
-        ).length /
-        profileKeys.length
-      ) * 100
-    );
+    const profileProgress = getProfileCompletion(s.profile);
 
     const activeOrdersValue = ordersLoading ? '—' : (activeOrders || '—');
     const activeOrdersDetail = ordersLoading
@@ -236,7 +247,7 @@
               </h1>
 
               <p className="overview-lede">
-                Here's where your Careerlyst work stands.
+                Here's where your Formant work stands.
               </p>
 
             </div>
@@ -520,7 +531,7 @@
                   <div className="overview-message-top">
 
                     <strong>
-                      Careerlyst Team
+                      Formant Team
                     </strong>
 
                     <span>
@@ -635,13 +646,13 @@
   ========================================================= */
 
   export function Profile() {
-
     const initial = load().profile || {};
+    const initialUser = load().user || {};
     const rolePickerRef = useRef(null);
 
-    const [form, setForm] = useState({
-      name: initial.name || '',
-      email: initial.email || '',
+    const emptyForm = {
+      name: initial.name || initialUser.name || '',
+      email: initial.email || initialUser.email || '',
       phone: initial.phone || '',
       target_role: initial.target_role || '',
       experience: initial.experience || '',
@@ -649,38 +660,33 @@
       linkedin: initial.linkedin || '',
       github: initial.github || '',
       portfolio: initial.portfolio || '',
-      bio: initial.bio || ''
-    });
+      bio: initial.bio || '',
+      location: initial.location || '',
+      skills: initial.skills || '',
+      certifications: initial.certifications || '',
+      preferences: {
+        cv_style: initial.preferences?.cv_style || 'modern_tech',
+        language: initial.preferences?.language || 'en_us',
+        tone: initial.preferences?.tone || 'authoritative',
+        career_interest: initial.preferences?.career_interest || 'full_time',
+        interview_focus: initial.preferences?.interview_focus || 'tech_system',
+        ...(initial.preferences || {})
+      }
+    };
 
+    const [form, setForm] = useState(emptyForm);
+    const [savedForm, setSavedForm] = useState(emptyForm);
     const [userId, setUserId] = useState(null);
     const [loading, setLoading] = useState(Boolean(supabase));
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
+    const [editingSection, setEditingSection] = useState(null); // 'all' | 'personal' | 'career' | 'education' | 'links' | 'preferences' | null
     const [rolePickerOpen, setRolePickerOpen] = useState(false);
     const [roleSearch, setRoleSearch] = useState('');
+    const [copiedLink, setCopiedLink] = useState(false);
 
-    const completionFields = [
-      'name',
-      'phone',
-      'target_role',
-      'experience',
-      'education',
-      'linkedin',
-      'github',
-      'portfolio',
-      'bio'
-    ];
-
-    const completion = Math.round(
-      (
-        completionFields.filter(
-          (key) => String(form[key] || '').trim()
-        ).length /
-        completionFields.length
-      ) * 100
-    );
-
+    // Initial Profile Load from Supabase or Fallback
     useEffect(() => {
       let mounted = true;
 
@@ -690,89 +696,106 @@
           return;
         }
 
-        const {
-          data: { session },
-          error: sessionError
-        } = await supabase.auth.getSession();
+        try {
+          const {
+            data: { session },
+            error: sessionError
+          } = await supabase.auth.getSession();
 
-        if (!mounted) return;
+          if (!mounted) return;
 
-        if (sessionError || !session?.user) {
-          setError(
-            'Your session could not be verified. Please sign in again.'
-          );
-          setLoading(false);
-          return;
-        }
-
-        const user = session.user;
-        setUserId(user.id);
-
-        const authName =
-          user.user_metadata?.name ||
-          user.email?.split('@')[0] ||
-          '';
-
-        const {
-          data,
-          error: profileError
-        } = await supabase
-          .from('profiles')
-          .select(`
-            id,
-            name,
-            phone,
-            target_role,
-            experience,
-            education,
-            linkedin,
-            github,
-            portfolio,
-            bio
-          `)
-          .eq('id', user.id)
-          .maybeSingle();
-
-        if (!mounted) return;
-
-        if (profileError) {
-          console.error('Profile load error:', profileError);
-          setError(
-            'We could not load your profile. Please try again.'
-          );
-          setLoading(false);
-          return;
-        }
-
-        const next = {
-          name: data?.name || authName,
-          email: user.email || '',
-          phone: data?.phone || '',
-          target_role: data?.target_role || '',
-          experience: data?.experience || '',
-          education: data?.education || '',
-          linkedin: data?.linkedin || '',
-          github: data?.github || '',
-          portfolio: data?.portfolio || '',
-          bio: data?.bio || ''
-        };
-
-        setForm(next);
-
-        patch((current) => ({
-          ...current,
-          user: {
-            ...(current.user || {}),
-            name: next.name,
-            email: next.email
-          },
-          profile: {
-            ...(current.profile || {}),
-            ...next
+          if (sessionError || !session?.user) {
+            setError('Your session could not be verified. Please sign in again.');
+            setLoading(false);
+            return;
           }
-        }));
 
-        setLoading(false);
+          const user = session.user;
+          setUserId(user.id);
+
+          const authName =
+            user.user_metadata?.name ||
+            user.email?.split('@')[0] ||
+            '';
+
+          const meta = user.user_metadata?.formant_profile_meta || {};
+
+          const {
+            data,
+            error: profileError
+          } = await supabase
+            .from('profiles')
+            .select(`
+              id,
+              name,
+              phone,
+              target_role,
+              experience,
+              education,
+              linkedin,
+              github,
+              portfolio,
+              bio
+            `)
+            .eq('id', user.id)
+            .maybeSingle();
+
+          if (!mounted) return;
+
+          if (profileError) {
+            console.error('Profile load error:', profileError);
+            setError('We could not load your profile. Please try again.');
+            setLoading(false);
+            return;
+          }
+
+          const loaded = {
+            name: data?.name || authName,
+            email: user.email || '',
+            phone: data?.phone || '',
+            target_role: data?.target_role || '',
+            experience: data?.experience || '',
+            education: data?.education || '',
+            linkedin: data?.linkedin || '',
+            github: data?.github || '',
+            portfolio: data?.portfolio || '',
+            bio: data?.bio || '',
+            location: meta.location || '',
+            skills: meta.skills || '',
+            certifications: meta.certifications || '',
+            preferences: {
+              cv_style: meta.preferences?.cv_style || 'modern_tech',
+              language: meta.preferences?.language || 'en_us',
+              tone: meta.preferences?.tone || 'authoritative',
+              career_interest: meta.preferences?.career_interest || 'full_time',
+              interview_focus: meta.preferences?.interview_focus || 'tech_system',
+              ...(meta.preferences || {})
+            }
+          };
+
+          setForm(loaded);
+          setSavedForm(loaded);
+
+          patch((current) => ({
+            ...current,
+            user: {
+              ...(current.user || {}),
+              name: loaded.name,
+              email: loaded.email
+            },
+            profile: {
+              ...(current.profile || {}),
+              ...loaded
+            }
+          }));
+        } catch (loadErr) {
+          console.error('Unexpected profile load exception:', loadErr);
+          if (mounted) {
+            setError('Failed to initialize profile. Using local offline data.');
+          }
+        } finally {
+          if (mounted) setLoading(false);
+        }
       }
 
       getProfile();
@@ -782,6 +805,7 @@
       };
     }, []);
 
+    // Outside click listener for target role picker
     useEffect(() => {
       function handleOutsideClick(event) {
         if (rolePickerRef.current && !rolePickerRef.current.contains(event.target)) {
@@ -798,6 +822,52 @@
       };
     }, [rolePickerOpen]);
 
+    // Helpers & Calculations
+    const completion = getProfileCompletion(form);
+    const missingKeys = getMissingProfileFields(form);
+
+    const FIELD_LABELS = {
+      name: 'Full name',
+      phone: 'Phone number',
+      target_role: 'Target role',
+      experience: 'Work experience',
+      education: 'Education history',
+      linkedin: 'LinkedIn profile',
+      github: 'GitHub profile',
+      portfolio: 'Portfolio link',
+      bio: 'Professional summary'
+    };
+
+    const FIELD_SUGGESTIONS = {
+      name: 'Add your full name so our career consultants can identify your records.',
+      target_role: 'Select your target role to calibrate your resume and interview preparation.',
+      phone: 'Add a contact phone number for interview and application correspondence.',
+      experience: 'Summarize your career experience or years in the field.',
+      education: 'Add your academic background or degree qualifications.',
+      linkedin: 'Link your LinkedIn profile for profile optimization and review.',
+      github: 'Add your GitHub profile URL for technical code evaluation.',
+      portfolio: 'Provide your personal website or portfolio link.',
+      bio: 'Write a brief professional summary about your background and career goals.'
+    };
+
+    const nextSuggestion = useMemo(() => {
+      if (!missingKeys.length) {
+        return 'Your core profile is 100% complete! Your Formant operations team has comprehensive context for all services.';
+      }
+      const nextField = missingKeys[0];
+      return FIELD_SUGGESTIONS[nextField] || `Add your ${FIELD_LABELS[nextField] || nextField} to strengthen your profile.`;
+    }, [missingKeys]);
+
+    const userInitials = useMemo(() => {
+      const nameStr = String(form.name || '').trim();
+      if (!nameStr) return 'CL';
+      const parts = nameStr.split(/\s+/);
+      if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }, [form.name]);
+
+    const allRolesList = ALL_TARGET_ROLES;
+
     const filteredRoleGroups = TARGET_ROLE_GROUPS
       .map((group) => ({
         ...group,
@@ -808,8 +878,27 @@
       .filter((group) => group.roles.length);
 
     const customRoleSearch = roleSearch.trim();
-    const canUseCustomRole = customRoleSearch &&
-      !ALL_TARGET_ROLES.some((role) => role.toLowerCase() === customRoleSearch.toLowerCase());
+    const canUseCustomRole =
+      customRoleSearch &&
+      !allRolesList.some((role) => role.toLowerCase() === customRoleSearch.toLowerCase());
+
+    function cleanUrl(url) {
+      if (!url) return '';
+      const trimmed = url.trim();
+      if (!trimmed) return '';
+      if (/^https?:\/\//i.test(trimmed)) return trimmed;
+      return `https://${trimmed}`;
+    }
+
+    function isValidUrl(url) {
+      if (!url || !url.trim()) return true;
+      try {
+        const parsed = new URL(cleanUrl(url));
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+      } catch {
+        return false;
+      }
+    }
 
     function updateField(key, value) {
       setForm((current) => ({
@@ -820,518 +909,1143 @@
       setError('');
     }
 
-    async function saveProfile(e) {
-      e.preventDefault();
-
-      setSaving(true);
+    function updatePreference(key, value) {
+      setForm((current) => ({
+        ...current,
+        preferences: {
+          ...current.preferences,
+          [key]: value
+        }
+      }));
       setMessage('');
       setError('');
+    }
 
-      const clean = {
-        name: form.name.trim(),
-        phone: form.phone.trim(),
-        target_role: form.target_role.trim(),
-        experience: form.experience.trim(),
-        education: form.education.trim(),
-        linkedin: form.linkedin.trim(),
-        github: form.github.trim(),
-        portfolio: form.portfolio.trim(),
-        bio: form.bio.trim()
+    function startEditing(section) {
+      setEditingSection(section);
+      setMessage('');
+      setError('');
+    }
+
+    function cancelEditing() {
+      setForm({ ...savedForm });
+      setEditingSection(null);
+      setError('');
+      setMessage('');
+    }
+
+    function copyProfileSummary() {
+      const summaryText = `Formant Profile — ${form.name || 'Client'}\nTarget Role: ${form.target_role || 'Not set'}\nLocation: ${form.location || 'Not set'}\nEmail: ${form.email}\nPhone: ${form.phone || 'Not set'}\nProfile Strength: ${completion}%\nLinkedIn: ${form.linkedin || 'Not set'}\nPortfolio: ${form.portfolio || 'Not set'}`;
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(summaryText).then(() => {
+          setCopiedLink(true);
+          setTimeout(() => setCopiedLink(false), 2500);
+        }).catch(() => {});
+      }
+    }
+
+    async function handleSave(e, section = null) {
+      if (e && e.preventDefault) e.preventDefault();
+      if (saving) return;
+
+      const cleanName = String(form.name || '').trim();
+      if (!cleanName) {
+        setError('Full name is required to maintain your professional identity.');
+        return;
+      }
+
+      if (!isValidUrl(form.linkedin)) {
+        setError('Please enter a valid LinkedIn URL (e.g. https://linkedin.com/in/yourname).');
+        return;
+      }
+
+      if (!isValidUrl(form.github)) {
+        setError('Please enter a valid GitHub URL (e.g. https://github.com/yourusername).');
+        return;
+      }
+
+      if (!isValidUrl(form.portfolio)) {
+        setError('Please enter a valid portfolio URL (e.g. https://yourportfolio.com).');
+        return;
+      }
+
+      setSaving(true);
+      setError('');
+      setMessage('');
+
+      const cleanCore = {
+        name: cleanName,
+        phone: String(form.phone || '').trim(),
+        target_role: String(form.target_role || '').trim(),
+        experience: String(form.experience || '').trim(),
+        education: String(form.education || '').trim(),
+        linkedin: cleanUrl(form.linkedin),
+        github: cleanUrl(form.github),
+        portfolio: cleanUrl(form.portfolio),
+        bio: String(form.bio || '').trim()
+      };
+
+      const cleanMeta = {
+        location: String(form.location || '').trim(),
+        skills: typeof form.skills === 'string' ? form.skills.trim() : form.skills,
+        certifications: String(form.certifications || '').trim(),
+        preferences: form.preferences || {}
       };
 
       try {
         if (supabase) {
           if (!userId) {
-            setError(
-              'Your session could not be verified. Please sign in again.'
-            );
+            setError('Your session could not be verified. Please sign in again.');
+            setSaving(false);
             return;
           }
 
-          const {
-            data,
-            error: saveError
-          } = await supabase
+          // 1. Save core fields to public.profiles table
+          const { error: profileSaveError } = await supabase
             .from('profiles')
-            .upsert(
-              {
-                id: userId,
-                ...clean
-              },
-              {
-                onConflict: 'id'
-              }
-            )
-            .select(`
-              id,
-              name,
-              phone,
-              target_role,
-              experience,
-              education,
-              linkedin,
-              github,
-              portfolio,
-              bio
-            `)
-            .single();
+            .update(cleanCore)
+            .eq('id', userId);
 
-          if (saveError) {
-            console.error('Profile save error:', saveError);
-            setError(
-              saveError.message ||
-              'We could not save your profile. Please try again.'
-            );
-            return;
+          if (profileSaveError) {
+            console.error('Profile save error:', profileSaveError);
+            throw profileSaveError;
           }
 
-          const next = {
-            ...clean,
-            email: form.email
-          };
-
-          if (data) {
-            Object.assign(next, data, {
-              email: form.email
-            });
-          }
-
-          setForm(next);
-
-          patch((current) => ({
-            ...current,
-            user: {
-              ...(current.user || {}),
-              name: next.name,
-              email: next.email
-            },
-            profile: {
-              ...(current.profile || {}),
-              ...next
+          // 2. Save extended metadata to auth user_metadata
+          const { error: metaUpdateError } = await supabase.auth.updateUser({
+            data: {
+              formant_profile_meta: cleanMeta
             }
-          }));
+          });
 
-          setMessage('Profile saved successfully.');
-          return;
+          if (metaUpdateError) {
+            console.warn('Metadata save notice:', metaUpdateError);
+          }
         }
 
-        // Demo/local mode fallback.
-        const next = {
+        // 3. Sync to local demo store
+        const nextState = {
           ...form,
-          ...clean
+          ...cleanCore,
+          ...cleanMeta
         };
 
         patch((current) => ({
           ...current,
           user: {
             ...(current.user || {}),
-            name: next.name,
-            email: next.email
+            name: cleanCore.name,
+            email: form.email
           },
           profile: {
             ...(current.profile || {}),
-            ...next
+            ...nextState
           }
         }));
 
-        setForm(next);
-        setMessage('Profile saved successfully.');
-
-      } catch (saveException) {
-        console.error('Unexpected profile save error:', saveException);
-        setError(
-          'Something went wrong while saving your profile. Please try again.'
-        );
+        setForm(nextState);
+        setSavedForm(nextState);
+        setEditingSection(null);
+        setMessage('Your profile has been saved successfully.');
+      } catch (err) {
+        console.error('Save profile error:', err);
+        setError(err.message || 'We could not save your profile changes. Please try again.');
       } finally {
         setSaving(false);
       }
     }
 
+    const skillsArray = useMemo(() => {
+      if (!form.skills) return [];
+      if (Array.isArray(form.skills)) return form.skills;
+      return String(form.skills)
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }, [form.skills]);
+
+    const serviceReadiness = useMemo(() => [
+      {
+        name: 'CV / Resume Revamp',
+        ready: Boolean(form.name && form.target_role && (form.experience || form.education)),
+        description: 'Uses target role, career timeline, and education to build an ATS-ready document.'
+      },
+      {
+        name: 'LinkedIn Optimization',
+        ready: Boolean(form.linkedin && form.bio && form.target_role),
+        description: 'Uses headline, bio, and target role to sharpen your professional story.'
+      },
+      {
+        name: 'Portfolio & GitHub',
+        ready: Boolean(form.portfolio || form.github),
+        description: 'Uses project links and code repositories as credible evidence for technical roles.'
+      },
+      {
+        name: 'Interview Preparation',
+        ready: Boolean(form.target_role && form.experience),
+        description: 'Calibrates mock questions and technical scope around your targeted seniority.'
+      }
+    ], [form]);
+
     if (loading) {
       return (
         <DashboardShell>
           <div className="profile-loading">
-            Loading your profile…
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
+              <div style={{ width: 36, height: 36, borderRadius: '50%', border: '3px solid #deded5', borderTopColor: '#11120f', animation: 'spin 0.8s linear infinite' }} />
+              <p style={{ margin: 0, fontWeight: 600, color: 'var(--ink, #11120f)' }}>Loading your professional profile…</p>
+            </div>
           </div>
         </DashboardShell>
       );
     }
 
+    const isEditing = (section) => editingSection === 'all' || editingSection === section;
+
     return (
       <DashboardShell>
+        <div className="profile-redesign-root">
 
-        <div className="dash-head profile-head">
-          <div>
-            <p className="eyebrow">
-              MY PROFILE
-            </p>
-
-            <h1>
-              Your professional profile.
-            </h1>
-
-            <p>
-              Keep these details up to date. We use them
-              to understand your goals and prepare your
-              Careerlyst work.
-            </p>
-          </div>
-        </div>
-
-        <div className="profile-layout">
-
-          <form
-            className="panel form-panel profile-form"
-            onSubmit={saveProfile}
-          >
-
-            <div className="profile-section-intro">
-              <span>01</span>
-
-              <div>
-                <h2>About you</h2>
-
-                <p>
-                  Basic information that helps us understand
-                  who you are and where you're heading.
-                </p>
-              </div>
+          {/* Feedback Banners */}
+          {error && (
+            <div className="profile-alert-banner error" role="alert">
+              <span>{error}</span>
+              <button type="button" className="profile-alert-close" onClick={() => setError('')} aria-label="Dismiss error">×</button>
             </div>
+          )}
 
-            <div className="profile-fields profile-fields-two">
+          {message && (
+            <div className="profile-alert-banner success" role="status">
+              <span>✓ {message}</span>
+              <button type="button" className="profile-alert-close" onClick={() => setMessage('')} aria-label="Dismiss message">×</button>
+            </div>
+          )}
 
-              <label>
-                Full name
+          {/* =====================================================
+              A. PROFILE IDENTITY HERO CARD
+          ===================================================== */}
+          <section className="profile-hero-card" aria-label="Profile Identity Header">
+            <div className="profile-hero-identity">
+              <div className="profile-hero-avatar-wrap">
+                <div className="profile-hero-avatar" aria-hidden="true">
+                  {userInitials}
+                </div>
+                <div className="profile-hero-status-dot" title="Active Client Profile" />
+              </div>
 
-                <input
-                  type="text"
-                  value={form.name}
-                  onChange={(e) =>
-                    updateField('name', e.target.value)
-                  }
-                  placeholder="Your full name"
-                  autoComplete="name"
-                  required
-                />
-              </label>
-
-              <label>
-                Email address
-
-                <input
-                  type="email"
-                  value={form.email}
-                  disabled
-                />
-
-                <small>
-                  Managed through your Careerlyst account.
-                </small>
-              </label>
-
-              <label>
-                Phone number
-
-                <input
-                  type="tel"
-                  value={form.phone}
-                  onChange={(e) =>
-                    updateField('phone', e.target.value)
-                  }
-                  placeholder="+880 1XXXXXXXXX"
-                  autoComplete="tel"
-                />
-              </label>
-
-              <div className="target-role-field" ref={rolePickerRef}>
-                <label htmlFor="target-role-input">Target role</label>
-
-                <div className={`target-role-control ${rolePickerOpen ? 'is-open' : ''}`}>
-                  <input
-                    id="target-role-input"
-                    type="text"
-                    value={form.target_role}
-                    onFocus={() => setRolePickerOpen(true)}
-                    onClick={() => setRolePickerOpen(true)}
-                    onChange={(e) => {
-                      updateField('target_role', e.target.value);
-                      setRoleSearch(e.target.value);
-                      setRolePickerOpen(true);
-                    }}
-                    placeholder="e.g. Frontend Developer"
-                    autoComplete="off"
-                  />
-
-                  <button
-                    type="button"
-                    className="target-role-toggle"
-                    aria-label="Choose target role"
-                    aria-expanded={rolePickerOpen}
-                    onClick={() => setRolePickerOpen((open) => !open)}
-                  >
-                    <span>⌄</span>
-                  </button>
+              <div className="profile-hero-details">
+                <div className="profile-hero-eyebrow-row">
+                  <span className="profile-hero-badge">Professional Identity</span>
+                  {completion === 100 && (
+                    <span className="profile-hero-badge" style={{ background: '#eafbe3', color: '#2d6810', borderColor: '#b1e59c' }}>
+                      ✓ 100% Complete
+                    </span>
+                  )}
+                  <span className="profile-hero-badge account-badge">Client Workspace</span>
                 </div>
 
-                {rolePickerOpen && (
-                  <div className="target-role-picker">
-                    <div className="target-role-picker-head">
-                      <div>
-                        <span className="target-role-picker-kicker">TARGET ROLE</span>
-                        <h3>Choose your target role</h3>
-                      </div>
-                      <button
-                        type="button"
-                        className="target-role-close"
-                        onClick={() => setRolePickerOpen(false)}
-                        aria-label="Close target role picker"
-                      >
-                        ×
-                      </button>
-                    </div>
+                <h1 className="profile-hero-name">
+                  {form.name || 'Your Full Name'}
+                </h1>
 
-                    <div className="target-role-search">
-                      <span>⌕</span>
-                      <input
-                        type="text"
-                        value={roleSearch}
-                        onChange={(e) => setRoleSearch(e.target.value)}
-                        placeholder="Search roles..."
-                        autoFocus
-                      />
-                    </div>
-
-                    <div className="target-role-options">
-                      {filteredRoleGroups.map((group) => (
-                        <div className="target-role-group" key={group.title}>
-                          <span className="target-role-group-title">{group.title}</span>
-
-                          <div className="target-role-group-list">
-                            {group.roles.map((role) => (
-                              <button
-                                type="button"
-                                className={`target-role-option ${form.target_role === role ? 'is-selected' : ''}`}
-                                key={role}
-                                onClick={() => {
-                                  updateField('target_role', role);
-                                  setRoleSearch('');
-                                  setRolePickerOpen(false);
-                                }}
-                              >
-                                <span>{role}</span>
-                                <span className="target-role-option-arrow">↗</span>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-
-                      {canUseCustomRole && (
-                        <button
-                          type="button"
-                          className="target-role-custom"
-                          onClick={() => {
-                            updateField('target_role', customRoleSearch);
-                            setRoleSearch('');
-                            setRolePickerOpen(false);
-                          }}
-                        >
-                          <span>+ Use “{customRoleSearch}” as a custom role</span>
-                          <span>↗</span>
-                        </button>
-                      )}
-
-                      {!filteredRoleGroups.length && !canUseCustomRole && (
-                        <div className="target-role-no-results">No matching roles found.</div>
-                      )}
-                    </div>
-
-                    <div className="target-role-picker-footer">
-                      <span>Pick a template or enter your own role.</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <label>
-                Experience
-
-                <input
-                  type="text"
-                  value={form.experience}
-                  onChange={(e) =>
-                    updateField('experience', e.target.value)
-                  }
-                  placeholder="e.g. 2 years in web development"
-                />
-              </label>
-
-              <label>
-                Education
-
-                <input
-                  type="text"
-                  value={form.education}
-                  onChange={(e) =>
-                    updateField('education', e.target.value)
-                  }
-                  placeholder="e.g. BSc in Computer Science"
-                />
-              </label>
-
-            </div>
-
-            <div className="profile-section-intro profile-section-spaced">
-              <span>02</span>
-
-              <div>
-                <h2>Professional links</h2>
-
-                <p>
-                  Add the profiles you want our team to
-                  review or use as project inputs.
+                <p className="profile-hero-role">
+                  <span>Target:</span>
+                  <strong className="profile-hero-role-pill">
+                    {form.target_role || 'Role not specified yet'}
+                  </strong>
                 </p>
+
+                <div className="profile-hero-meta-row">
+                  {form.location ? (
+                    <span className="profile-hero-meta-item">
+                      <span aria-hidden="true">📍</span> {form.location}
+                    </span>
+                  ) : (
+                    <span className="profile-hero-meta-item" style={{ color: '#9da096', fontStyle: 'italic' }}>
+                      <span aria-hidden="true">📍</span> Location not specified
+                    </span>
+                  )}
+
+                  {form.email && (
+                    <span className="profile-hero-meta-item">
+                      <span aria-hidden="true">✉</span> {form.email}
+                    </span>
+                  )}
+
+                  {form.phone && (
+                    <span className="profile-hero-meta-item">
+                      <span aria-hidden="true">📞</span> {form.phone}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
-            <div className="profile-fields profile-fields-two">
-
-              <label>
-                LinkedIn URL
-
-                <input
-                  type="url"
-                  value={form.linkedin}
-                  onChange={(e) =>
-                    updateField('linkedin', e.target.value)
-                  }
-                  placeholder="https://linkedin.com/in/your-name"
-                  autoComplete="url"
-                />
-              </label>
-
-              <label>
-                GitHub URL
-
-                <input
-                  type="url"
-                  value={form.github}
-                  onChange={(e) =>
-                    updateField('github', e.target.value)
-                  }
-                  placeholder="https://github.com/your-username"
-                  autoComplete="url"
-                />
-              </label>
-
-              <label>
-                Portfolio URL
-
-                <input
-                  type="url"
-                  value={form.portfolio}
-                  onChange={(e) =>
-                    updateField('portfolio', e.target.value)
-                  }
-                  placeholder="https://yourportfolio.com"
-                  autoComplete="url"
-                />
-              </label>
-
-            </div>
-
-            <div className="profile-section-intro profile-section-spaced">
-              <span>03</span>
-
-              <div>
-                <h2>Your story</h2>
-
-                <p>
-                  A little context helps us make your profile
-                  feel specific rather than generic.
-                </p>
-              </div>
-            </div>
-
-            <label className="profile-bio-field">
-              Professional summary
-
-              <textarea
-                rows="7"
-                value={form.bio}
-                onChange={(e) =>
-                  updateField('bio', e.target.value)
-                }
-                placeholder="Tell us about your background, strengths, goals, or the kind of roles you're targeting."
-              />
-            </label>
-
-            <div className="profile-save-row">
-
-              <div>
-                {error && (
-                  <p className="profile-form-error">
-                    {error}
-                  </p>
-                )}
-
-                {message && (
-                  <p className="profile-form-success">
-                    {message}
-                  </p>
-                )}
-              </div>
-
+            <div className="profile-hero-actions">
               <button
-                className="btn lime"
-                type="submit"
-                disabled={saving}
+                type="button"
+                className="profile-action-btn secondary"
+                onClick={copyProfileSummary}
+                title="Copy profile details summary"
               >
-                {saving
-                  ? 'Saving…'
-                  : 'Save profile ↗'}
+                <span>{copiedLink ? '✓ Copied' : '📋 Copy Summary'}</span>
               </button>
 
+              <button
+                type="button"
+                className={`profile-action-btn ${editingSection === 'all' ? 'accent' : 'primary'}`}
+                onClick={() => {
+                  if (editingSection === 'all') {
+                    cancelEditing();
+                  } else {
+                    startEditing('all');
+                  }
+                }}
+              >
+                <span>{editingSection === 'all' ? '✕ Done Editing' : '✎ Edit Profile'}</span>
+              </button>
             </div>
+          </section>
 
-          </form>
+          {/* =====================================================
+              TWO-COLUMN WORKSPACE
+          ===================================================== */}
+          <div className="profile-workspace-grid">
 
-          <aside className="profile-side">
+            {/* MAIN COLUMN: PROFILE SECTIONS */}
+            <div className="profile-main-column">
 
-            <div className="panel profile-progress-card">
+              {/* -------------------------------------------------
+                  B. PERSONAL INFORMATION
+              ------------------------------------------------- */}
+              <div className="profile-card" id="profile-section-personal">
+                <div className="profile-card-header">
+                  <div className="profile-card-header-left">
+                    <span className="profile-section-num">01</span>
+                    <div className="profile-card-title-group">
+                      <h2>Personal Information</h2>
+                      <p>Core identity and verified contact details.</p>
+                    </div>
+                  </div>
 
-              <div className="panel-head">
-                <h2>Profile strength</h2>
+                  {!isEditing('personal') && (
+                    <button
+                      type="button"
+                      className="profile-card-edit-btn"
+                      onClick={() => startEditing('personal')}
+                      aria-label="Edit Personal Information"
+                    >
+                      <span>✎ Edit</span>
+                    </button>
+                  )}
+                </div>
 
-                <strong>
-                  {completion}%
-                </strong>
+                <div className="profile-card-body">
+                  {isEditing('personal') ? (
+                    <form onSubmit={(e) => handleSave(e, 'personal')}>
+                      <div className="profile-form-grid">
+                        <div className="profile-form-field">
+                          <label className="profile-form-label" htmlFor="field-name">
+                            <span>Full name *</span>
+                          </label>
+                          <input
+                            id="field-name"
+                            className="profile-form-input"
+                            type="text"
+                            value={form.name}
+                            onChange={(e) => updateField('name', e.target.value)}
+                            placeholder="e.g. Eleanor Vance"
+                            autoComplete="name"
+                            required
+                          />
+                        </div>
+
+                        <div className="profile-form-field">
+                          <label className="profile-form-label" htmlFor="field-email">
+                            <span>Email address</span>
+                            <span className="helper">🔒 Managed by Formant Auth</span>
+                          </label>
+                          <input
+                            id="field-email"
+                            className="profile-form-input"
+                            type="email"
+                            value={form.email}
+                            disabled
+                          />
+                          <span className="profile-form-note">Account email cannot be modified through the profile editor.</span>
+                        </div>
+
+                        <div className="profile-form-field">
+                          <label className="profile-form-label" htmlFor="field-phone">
+                            <span>Phone number</span>
+                          </label>
+                          <input
+                            id="field-phone"
+                            className="profile-form-input"
+                            type="tel"
+                            value={form.phone}
+                            onChange={(e) => updateField('phone', e.target.value)}
+                            placeholder="+1 (555) 019-2834"
+                            autoComplete="tel"
+                          />
+                        </div>
+
+                        <div className="profile-form-field">
+                          <label className="profile-form-label" htmlFor="field-location">
+                            <span>Location / Timezone</span>
+                          </label>
+                          <input
+                            id="field-location"
+                            className="profile-form-input"
+                            type="text"
+                            value={form.location}
+                            onChange={(e) => updateField('location', e.target.value)}
+                            placeholder="e.g. San Francisco, CA / PST"
+                          />
+                        </div>
+
+                        <div className="profile-form-field span-two">
+                          <label className="profile-form-label" htmlFor="field-bio">
+                            <span>Professional Bio & Summary</span>
+                            <span className="helper">{form.bio ? `${form.bio.length} characters` : 'Optional but recommended'}</span>
+                          </label>
+                          <textarea
+                            id="field-bio"
+                            className="profile-form-textarea"
+                            rows="4"
+                            value={form.bio}
+                            onChange={(e) => updateField('bio', e.target.value)}
+                            placeholder="Briefly describe your career background, key competencies, and what you aim to achieve next."
+                          />
+                        </div>
+                      </div>
+
+                      <div className="profile-edit-actions-bar">
+                        <button type="button" className="profile-btn-cancel" onClick={cancelEditing}>Cancel</button>
+                        <button type="submit" className="profile-btn-save" disabled={saving}>
+                          {saving ? 'Saving…' : 'Save Changes ↗'}
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <div className="profile-data-grid">
+                      <div className="profile-data-cell">
+                        <span className="profile-data-label">Full Name</span>
+                        <span className="profile-data-value">{form.name || <span className="empty-state">Not provided</span>}</span>
+                      </div>
+
+                      <div className="profile-data-cell">
+                        <span className="profile-data-label">Email Address</span>
+                        <span className="profile-data-value">
+                          {form.email || <span className="empty-state">Not linked</span>}
+                          <span style={{ marginLeft: 8, fontSize: 11, color: '#6d7069', background: '#f0f0ea', padding: '2px 6px', borderRadius: 4 }}>Verified</span>
+                        </span>
+                      </div>
+
+                      <div className="profile-data-cell">
+                        <span className="profile-data-label">Phone Number</span>
+                        <span className="profile-data-value">{form.phone || <span className="empty-state">Not provided</span>}</span>
+                      </div>
+
+                      <div className="profile-data-cell">
+                        <span className="profile-data-label">Location</span>
+                        <span className="profile-data-value">{form.location || <span className="empty-state">Not provided</span>}</span>
+                      </div>
+
+                      <div className="profile-data-cell span-two">
+                        <span className="profile-data-label">Professional Summary</span>
+                        {form.bio ? (
+                          <div className="profile-bio-quote">{form.bio}</div>
+                        ) : (
+                          <div className="profile-bio-quote empty">
+                            No summary provided. Adding a bio provides critical context for your cover letter and LinkedIn services.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <div className="progress">
-                <i
-                  style={{
-                    width: `${completion}%`
-                  }}
-                />
+              {/* -------------------------------------------------
+                  C. CAREER & EXPERIENCE
+              ------------------------------------------------- */}
+              <div className="profile-card" id="profile-section-career">
+                <div className="profile-card-header">
+                  <div className="profile-card-header-left">
+                    <span className="profile-section-num">02</span>
+                    <div className="profile-card-title-group">
+                      <h2>Career & Experience</h2>
+                      <p>Target role, professional seniority, and core competencies.</p>
+                    </div>
+                  </div>
+
+                  {!isEditing('career') && (
+                    <button
+                      type="button"
+                      className="profile-card-edit-btn"
+                      onClick={() => startEditing('career')}
+                      aria-label="Edit Career & Experience"
+                    >
+                      <span>✎ Edit</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="profile-card-body">
+                  {isEditing('career') ? (
+                    <form onSubmit={(e) => handleSave(e, 'career')}>
+                      <div className="profile-form-grid">
+                        <div className="profile-form-field span-two" ref={rolePickerRef} style={{ position: 'relative' }}>
+                          <label className="profile-form-label" htmlFor="field-target-role">
+                            <span>Target Role *</span>
+                            <span className="helper">Select or enter a custom title</span>
+                          </label>
+
+                          <div className={`target-role-control ${rolePickerOpen ? 'is-open' : ''}`}>
+                            <input
+                              id="field-target-role"
+                              className="profile-form-input"
+                              type="text"
+                              value={form.target_role}
+                              onFocus={() => setRolePickerOpen(true)}
+                              onClick={() => setRolePickerOpen(true)}
+                              onChange={(e) => {
+                                updateField('target_role', e.target.value);
+                                setRoleSearch(e.target.value);
+                                setRolePickerOpen(true);
+                              }}
+                              placeholder="e.g. Senior Frontend Developer"
+                              autoComplete="off"
+                            />
+
+                            <button
+                              type="button"
+                              className="target-role-toggle"
+                              aria-label="Toggle role picker menu"
+                              aria-expanded={rolePickerOpen}
+                              onClick={() => setRolePickerOpen((open) => !open)}
+                            >
+                              <span>⌄</span>
+                            </button>
+                          </div>
+
+                          {rolePickerOpen && (
+                            <div className="target-role-picker" style={{ zIndex: 120 }}>
+                              <div className="target-role-picker-head">
+                                <div>
+                                  <span className="target-role-picker-kicker">SUGGESTED ROLES</span>
+                                  <h3 style={{ margin: 0, fontSize: 14 }}>Choose your target title</h3>
+                                </div>
+                                <button
+                                  type="button"
+                                  className="target-role-close"
+                                  onClick={() => setRolePickerOpen(false)}
+                                  aria-label="Close role picker"
+                                >
+                                  ×
+                                </button>
+                              </div>
+
+                              <div className="target-role-search">
+                                <span>⌕</span>
+                                <input
+                                  type="text"
+                                  value={roleSearch}
+                                  onChange={(e) => setRoleSearch(e.target.value)}
+                                  placeholder="Type to filter roles…"
+                                  autoFocus
+                                />
+                              </div>
+
+                              <div className="target-role-options">
+                                {filteredRoleGroups.map((group) => (
+                                  <div className="target-role-group" key={group.title}>
+                                    <span className="target-role-group-title">{group.title}</span>
+                                    <div className="target-role-group-list">
+                                      {group.roles.map((role) => (
+                                        <button
+                                          type="button"
+                                          className={`target-role-option ${form.target_role === role ? 'is-selected' : ''}`}
+                                          key={role}
+                                          onClick={() => {
+                                            updateField('target_role', role);
+                                            setRoleSearch('');
+                                            setRolePickerOpen(false);
+                                          }}
+                                        >
+                                          <span>{role}</span>
+                                          <span className="target-role-option-arrow">↗</span>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+
+                                {canUseCustomRole && (
+                                  <button
+                                    type="button"
+                                    className="target-role-custom"
+                                    onClick={() => {
+                                      updateField('target_role', customRoleSearch);
+                                      setRoleSearch('');
+                                      setRolePickerOpen(false);
+                                    }}
+                                  >
+                                    <span>+ Use “{customRoleSearch}” as custom target role</span>
+                                    <span>↗</span>
+                                  </button>
+                                )}
+
+                                {!filteredRoleGroups.length && !canUseCustomRole && (
+                                  <div className="target-role-no-results">No matching role templates found. Type any custom role above.</div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="profile-form-field span-two">
+                          <label className="profile-form-label" htmlFor="field-experience">
+                            <span>Work Experience Summary</span>
+                            <span className="helper">Years in field or recent employment</span>
+                          </label>
+                          <textarea
+                            id="field-experience"
+                            className="profile-form-textarea"
+                            rows="3"
+                            value={form.experience}
+                            onChange={(e) => updateField('experience', e.target.value)}
+                            placeholder="e.g. 5+ years building distributed React/Node applications; previously Senior Engineer at Acme Tech."
+                          />
+                        </div>
+
+                        <div className="profile-form-field span-two">
+                          <label className="profile-form-label" htmlFor="field-skills">
+                            <span>Core Skills & Technologies</span>
+                            <span className="helper">Comma-separated tags</span>
+                          </label>
+                          <input
+                            id="field-skills"
+                            className="profile-form-input"
+                            type="text"
+                            value={form.skills}
+                            onChange={(e) => updateField('skills', e.target.value)}
+                            placeholder="e.g. React, TypeScript, Next.js, Node.js, GraphQL, System Design, UX Architecture"
+                          />
+                          <span className="profile-form-note">These skills help calibrate keyword density for ATS optimization.</span>
+                        </div>
+                      </div>
+
+                      <div className="profile-edit-actions-bar">
+                        <button type="button" className="profile-btn-cancel" onClick={cancelEditing}>Cancel</button>
+                        <button type="submit" className="profile-btn-save" disabled={saving}>
+                          {saving ? 'Saving…' : 'Save Changes ↗'}
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <div className="profile-data-grid single-col">
+                      <div className="profile-data-cell">
+                        <span className="profile-data-label">Target Role</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+                          <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink, #11120f)' }}>
+                            {form.target_role || <span className="empty-state">Target role not specified</span>}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="profile-data-cell">
+                        <span className="profile-data-label">Experience & Career Background</span>
+                        <span className="profile-data-value">
+                          {form.experience || <span className="empty-state">No experience details added yet. Useful for experienced hires and career changers alike.</span>}
+                        </span>
+                      </div>
+
+                      <div className="profile-data-cell">
+                        <span className="profile-data-label">Key Competencies & Skills</span>
+                        {skillsArray.length > 0 ? (
+                          <div className="profile-skills-wrap">
+                            {skillsArray.map((skill, idx) => (
+                              <span key={idx} className="profile-skill-chip">{skill}</span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="profile-data-value empty-state">No skills listed. Adding technologies helps our writers tailor your CV keywords.</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <p>
-                {completion === 100
-                  ? 'Your core profile is complete.'
-                  : completion >= 70
-                    ? 'Good foundation. Add the remaining details to give your team more context.'
-                    : 'Complete more of your profile so we can work with better context.'}
-              </p>
+              {/* -------------------------------------------------
+                  D. EDUCATION & CERTIFICATIONS
+              ------------------------------------------------- */}
+              <div className="profile-card" id="profile-section-education">
+                <div className="profile-card-header">
+                  <div className="profile-card-header-left">
+                    <span className="profile-section-num">03</span>
+                    <div className="profile-card-title-group">
+                      <h2>Education & Credentials</h2>
+                      <p>Academic degrees, institutions, and professional licenses.</p>
+                    </div>
+                  </div>
+
+                  {!isEditing('education') && (
+                    <button
+                      type="button"
+                      className="profile-card-edit-btn"
+                      onClick={() => startEditing('education')}
+                      aria-label="Edit Education & Credentials"
+                    >
+                      <span>✎ Edit</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="profile-card-body">
+                  {isEditing('education') ? (
+                    <form onSubmit={(e) => handleSave(e, 'education')}>
+                      <div className="profile-form-grid">
+                        <div className="profile-form-field span-two">
+                          <label className="profile-form-label" htmlFor="field-education">
+                            <span>Highest Education / Degree</span>
+                            <span className="helper">Degree, University, Graduation Year</span>
+                          </label>
+                          <textarea
+                            id="field-education"
+                            className="profile-form-textarea"
+                            rows="2"
+                            value={form.education}
+                            onChange={(e) => updateField('education', e.target.value)}
+                            placeholder="e.g. BSc in Computer Science, University of California, Berkeley (2021)"
+                          />
+                        </div>
+
+                        <div className="profile-form-field span-two">
+                          <label className="profile-form-label" htmlFor="field-certifications">
+                            <span>Certifications & Accreditations</span>
+                            <span className="helper">Optional</span>
+                          </label>
+                          <textarea
+                            id="field-certifications"
+                            className="profile-form-textarea"
+                            rows="2"
+                            value={form.certifications}
+                            onChange={(e) => updateField('certifications', e.target.value)}
+                            placeholder="e.g. AWS Certified Solutions Architect (Associate), PMP Certification"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="profile-edit-actions-bar">
+                        <button type="button" className="profile-btn-cancel" onClick={cancelEditing}>Cancel</button>
+                        <button type="submit" className="profile-btn-save" disabled={saving}>
+                          {saving ? 'Saving…' : 'Save Changes ↗'}
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <div className="profile-data-grid single-col">
+                      <div className="profile-data-cell">
+                        <span className="profile-data-label">Education Background</span>
+                        <span className="profile-data-value">
+                          {form.education || <span className="empty-state">No education history recorded yet.</span>}
+                        </span>
+                      </div>
+
+                      <div className="profile-data-cell">
+                        <span className="profile-data-label">Certifications & Licenses</span>
+                        <span className="profile-data-value">
+                          {form.certifications || <span className="empty-state">No certifications listed.</span>}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* -------------------------------------------------
+                  E. PROFESSIONAL LINKS
+              ------------------------------------------------- */}
+              <div className="profile-card" id="profile-section-links">
+                <div className="profile-card-header">
+                  <div className="profile-card-header-left">
+                    <span className="profile-section-num">04</span>
+                    <div className="profile-card-title-group">
+                      <h2>Professional Links</h2>
+                      <p>Public URLs used to review and demonstrate your work.</p>
+                    </div>
+                  </div>
+
+                  {!isEditing('links') && (
+                    <button
+                      type="button"
+                      className="profile-card-edit-btn"
+                      onClick={() => startEditing('links')}
+                      aria-label="Edit Professional Links"
+                    >
+                      <span>✎ Edit</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="profile-card-body">
+                  {isEditing('links') ? (
+                    <form onSubmit={(e) => handleSave(e, 'links')}>
+                      <div className="profile-form-grid">
+                        <div className="profile-form-field span-two">
+                          <label className="profile-form-label" htmlFor="field-linkedin">
+                            <span>LinkedIn Profile URL</span>
+                          </label>
+                          <input
+                            id="field-linkedin"
+                            className="profile-form-input"
+                            type="url"
+                            value={form.linkedin}
+                            onChange={(e) => updateField('linkedin', e.target.value)}
+                            placeholder="https://linkedin.com/in/yourname"
+                          />
+                        </div>
+
+                        <div className="profile-form-field span-two">
+                          <label className="profile-form-label" htmlFor="field-github">
+                            <span>GitHub Profile URL</span>
+                          </label>
+                          <input
+                            id="field-github"
+                            className="profile-form-input"
+                            type="url"
+                            value={form.github}
+                            onChange={(e) => updateField('github', e.target.value)}
+                            placeholder="https://github.com/yourusername"
+                          />
+                        </div>
+
+                        <div className="profile-form-field span-two">
+                          <label className="profile-form-label" htmlFor="field-portfolio">
+                            <span>Portfolio or Personal Website URL</span>
+                          </label>
+                          <input
+                            id="field-portfolio"
+                            className="profile-form-input"
+                            type="url"
+                            value={form.portfolio}
+                            onChange={(e) => updateField('portfolio', e.target.value)}
+                            placeholder="https://yourportfolio.com"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="profile-edit-actions-bar">
+                        <button type="button" className="profile-btn-cancel" onClick={cancelEditing}>Cancel</button>
+                        <button type="submit" className="profile-btn-save" disabled={saving}>
+                          {saving ? 'Saving…' : 'Save Changes ↗'}
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <div className="profile-links-grid">
+                      {/* LinkedIn Card */}
+                      <div className="profile-link-card">
+                        <div className="profile-link-card-top">
+                          <div className="profile-link-icon-box linkedin" aria-hidden="true">in</div>
+                          <div>
+                            <div className="profile-link-info-name">LinkedIn</div>
+                            <div className="profile-link-info-handle">{form.linkedin ? form.linkedin.replace(/^https?:\/\/(www\.)?/, '') : 'Not connected'}</div>
+                          </div>
+                        </div>
+                        <div className="profile-link-card-action">
+                          {form.linkedin ? (
+                            <a href={cleanUrl(form.linkedin)} target="_blank" rel="noopener noreferrer">
+                              Visit Profile ↗
+                            </a>
+                          ) : (
+                            <button type="button" onClick={() => startEditing('links')} style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'var(--ink, #11120f)', textDecoration: 'underline', cursor: 'pointer', fontSize: 12 }}>
+                              + Connect LinkedIn
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* GitHub Card */}
+                      <div className="profile-link-card">
+                        <div className="profile-link-card-top">
+                          <div className="profile-link-icon-box github" aria-hidden="true">GH</div>
+                          <div>
+                            <div className="profile-link-info-name">GitHub</div>
+                            <div className="profile-link-info-handle">{form.github ? form.github.replace(/^https?:\/\/(www\.)?/, '') : 'Not connected'}</div>
+                          </div>
+                        </div>
+                        <div className="profile-link-card-action">
+                          {form.github ? (
+                            <a href={cleanUrl(form.github)} target="_blank" rel="noopener noreferrer">
+                              Visit GitHub ↗
+                            </a>
+                          ) : (
+                            <button type="button" onClick={() => startEditing('links')} style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'var(--ink, #11120f)', textDecoration: 'underline', cursor: 'pointer', fontSize: 12 }}>
+                              + Connect GitHub
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Portfolio Card */}
+                      <div className="profile-link-card">
+                        <div className="profile-link-card-top">
+                          <div className="profile-link-icon-box portfolio" aria-hidden="true">🌐</div>
+                          <div>
+                            <div className="profile-link-info-name">Portfolio</div>
+                            <div className="profile-link-info-handle">{form.portfolio ? form.portfolio.replace(/^https?:\/\/(www\.)?/, '') : 'Not connected'}</div>
+                          </div>
+                        </div>
+                        <div className="profile-link-card-action">
+                          {form.portfolio ? (
+                            <a href={cleanUrl(form.portfolio)} target="_blank" rel="noopener noreferrer">
+                              View Portfolio ↗
+                            </a>
+                          ) : (
+                            <button type="button" onClick={() => startEditing('links')} style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'var(--ink, #11120f)', textDecoration: 'underline', cursor: 'pointer', fontSize: 12 }}>
+                              + Add Portfolio
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* -------------------------------------------------
+                  F. CAREER DOCUMENTS & SERVICE PREFERENCES
+              ------------------------------------------------- */}
+              <div className="profile-card" id="profile-section-preferences">
+                <div className="profile-card-header">
+                  <div className="profile-card-header-left">
+                    <span className="profile-section-num">05</span>
+                    <div className="profile-card-title-group">
+                      <h2>Document & Service Preferences</h2>
+                      <p>Tailor your CV styling, document language, and interview coaching focus.</p>
+                    </div>
+                  </div>
+
+                  {!isEditing('preferences') && (
+                    <button
+                      type="button"
+                      className="profile-card-edit-btn"
+                      onClick={() => startEditing('preferences')}
+                      aria-label="Edit Preferences"
+                    >
+                      <span>✎ Edit</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="profile-card-body">
+                  {isEditing('preferences') ? (
+                    <form onSubmit={(e) => handleSave(e, 'preferences')}>
+                      <div className="profile-form-grid">
+                        <div className="profile-form-field">
+                          <label className="profile-form-label" htmlFor="pref-cv-style">
+                            <span>Preferred CV Style</span>
+                          </label>
+                          <select
+                            id="pref-cv-style"
+                            className="profile-form-select"
+                            value={form.preferences?.cv_style || 'modern_tech'}
+                            onChange={(e) => updatePreference('cv_style', e.target.value)}
+                          >
+                            <option value="modern_tech">Modern Tech & ATS-Optimized</option>
+                            <option value="executive_editorial">Executive & Editorial Minimalist</option>
+                            <option value="academic_formal">Academic & Formal Comprehensive</option>
+                            <option value="creative_portfolio">Creative & Product-Focused</option>
+                          </select>
+                        </div>
+
+                        <div className="profile-form-field">
+                          <label className="profile-form-label" htmlFor="pref-language">
+                            <span>Document Language</span>
+                          </label>
+                          <select
+                            id="pref-language"
+                            className="profile-form-select"
+                            value={form.preferences?.language || 'en_us'}
+                            onChange={(e) => updatePreference('language', e.target.value)}
+                          >
+                            <option value="en_us">English (US Spelling)</option>
+                            <option value="en_uk">English (UK / Commonwealth)</option>
+                            <option value="en_intl">English (International)</option>
+                            <option value="de">German (Deutsch)</option>
+                            <option value="fr">French (Français)</option>
+                          </select>
+                        </div>
+
+                        <div className="profile-form-field">
+                          <label className="profile-form-label" htmlFor="pref-tone">
+                            <span>Writing Tone</span>
+                          </label>
+                          <select
+                            id="pref-tone"
+                            className="profile-form-select"
+                            value={form.preferences?.tone || 'authoritative'}
+                            onChange={(e) => updatePreference('tone', e.target.value)}
+                          >
+                            <option value="authoritative">Authoritative, Concise & Impactful</option>
+                            <option value="innovative">Dynamic, Modern & Innovative</option>
+                            <option value="technical">Rigorous, Technical & Metric-Driven</option>
+                            <option value="narrative">Narrative Storytelling & Leadership</option>
+                          </select>
+                        </div>
+
+                        <div className="profile-form-field">
+                          <label className="profile-form-label" htmlFor="pref-interview">
+                            <span>Interview Coaching Focus</span>
+                          </label>
+                          <select
+                            id="pref-interview"
+                            className="profile-form-select"
+                            value={form.preferences?.interview_focus || 'tech_system'}
+                            onChange={(e) => updatePreference('interview_focus', e.target.value)}
+                          >
+                            <option value="tech_system">System Design & Technical Architecture</option>
+                            <option value="behavioral_exec">Executive Presence & Behavioral (STAR)</option>
+                            <option value="product_case">Product Sense & Strategy Case Studies</option>
+                            <option value="offer_negotiation">Offer Evaluation & Compensation Strategy</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="profile-edit-actions-bar">
+                        <button type="button" className="profile-btn-cancel" onClick={cancelEditing}>Cancel</button>
+                        <button type="submit" className="profile-btn-save" disabled={saving}>
+                          {saving ? 'Saving…' : 'Save Changes ↗'}
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <div className="profile-prefs-grid">
+                      <div className="profile-pref-item">
+                        <span className="profile-pref-label">Preferred CV Style</span>
+                        <span className="profile-pref-value">
+                          {form.preferences?.cv_style === 'executive_editorial' ? 'Executive & Editorial Minimalist' :
+                           form.preferences?.cv_style === 'academic_formal' ? 'Academic & Formal Comprehensive' :
+                           form.preferences?.cv_style === 'creative_portfolio' ? 'Creative & Product-Focused' :
+                           'Modern Tech & ATS-Optimized'}
+                        </span>
+                      </div>
+
+                      <div className="profile-pref-item">
+                        <span className="profile-pref-label">Document Language</span>
+                        <span className="profile-pref-value">
+                          {form.preferences?.language === 'en_uk' ? 'English (UK / Commonwealth)' :
+                           form.preferences?.language === 'en_intl' ? 'English (International)' :
+                           form.preferences?.language === 'de' ? 'German (Deutsch)' :
+                           form.preferences?.language === 'fr' ? 'French (Français)' :
+                           'English (US Spelling)'}
+                        </span>
+                      </div>
+
+                      <div className="profile-pref-item">
+                        <span className="profile-pref-label">Writing Tone</span>
+                        <span className="profile-pref-value">
+                          {form.preferences?.tone === 'innovative' ? 'Dynamic, Modern & Innovative' :
+                           form.preferences?.tone === 'technical' ? 'Rigorous, Technical & Metric-Driven' :
+                           form.preferences?.tone === 'narrative' ? 'Narrative Storytelling & Leadership' :
+                           'Authoritative, Concise & Impactful'}
+                        </span>
+                      </div>
+
+                      <div className="profile-pref-item">
+                        <span className="profile-pref-label">Interview Coaching Focus</span>
+                        <span className="profile-pref-value">
+                          {form.preferences?.interview_focus === 'behavioral_exec' ? 'Executive Presence & Behavioral (STAR)' :
+                           form.preferences?.interview_focus === 'product_case' ? 'Product Sense & Strategy Case Studies' :
+                           form.preferences?.interview_focus === 'offer_negotiation' ? 'Offer Evaluation & Compensation Strategy' :
+                           'System Design & Technical Architecture'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
 
             </div>
 
-            
+            {/* SIDEBAR COLUMN */}
+            <div className="profile-side-column">
 
-          </aside>
+              {/* Profile Strength Panel */}
+              <div className="profile-strength-panel" aria-label="Profile Strength Status">
+                <div className="profile-strength-header">
+                  <span className="profile-strength-kicker">PROFILE STRENGTH</span>
+                  <span className="profile-strength-score">{completion}%</span>
+                </div>
+
+                <div className="profile-progress-bar-track">
+                  <div
+                    className="profile-progress-bar-fill"
+                    style={{ width: `${completion}%` }}
+                    role="progressbar"
+                    aria-valuenow={completion}
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                  />
+                </div>
+
+                <p className="profile-strength-suggestion">
+                  {nextSuggestion}
+                </p>
+
+                <div className="profile-strength-checklist">
+                  {PROFILE_COMPLETION_FIELDS.map((key) => {
+                    const isDone = Boolean(String(form[key] || '').trim());
+                    return (
+                      <div key={key} className={`profile-checklist-item ${isDone ? 'is-done' : ''}`}>
+                        <span className="profile-check-indicator" aria-hidden="true">
+                          {isDone ? '✓' : '·'}
+                        </span>
+                        <span>{FIELD_LABELS[key] || key}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Service Readiness Panel */}
+              <div className="profile-service-panel">
+                <h3 className="profile-service-panel-title">Service-Ready Data</h3>
+                <p className="profile-service-panel-desc">
+                  Formant consultants use your saved profile to skip redundant intake forms.
+                </p>
+
+                <div className="profile-service-list">
+                  {serviceReadiness.map((item) => (
+                    <div key={item.name} className="profile-service-item">
+                      <span>{item.name}</span>
+                      <span className={`profile-service-status-tag ${item.ready ? 'ready' : 'partial'}`}>
+                        {item.ready ? 'Ready ✓' : 'Details needed'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Data Confidentiality & Security Panel */}
+              <div className="profile-security-panel">
+                <h4>
+                  <span aria-hidden="true">🛡</span> Confidential & Secure
+                </h4>
+                <p>
+                  Your profile details are strictly confidential, protected by PostgreSQL Row Level Security (RLS), and shared only with Formant team members assigned to your projects.
+                </p>
+              </div>
+
+            </div>
+
+          </div>
 
         </div>
-
       </DashboardShell>
     );
   }
@@ -1577,7 +2291,7 @@
         }
 
         setBriefMessage(
-          'Brief saved. Your Careerlyst team now has the information needed to start your project.'
+          'Brief saved. Your Formant team now has the information needed to start your project.'
         );
 
         setOrders((current) =>
@@ -1612,7 +2326,7 @@
         </div>
         <div className="panel table-panel">
           {loading ? (
-            <div className="empty"><h3>Loading your orders…</h3><p>We’re fetching your projects from your Careerlyst workspace.</p></div>
+            <div className="empty"><h3>Loading your orders…</h3><p>We’re fetching your projects from your Formant workspace.</p></div>
           ) : error ? (
             <div className="empty"><h3>We couldn’t load your orders.</h3><p>{error}</p><button type="button" className="btn dark" onClick={() => window.location.reload()}>Try again ↗</button></div>
           ) : orders.length ? (
@@ -1628,7 +2342,7 @@
                 <div className="order-row detailed" key={o.id}>
                   <div>
                     <b>#{o.id}</b>
-                    <p>{o.service_name || 'Careerlyst service'}{o.package_name ? ` · ${o.package_name}` : ''}</p>
+                    <p>{o.service_name || 'Formant service'}{o.package_name ? ` · ${o.package_name}` : ''}</p>
                     <small>Placed {formatDate(o.created_at)}</small>
                   </div>
                   <div className="order-timeline">
@@ -1942,7 +2656,7 @@
                         rows="4"
                         value={brief.additional_notes}
                         onChange={(e) => updateBrief('additional_notes', e.target.value)}
-                        placeholder="Anything else the Careerlyst team should know?"
+                        placeholder="Anything else the Formant team should know?"
                       />
                     </label>
                   </section>
@@ -1960,7 +2674,7 @@
                   )}
 
                   <div className="project-brief-actions">
-                    <p>Your information stays inside your Careerlyst project.</p>
+                    <p>Your information stays inside your Formant project.</p>
                     <button className="btn lime" type="submit" disabled={briefSaving}>
                       {briefSaving ? 'Saving…' : 'Save project brief ↗'}
                     </button>
@@ -1976,18 +2690,18 @@
   }
 
   /*
-    Careerlyst — Messages UX replacement
+    Formant — Messages UX replacement
     Replace only the existing Messages() function with this component.
 
     Expected existing imports:
       import React, { useEffect, useRef, useState } from 'react';
       import DashboardShell from '../components/DashboardShell';
-      import { load } from '../lib/store';
+      import { load, patch } from '../lib/store';
       import { supabase } from '../lib/supabase';
 
-    This keeps the existing Careerlyst UI classes and fixes chat behaviour:
+    This keeps the existing Formant UI classes and fixes chat behaviour:
     - Your messages -> right
-    - Careerlyst/team messages -> left
+    - Formant/team messages -> left
     - Enter -> send
     - Shift + Enter -> new line
     - auto-growing composer
@@ -2054,6 +2768,8 @@
     const [userId, setUserId] = useState('');
     const [orders, setOrders] = useState([]);
     const [selectedOrderId, setSelectedOrderId] = useState(null);
+    const [mobileView, setMobileView] = useState('list');
+    const [orderSearch, setOrderSearch] = useState('');
     const [messages, setMessages] = useState([]);
     const [text, setText] = useState('');
     const [attachment, setAttachment] = useState(null);
@@ -2473,6 +3189,120 @@
       };
     }, []);
 
+    async function markConversationAsRead(orderId) {
+      if (!orderId || !userId) return;
+
+      const readAt = new Date().toISOString();
+
+      /*
+       * Local/demo mode.
+       */
+      if (!supabase) {
+        patch((current) => ({
+          ...current,
+          messages: Array.isArray(current.messages)
+            ? current.messages.map((message) => {
+                const sameOrder =
+                  String(message?.order_id) === String(orderId);
+
+                const senderId =
+                  message?.sender_id ||
+                  (message?.from === 'You'
+                    ? userId
+                    : 'careerlyst-team');
+
+                const incoming =
+                  String(senderId) !== String(userId);
+
+                if (sameOrder && incoming && !message.read_at) {
+                  return {
+                    ...message,
+                    read: true,
+                    read_at: readAt
+                  };
+                }
+
+                return message;
+              })
+            : current.messages
+        }));
+
+        setMessages((current) =>
+          current.map((message) => {
+            const incoming =
+              String(message?.sender_id) !== String(userId);
+
+            return (
+              String(message?.order_id) === String(orderId) &&
+              incoming &&
+              !message.read_at
+            )
+              ? {
+                  ...message,
+                  read: true,
+                  read_at: readAt
+                }
+              : message;
+          })
+        );
+
+        return;
+      }
+
+      /*
+       * Supabase mode.
+       *
+       * This uses a SECURITY DEFINER RPC so the client only gets
+       * permission to mark its own incoming messages as read.
+       */
+      const { data, error } = await supabase.rpc(
+        'mark_order_messages_read',
+        {
+          p_order_id: orderId
+        }
+      );
+
+      if (error) {
+        console.error(
+          'Message mark-as-read failed:',
+          error
+        );
+        return;
+      }
+
+      if (Array.isArray(data) && data.length) {
+        setMessages((current) =>
+          current.map((message) => {
+            const updated = data.find(
+              (row) => String(row.id) === String(message.id)
+            );
+
+            return updated
+              ? {
+                  ...message,
+                  ...updated
+                }
+              : message;
+          })
+        );
+      } else {
+        // The RPC may return no rows when nothing was unread.
+        // Still update the visible state defensively.
+        setMessages((current) =>
+          current.map((message) =>
+            String(message?.order_id) === String(orderId) &&
+            String(message?.sender_id) !== String(userId) &&
+            !message.read_at
+              ? {
+                  ...message,
+                  read_at: readAt
+                }
+              : message
+          )
+        );
+      }
+    }
+
     useEffect(() => {
       if (!selectedOrderId || !userId) {
         setMessages([]);
@@ -2503,7 +3333,9 @@
               body: message.body || message.text || '',
               created_at:
                 message.created_at ||
-                new Date().toISOString()
+                new Date().toISOString(),
+              read: Boolean(message.read),
+              read_at: message.read_at || null
             }))
         );
 
@@ -2534,6 +3366,15 @@
             }
 
             appendMessage(payload.new);
+
+            if (
+              String(payload.new.sender_id) !== String(userId) &&
+              !payload.new.read_at
+            ) {
+              void markConversationAsRead(
+                selectedOrderId
+              );
+            }
 
             requestAnimationFrame(() => {
               scrollToBottom('smooth');
@@ -2587,6 +3428,11 @@
 
           setMessages(data || []);
 
+          // Seeing the conversation marks all incoming team messages as read.
+          await markConversationAsRead(
+            selectedOrderId
+          );
+
           requestAnimationFrame(() => {
             scrollToBottom('auto');
           });
@@ -2629,330 +3475,367 @@
       }
     }, [messages.length, loadingMessages]);
 
+    const filteredOrders = useMemo(() => {
+      const q = orderSearch.trim().toLowerCase();
+      if (!q) return orders;
+      return orders.filter((o) => {
+        const title = (o.service_name || '').toLowerCase();
+        const pkg = (o.package_name || '').toLowerCase();
+        const id = String(o.id);
+        return title.includes(q) || pkg.includes(q) || id.includes(q);
+      });
+    }, [orders, orderSearch]);
+
     return (
       <DashboardShell>
-        <div className="dash-head messages-page-header">
-          <div>
-            <p className="eyebrow">MESSAGES</p>
-
-            <h1>
-              Project conversations.
-            </h1>
-
-            <p>
-              Updates, questions and revisions.
-            </p>
-          </div>
-        </div>
-
-        {error && !messages.length && (
-          <div
-            className="project-brief-error messages-error"
-            role="alert"
-          >
-            {error}
-          </div>
-        )}
-
-        <div className="messages-layout">
-          <aside className="messages-sidebar panel">
-            <div className="messages-sidebar-head">
-              <span className="eyebrow">
-                YOUR PROJECTS
-              </span>
-
-              <span className="messages-count">
-                {orders.length}
-              </span>
+        <div className="messages-unified-container">
+          <div className="messages-unified-head">
+            <div>
+              <p className="eyebrow">MESSAGES</p>
+              <h1>Project conversations.</h1>
+              <p>Updates, questions and revisions with the Formant team.</p>
             </div>
+          </div>
 
-            <div className="message-order-list">
-              {loadingOrders ? (
-                <div className="chat-empty">
-                  Loading conversations…
-                </div>
-              ) : orders.length ? (
-                orders.map((order) => {
-                  const active =
-                    String(order.id) ===
-                    String(selectedOrderId);
-
-                  return (
-                    <button
-                      type="button"
-                      className={`message-order ${
-                        active ? 'active' : ''
-                      }`}
-                      key={order.id}
-                      onClick={() => {
-                        if (active) return;
-
-                        setError('');
-                        setText('');
-                        setAttachment(null);
-                        setAttachmentError('');
-                        setMessages([]);
-                        setSelectedOrderId(order.id);
-
-                        requestAnimationFrame(() => {
-                          resizeComposer();
-                        });
-                      }}
-                      aria-current={active ? 'page' : undefined}
-                    >
-                      <span>
-                        ORDER #{order.id}
-                      </span>
-
-                      <strong>
-                        {order.service_name ||
-                          'Careerlyst service'}
-                        {order.package_name
-                          ? ` · ${order.package_name}`
-                          : ''}
-                      </strong>
-
-                      <small>
-                        {String(order.status || 'Pending')
-                          .replace(/-/g, ' ')
-                          .replace(/\b\w/g, (letter) =>
-                            letter.toUpperCase()
-                          )}
-                      </small>
-                    </button>
-                  );
-                })
-              ) : (
-                <div className="chat-empty">
-                  <strong>
-                    No active orders yet.
-                  </strong>
-
-                  <p>
-                    Once you place an order, its
-                    conversation will appear here.
-                  </p>
-                </div>
-              )}
+          {error && !messages.length && (
+            <div
+              className="project-brief-error messages-error"
+              role="alert"
+              style={{ marginBottom: 0 }}
+            >
+              {error}
             </div>
-          </aside>
+          )}
 
-          <section className="chat panel">
-            <div className="chat-head">
-              <span className="avatar">
-                C
-              </span>
-
-              <div className="chat-head-copy">
-                <b>
-                  Careerlyst Team
-                </b>
-
-                <small>
-                  {selectedOrder
-                    ? `Order #${selectedOrder.id} · ${
-                        selectedOrder.service_name ||
-                        'Project support'
-                      }`
-                    : 'Project support'}
-                </small>
-              </div>
-
-              <div
-                className="message-connection"
-                aria-label={`Connection status: ${connectionState}`}
-              >
-                <span
-                  className={`connection-dot ${
-                    connectionState === 'online'
-                      ? 'online'
-                      : ''
-                  }`}
-                />
-
-                <span>
-                  {connectionState === 'online'
-                    ? 'Live'
-                    : connectionState === 'connecting'
-                      ? 'Connecting…'
-                      : 'Offline'}
+          <div className={`messages-chat-shell ${mobileView === 'chat' ? 'mobile-view-chat' : 'mobile-view-list'}`}>
+            <aside className="messages-inbox-sidebar">
+              <div className="messages-inbox-header">
+                <div className="messages-inbox-header-title">
+                  <span>Your Projects</span>
+                </div>
+                <span className="messages-inbox-count-badge">
+                  {orders.length}
                 </span>
               </div>
-            </div>
 
-            <div
-              className="chat-body"
-              ref={chatBodyRef}
-              aria-live="polite"
-            >
-              {!selectedOrderId ? (
-                <div className="chat-empty">
-                  <strong>
-                    Select a project to start a conversation.
-                  </strong>
-
-                  <p>
-                    Your Careerlyst messages are organized
-                    by order.
-                  </p>
+              {orders.length > 2 && (
+                <div className="messages-inbox-search-wrap">
+                  <div className="messages-inbox-search">
+                    <span>⌕</span>
+                    <input
+                      type="text"
+                      placeholder="Search projects…"
+                      value={orderSearch}
+                      onChange={(e) => setOrderSearch(e.target.value)}
+                    />
+                  </div>
                 </div>
-              ) : loadingMessages ? (
-                <div className="chat-empty">
-                  Loading conversation…
-                </div>
-              ) : messages.length ? (
-                messages.map((message) => {
-                  const mine =
-                    String(message.sender_id) ===
-                    String(userId);
+              )}
 
-                  // read_at is the message-state source of truth.
-                  // Missing read_at = new/unread; present read_at = read.
-                  const isRead = Boolean(message.read_at);
-                  const messageState = isRead ? 'is-read' : 'is-new';
-                  const parsed = parseMessageBody(message.body);
+              <div className="messages-inbox-list">
+                {loadingOrders ? (
+                  <div className="messages-empty-state">
+                    <p>Loading conversations…</p>
+                  </div>
+                ) : filteredOrders.length ? (
+                  filteredOrders.map((order) => {
+                    const active = String(order.id) === String(selectedOrderId);
 
-                  return (
-                    <div
-                      className={`message-row ${
-                        mine ? 'you' : 'team'
-                      } ${messageState}`}
-                      key={message.id}
-                    >
-                      <div
-                        className={`bubble ${
-                          mine ? 'you' : 'team'
-                        } ${messageState}`}
+                    return (
+                      <button
+                        type="button"
+                        className={`messages-thread-item ${active ? 'is-active' : ''}`}
+                        key={order.id}
+                        onClick={() => {
+                          if (active) {
+                            setMobileView('chat');
+                            return;
+                          }
+
+                          setError('');
+                          setText('');
+                          setAttachment(null);
+                          setAttachmentError('');
+                          setMessages([]);
+                          setSelectedOrderId(order.id);
+                          setMobileView('chat');
+
+                          requestAnimationFrame(() => {
+                            resizeComposer();
+                          });
+                        }}
+                        aria-current={active ? 'page' : undefined}
                       >
-                        {parsed.text && (
-                          <div className="bubble-text">
-                            {parsed.text}
+                        <div className="messages-thread-avatar">
+                          #{order.id}
+                        </div>
+                        <div className="messages-thread-info">
+                          <div className="messages-thread-top">
+                            <span className="messages-thread-label">
+                              Order #{order.id}
+                            </span>
+                            {order.created_at && (
+                              <span className="messages-thread-time">
+                                {new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(order.created_at))}
+                              </span>
+                            )}
                           </div>
-                        )}
-
-                        {parsed.attachment && <MessageAttachmentLink attachment={parsed.attachment} mine={mine} />}
-
-                        <small>
-                          {formatMessageTime(
-                            message.created_at
+                          <div className="messages-thread-title">
+                            {order.service_name || 'Formant Service'}
+                          </div>
+                          {order.package_name && (
+                            <div className="messages-thread-snippet">
+                              {order.package_name}
+                            </div>
                           )}
-                        </small>
-                      </div>
+                          <div className="messages-thread-badge-row">
+                            <span className="messages-thread-status">
+                              {String(order.status || 'Pending').replace(/-/g, ' ')}
+                            </span>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <div className="messages-empty-state">
+                    <div className="messages-empty-state-icon">📋</div>
+                    <h3>No active orders</h3>
+                    <p>Once you place an order, its project conversation will appear here.</p>
+                  </div>
+                )}
+              </div>
+            </aside>
+
+            <section className="messages-chat-pane">
+              <header className="messages-chat-header">
+                <div className="messages-chat-header-identity">
+                  <button
+                    type="button"
+                    className="messages-mobile-back-btn"
+                    onClick={() => setMobileView('list')}
+                    title="Back to conversations"
+                    aria-label="Back to conversations"
+                  >
+                    ←
+                  </button>
+
+                  <div className="messages-chat-avatar">
+                    F
+                  </div>
+
+                  <div className="messages-chat-header-details">
+                    <h2 className="messages-chat-title">
+                      Formant Team
+                    </h2>
+                    <div className="messages-chat-subtitle">
+                      {selectedOrder ? (
+                        <>
+                          <span>Order #{selectedOrder.id}</span>
+                          <span>·</span>
+                          <span>{selectedOrder.service_name || 'Project Support'}</span>
+                          {selectedOrder.package_name && (
+                            <span>({selectedOrder.package_name})</span>
+                          )}
+                          <span className={`messages-chat-status-pill ${String(selectedOrder.status || '').toLowerCase()}`}>
+                            {String(selectedOrder.status || 'Active').replace(/-/g, ' ')}
+                          </span>
+                        </>
+                      ) : (
+                        <span>Project support</span>
+                      )}
                     </div>
-                  );
-                })
-              ) : error ? (
-                <div className="chat-empty">
-                  <strong>
-                    We couldn’t load this conversation.
-                  </strong>
-
-                  <p>{error}</p>
+                  </div>
                 </div>
-              ) : (
-                <div className="chat-empty">
-                  <strong>
-                    No messages yet.
-                  </strong>
 
-                  <p>
-                    Send a message and the Careerlyst
-                    team can reply here.
-                  </p>
+                <div className="messages-chat-header-actions">
+                  <div
+                    className={`messages-live-indicator ${connectionState === 'online' ? 'online' : connectionState === 'connecting' ? 'connecting' : 'offline'}`}
+                    aria-label={`Connection: ${connectionState}`}
+                  >
+                    <span className="messages-live-dot" />
+                    <span>
+                      {connectionState === 'online'
+                        ? 'Live'
+                        : connectionState === 'connecting'
+                          ? 'Connecting…'
+                          : 'Offline'}
+                    </span>
+                  </div>
                 </div>
-              )}
-            </div>
+              </header>
 
-            <form
-              className="chat-input"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void sendMessage();
-              }}
-            >
-              <div className="chat-composer-row">
-                <label
-                  className="chat-attach-button"
-                  title="Attach a file (max 10 MB)"
-                >
-                  <input
-                    type="file"
-                    accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.jpg,.jpeg,.png,.webp"
-                    onChange={handleAttachmentChange}
-                    disabled={!selectedOrderId || sending}
-                    aria-label="Attach a file"
-                  />
-                  <span>＋</span>
-                  <small>Attach</small>
-                </label>
+              <div
+                className="messages-chat-body"
+                ref={chatBodyRef}
+                aria-live="polite"
+              >
+                {!selectedOrderId ? (
+                  <div className="messages-empty-state">
+                    <div className="messages-empty-state-icon">💬</div>
+                    <h3>Select a project</h3>
+                    <p>Choose an order from the list to view updates and chat with your project team.</p>
+                  </div>
+                ) : loadingMessages ? (
+                  <div className="messages-empty-state">
+                    <p>Loading messages…</p>
+                  </div>
+                ) : messages.length ? (
+                  <>
+                    <div className="messages-system-notice">
+                      Project conversation started · You are speaking directly with Formant specialists.
+                    </div>
 
-                <textarea
-                  ref={textareaRef}
-                  value={text}
-                  onChange={handleComposerChange}
-                  onKeyDown={handleComposerKeyDown}
-                  placeholder={
-                    selectedOrderId
-                      ? 'Write a message…'
-                      : 'Select a project first…'
-                  }
-                  rows={1}
-                  maxLength={2000}
-                  disabled={!selectedOrderId || sending}
-                  aria-label="Write a message"
-                />
+                    {messages.map((message) => {
+                      const mine = String(message.sender_id) === String(userId);
+                      const isRead = Boolean(message.read_at);
+                      const parsed = parseMessageBody(message.body);
 
-                <button
-                  type="submit"
-                  className="btn dark chat-send-button"
-                  disabled={
-                    !selectedOrderId ||
-                    (!text.trim() && !attachment) ||
-                    sending
-                  }
-                >
-                  {sending
-                    ? 'Sending…'
-                    : 'Send ↗'}
-                </button>
+                      return (
+                        <div
+                          className={`messages-row ${mine ? 'is-sent' : 'is-received'}`}
+                          key={message.id}
+                        >
+                          <span className="messages-sender-tag">
+                            {mine ? 'You' : 'Formant Team'}
+                          </span>
+
+                          <div className="messages-bubble">
+                            {parsed.text && (
+                              <div className="messages-bubble-text">
+                                {parsed.text}
+                              </div>
+                            )}
+
+                            {parsed.attachment && (
+                              <MessageAttachmentLink
+                                attachment={parsed.attachment}
+                                mine={mine}
+                              />
+                            )}
+
+                            <div className="messages-bubble-footer">
+                              <span>{formatMessageTime(message.created_at)}</span>
+                              {mine && (
+                                <span className="messages-read-status" title={isRead ? 'Seen by team' : 'Delivered'}>
+                                  {isRead ? ' · Seen ✓' : ' · Delivered'}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </>
+                ) : error ? (
+                  <div className="messages-empty-state">
+                    <div className="messages-empty-state-icon">⚠️</div>
+                    <h3>Could not load conversation</h3>
+                    <p>{error}</p>
+                  </div>
+                ) : (
+                  <div className="messages-empty-state">
+                    <div className="messages-empty-state-icon">✉️</div>
+                    <h3>No messages yet</h3>
+                    <p>Send a message and the Formant team will reply with updates, questions, or deliverables here.</p>
+                  </div>
+                )}
               </div>
 
-              {attachment && (
-                <div className="chat-attachment-preview">
-                  <span>📎</span>
-                  <strong>{attachment.name}</strong>
-                  <small>{formatFileSize(attachment.size)}</small>
-                  <button type="button" onClick={removeAttachment} disabled={sending}>×</button>
-                </div>
-              )}
-
-              {attachmentError && (
-                <div className="chat-attachment-error" role="alert">
-                  {attachmentError}
-                </div>
-              )}
-
-              <div className="chat-input-meta">
-                <small>
-                  Attach files up to 10 MB · Enter to send · Shift + Enter
-                  for a new line
-                </small>
-
-                <small className="chat-char-count">
-                  {text.length}/2000
-                </small>
-              </div>
-
-              {error && messages.length > 0 && (
-                <div
-                  className="chat-inline-error"
-                  role="alert"
+              <div className="messages-composer-area">
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void sendMessage();
+                  }}
                 >
-                  {error}
-                </div>
-              )}
-            </form>
-          </section>
+                  <div className="messages-composer-box">
+                    {attachment && (
+                      <div className="messages-attachment-preview">
+                        <span>📎</span>
+                        <strong>{attachment.name}</strong>
+                        <small>({formatFileSize(attachment.size)})</small>
+                        <button
+                          type="button"
+                          onClick={removeAttachment}
+                          disabled={sending}
+                          aria-label="Remove attachment"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    )}
+
+                    {attachmentError && (
+                      <div className="messages-attachment-error" role="alert">
+                        {attachmentError}
+                      </div>
+                    )}
+
+                    <div className="messages-composer-row">
+                      <label
+                        className="messages-attach-btn"
+                        title="Attach file (PDF, Word, images up to 10 MB)"
+                      >
+                        <input
+                          type="file"
+                          accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.jpg,.jpeg,.png,.webp"
+                          onChange={handleAttachmentChange}
+                          disabled={!selectedOrderId || sending}
+                          aria-label="Attach file"
+                        />
+                        <span>+</span>
+                      </label>
+
+                      <textarea
+                        ref={textareaRef}
+                        className="messages-composer-textarea"
+                        value={text}
+                        onChange={handleComposerChange}
+                        onKeyDown={handleComposerKeyDown}
+                        placeholder={
+                          selectedOrderId
+                            ? 'Write a message to your team…'
+                            : 'Select a project first…'
+                        }
+                        rows={1}
+                        maxLength={2000}
+                        disabled={!selectedOrderId || sending}
+                        aria-label="Write a message"
+                      />
+
+                      <button
+                        type="submit"
+                        className="messages-send-btn"
+                        disabled={
+                          !selectedOrderId ||
+                          (!text.trim() && !attachment) ||
+                          sending
+                        }
+                      >
+                        {sending ? 'Sending…' : 'Send ↗'}
+                      </button>
+                    </div>
+
+                    <div className="messages-composer-footer">
+                      <span className="messages-composer-hint">
+                        Enter to send · Shift + Enter for new line · Max 10 MB file
+                      </span>
+                      <span>
+                        {text.length}/2000
+                      </span>
+                    </div>
+                  </div>
+
+                  {error && messages.length > 0 && (
+                    <div className="chat-inline-error" role="alert" style={{ marginTop: 8 }}>
+                      {error}
+                    </div>
+                  )}
+                </form>
+              </div>
+            </section>
+          </div>
         </div>
       </DashboardShell>
     );
@@ -3119,7 +4002,7 @@
             <div>
               <p className="eyebrow">FILES</p>
               <h1>Your project files.</h1>
-              <p>Files shared with you through your Careerlyst conversations.</p>
+              <p>Files shared with you through your Formant conversations.</p>
             </div>
           </div>
 
@@ -3304,7 +4187,7 @@
 
           const { data, error: notificationError } = await supabase
             .from('notifications')
-            .select('id, user_id, order_id, type, title, body, read_at, created_at, metadata')
+            .select('id, user_id, order_id, type, title, body, action_url, link, read_at, created_at, metadata')
             .eq('user_id', user.id)
             .order('created_at', { ascending: false });
 
@@ -3456,6 +4339,10 @@
     }
 
     function notificationDestination(notification) {
+      if (notification?.action_url || notification?.link) {
+        return notification.action_url || notification.link;
+      }
+
       const orderId = notification?.order_id;
       const type = String(notification?.type || '').toLowerCase();
 
@@ -3502,7 +4389,7 @@
             <div className="notifications-empty">
               <div className="notifications-empty-mark">•</div>
               <h3>Loading notifications…</h3>
-              <p>Checking the latest updates from your Careerlyst workspace.</p>
+              <p>Checking the latest updates from your Formant workspace.</p>
             </div>
           ) : error ? (
             <div className="notifications-empty notifications-empty-error">
@@ -3537,7 +4424,7 @@
                         </span>
                       </div>
 
-                      <h3>{notification.title || 'Careerlyst update'}</h3>
+                      <h3>{notification.title || 'Formant update'}</h3>
                       <p>{notification.body || ''}</p>
 
                       {notification.order_id && (
@@ -3593,6 +4480,12 @@
     const [emailNotifications, setEmailNotifications] = useState(
       s.settings?.emailNotifications ?? true
     );
+    const [currentUserId, setCurrentUserId] = useState('');
+    const [pushSupported, setPushSupported] = useState(false);
+    const [pushPermission, setPushPermission] = useState('default');
+    const [pushSubscribed, setPushSubscribed] = useState(false);
+    const [pushLoading, setPushLoading] = useState(false);
+    const [pushNotice, setPushNotice] = useState('');
     const [language, setLanguage] = useState(
       s.settings?.language || 'English'
     );
@@ -3630,6 +4523,17 @@
         const { data, error: sessionError } = await supabase.auth.getSession();
         if (!mounted || sessionError) return;
 
+        const user = data?.session?.user;
+        if (user) {
+          setCurrentUserId(user.id);
+          const pushStat = await getPushStatus(user.id);
+          if (mounted) {
+            setPushSupported(pushStat.supported);
+            setPushPermission(pushStat.permission);
+            setPushSubscribed(pushStat.isSubscribed);
+          }
+        }
+
         const stored = data?.session?.user?.user_metadata?.careerlyst_settings;
         if (!stored || typeof stored !== 'object') return;
 
@@ -3653,6 +4557,45 @@
         mounted = false;
       };
     }, []);
+
+    async function handleTogglePush() {
+      if (!pushSupported) {
+        setPushNotice('Browser push notifications are not supported by this browser.');
+        return;
+      }
+      if (!currentUserId) {
+        setPushNotice('Please sign in to configure browser push notifications.');
+        return;
+      }
+
+      setPushLoading(true);
+      setPushNotice('');
+
+      try {
+        if (pushSubscribed) {
+          const res = await unsubscribeUserFromPush(currentUserId);
+          if (res.success) {
+            setPushSubscribed(false);
+            setPushNotice('Browser notifications turned off for this device.');
+          } else {
+            setPushNotice(res.error || 'Failed to turn off notifications.');
+          }
+        } else {
+          const res = await subscribeUserToPush(currentUserId);
+          if (res.success) {
+            setPushSubscribed(true);
+            setPushPermission('granted');
+            setPushNotice('Browser push notifications enabled on this device.');
+          } else {
+            setPushNotice(res.error || 'Failed to enable notifications.');
+          }
+        }
+      } catch (err) {
+        setPushNotice(err.message || 'Notification setup failed.');
+      } finally {
+        setPushLoading(false);
+      }
+    }
 
     async function savePreferences(e) {
       e.preventDefault();
@@ -3770,7 +4713,7 @@
               <h1>Everything in<br /><span>one place.</span></h1>
             </div>
             <p className="settings-hero-copy">
-              Manage your Careerlyst preferences, security and account without leaving your workspace.
+              Manage your Formant preferences, security and account without leaving your workspace.
             </p>
           </header>
 
@@ -3819,6 +4762,43 @@
                       <span className="settings-switch-v2" aria-hidden="true"><i /></span>
                     </label>
 
+                    <label className="settings-toggle-v2">
+                      <span className="settings-option-icon">🔔</span>
+                      <span className="settings-option-copy">
+                        <strong>Browser push notifications</strong>
+                        <small>
+                          {!pushSupported
+                            ? 'Not supported by this browser.'
+                            : pushPermission === 'denied'
+                            ? 'Notifications are blocked in your browser settings.'
+                            : pushSubscribed
+                            ? 'Active — instant project alerts and updates on this device.'
+                            : 'Receive instant desktop and mobile updates from Formant.'}
+                        </small>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={pushSubscribed}
+                        onChange={handleTogglePush}
+                        disabled={pushLoading || !pushSupported}
+                      />
+                      <span className="settings-switch-v2" aria-hidden="true"><i /></span>
+                    </label>
+                    {pushNotice && (
+                      <div
+                        style={{
+                          fontSize: '11px',
+                          color: 'var(--muted, #666)',
+                          padding: '6px 10px',
+                          margin: '6px 0 12px',
+                          background: 'var(--soft, #f7f7f5)',
+                          borderRadius: '8px'
+                        }}
+                      >
+                        {pushNotice}
+                      </div>
+                    )}
+
                     <label className="settings-select-v2">
                       <span className="settings-option-icon">文</span>
                       <span className="settings-option-copy">
@@ -3852,7 +4832,7 @@
                   </div>
 
                   <div className="settings-section-footer-v2">
-                    <span>Changes are saved to your Careerlyst account.</span>
+                    <span>Changes are saved to your Formant account.</span>
                     <button className="btn dark" type="submit" disabled={savingPreferences}>
                       {savingPreferences ? 'Saving…' : 'Save changes ↗'}
                     </button>
@@ -3900,7 +4880,7 @@
                   <div className="settings-security-foot-v2">
                     <div>
                       <strong>Authentication handled by Supabase.</strong>
-                      <span>Your password is never stored in Careerlyst profile data.</span>
+                      <span>Your password is never stored in Formant profile data.</span>
                     </div>
                     <button className="btn dark" type="submit" disabled={changingPassword}>
                       {changingPassword ? 'Updating…' : 'Update password ↗'}
@@ -3941,7 +4921,7 @@
                       <span className="settings-account-icon">→</span>
                       <span>
                         <strong>Sign out</strong>
-                        <small>End your current Careerlyst session.</small>
+                        <small>End your current Formant session.</small>
                       </span>
                       <b>↗</b>
                     </button>

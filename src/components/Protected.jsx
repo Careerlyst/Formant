@@ -18,6 +18,7 @@ export default function Protected({ children }) {
 
       const user = nextSession.user;
       const name =
+        user.user_metadata?.full_name ||
         user.user_metadata?.name ||
         user.email?.split('@')[0] ||
         'Client';

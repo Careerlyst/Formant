@@ -9,6 +9,7 @@ import AdminProjectsPage from './AdminProjects';
 import AdminServicesPage from './AdminServices';
 import { AdminReviewsPage } from './AdminReviews';
 import DashboardShell from '../components/DashboardShell';
+import Logo from '../components/Logo';
 import { supabase } from '../lib/supabase';
 import { load } from '../lib/store';
 
@@ -746,7 +747,7 @@ import { load } from '../lib/store';
 
                   <span>
                     {order.service_name ||
-                      'Careerlyst service'}
+                      'Formant service'}
                     {order.package_name
                       ? ` · ${order.package_name}`
                       : ''}
@@ -818,7 +819,7 @@ import { load } from '../lib/store';
 
                 <span>
                   {order.service_name ||
-                    'Careerlyst service'}
+                    'Formant service'}
                 </span>
 
                 <span className="status">
@@ -1330,7 +1331,7 @@ import { load } from '../lib/store';
                     <button className="admin-order-live-main" type="button" onClick={() => setSelectedOrder(order)}>
                       <span className="admin-order-live-id">#{order.id}</span>
                       <span className="admin-order-live-client">{client.name || 'Client'}<small>{client.email || order.user_id || 'No profile email'}</small></span>
-                      <span className="admin-order-live-service">{order.service_name || 'Careerlyst service'}<small>{order.package_name || 'Standard package'}</small></span>
+                      <span className="admin-order-live-service">{order.service_name || 'Formant service'}<small>{order.package_name || 'Standard package'}</small></span>
                       <span className="admin-order-live-status">{status.replace(/_/g, ' ')}</span>
                       <span className={`admin-order-live-payment ${payment}`}>{payment}</span>
                       <span className="admin-order-live-total">{order.total != null ? new Intl.NumberFormat(undefined, { style: 'currency', currency: order.currency || 'USD' }).format(Number(order.total) || 0) : '—'}</span>
@@ -1351,7 +1352,7 @@ import { load } from '../lib/store';
         {selectedOrder && (
           <div className="admin-order-drawer-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelectedOrder(null); }}>
             <aside className="admin-order-drawer" aria-label={`Order ${selectedOrder.id} details`}>
-              <div className="admin-order-drawer-head"><div><p className="eyebrow">ORDER #{selectedOrder.id}</p><h2>{selectedOrder.service_name || 'Careerlyst service'}</h2></div><button type="button" onClick={() => setSelectedOrder(null)} aria-label="Close order details">×</button></div>
+              <div className="admin-order-drawer-head"><div><p className="eyebrow">ORDER #{selectedOrder.id}</p><h2>{selectedOrder.service_name || 'Formant service'}</h2></div><button type="button" onClick={() => setSelectedOrder(null)} aria-label="Close order details">×</button></div>
               <div className="admin-order-drawer-grid">
                 <div><span>Client</span><strong>{profiles[selectedOrder.user_id]?.name || 'Client'}</strong></div>
                 <div><span>Package</span><strong>{selectedOrder.package_name || '—'}</strong></div>
@@ -1380,6 +1381,7 @@ import { load } from '../lib/store';
     const [users, setUsers] = useState([]);
     const [orders, setOrders] = useState([]);
     const [roles, setRoles] = useState({});
+    const [joinDates, setJoinDates] = useState({});
     const [search, setSearch] = useState('');
     const [filter, setFilter] = useState('all');
     const [loading, setLoading] = useState(true);
@@ -1415,23 +1417,37 @@ import { load } from '../lib/store';
 
         // profiles is the application-side user directory. We intentionally
         // do not query auth.users from the browser.
-        const [profilesResult, ordersResult, rolesResult] = await Promise.all([
+        const [profilesResult, ordersResult, rolesResult, joinDatesResult] = await Promise.all([
           supabase.from('profiles').select('id, name'),
           supabase
             .from('orders')
             .select('id, user_id, service_name, package_name, status, payment_status, created_at, updated_at')
             .order('created_at', { ascending: false }),
-          supabase.from('user_roles').select('user_id, role')
+          supabase.rpc('admin_list_directory_user_roles_v1'),
+          supabase.rpc('admin_list_directory_join_dates_v1')
         ]);
 
         if (profilesResult.error) throw profilesResult.error;
         if (ordersResult.error) throw ordersResult.error;
         if (rolesResult.error) throw rolesResult.error;
+        if (joinDatesResult.error) throw joinDatesResult.error;
 
         const nextOrders = ordersResult.data || [];
         const nextUsers = profilesResult.data || [];
         const nextRoles = Object.fromEntries(
-          (rolesResult.data || []).map((row) => [row.user_id, row.role])
+          (rolesResult.data || []).map((row) => {
+            const role = String(row.role || '').trim().toLowerCase();
+            const knownRole = role === 'client' || STAFF_ROLES.includes(role)
+              ? role
+              : 'unknown';
+            return [String(row.user_id), knownRole];
+          })
+        );
+        const nextJoinDates = Object.fromEntries(
+          (joinDatesResult.data || []).map((row) => [
+            String(row.user_id),
+            row.created_at || null
+          ])
         );
 
         // Keep users that appear in orders even if a profile row is missing.
@@ -1446,6 +1462,7 @@ import { load } from '../lib/store';
         setUsers(Array.from(profileMap.values()));
         setOrders(nextOrders);
         setRoles(nextRoles);
+        setJoinDates(nextJoinDates);
       } catch (err) {
         console.error('Admin users load error:', err);
         setError(err?.message || 'Could not load users.');
@@ -1473,12 +1490,13 @@ import { load } from '../lib/store';
         const paidOrders = userOrders.filter(
           (order) => String(order.payment_status || '').toLowerCase() === 'paid'
         );
-        const role = roles[user.id] || 'client';
+        const role = roles[String(user.id)] || 'unknown';
         const isStaff = STAFF_ROLES.includes(role);
 
         return {
           ...user,
           name: String(user.name || 'Client').trim() || 'Client',
+          created_at: joinDates[String(user.id)] || null,
           role,
           isStaff,
           orders: userOrders,
@@ -1493,23 +1511,30 @@ import { load } from '../lib/store';
           const haystack = [user.name, user.id, user.role].join(' ').toLowerCase();
           if (!haystack.includes(q)) return false;
         }
-        if (filter === 'clients' && user.isStaff) return false;
+        if (filter === 'clients' && user.role !== 'client') return false;
         if (filter === 'staff' && !user.isStaff) return false;
-        if (filter === 'active' && user.activeCount === 0) return false;
+        if (filter === 'active' && (user.role !== 'client' || user.activeCount === 0)) return false;
         if (filter === 'orders' && user.orderCount === 0) return false;
         return true;
       })
       .sort((a, b) => {
-        if (b.activeCount !== a.activeCount) return b.activeCount - a.activeCount;
-        if (b.orderCount !== a.orderCount) return b.orderCount - a.orderCount;
-        return a.name.localeCompare(b.name);
+        const aJoinTime = Date.parse(a.created_at || '');
+        const bJoinTime = Date.parse(b.created_at || '');
+        const aSortTime = Number.isFinite(aJoinTime) ? aJoinTime : 0;
+        const bSortTime = Number.isFinite(bJoinTime) ? bJoinTime : 0;
+        if (aSortTime !== bSortTime) return bSortTime - aSortTime;
+        return a.name.localeCompare(b.name) || String(a.id).localeCompare(String(b.id));
       });
 
     const totalUsers = users.length;
-    const clientCount = users.filter((user) => !STAFF_ROLES.includes(roles[user.id])).length;
-    const staffCount = totalUsers - clientCount;
+    const clientCount = users.filter(
+      (user) => roles[String(user.id)] === 'client'
+    ).length;
+    const staffCount = users.filter(
+      (user) => STAFF_ROLES.includes(roles[String(user.id)])
+    ).length;
     const activeUserCount = users.filter((user) =>
-      orders.some((order) => {
+      roles[String(user.id)] === 'client' && orders.some((order) => {
         if (String(order.user_id) !== String(user.id)) return false;
         return !['completed', 'cancelled', 'canceled'].includes(String(order.status || '').toLowerCase());
       })
@@ -1522,7 +1547,7 @@ import { load } from '../lib/store';
             <div>
               <p className="eyebrow">ADMIN · USERS</p>
               <h1>Users.</h1>
-              <p>Manage the people connected to Careerlyst projects.</p>
+              <p>Manage the people connected to Formant projects.</p>
             </div>
             <button
               type="button"
@@ -1536,7 +1561,7 @@ import { load } from '../lib/store';
 
           <section className="admin-users-stats">
             <div className="stat"><span>Total users</span><b>{loading ? '—' : totalUsers}</b><small>Profiles in the directory</small></div>
-            <div className="stat"><span>Clients</span><b>{loading ? '—' : clientCount}</b><small>Non-staff accounts</small></div>
+            <div className="stat"><span>Clients</span><b>{loading ? '—' : clientCount}</b><small>Accounts with client role</small></div>
             <div className="stat"><span>Staff</span><b>{loading ? '—' : staffCount}</b><small>Admin / expert / support / finance</small></div>
             <div className="stat"><span>Active clients</span><b>{loading ? '—' : activeUserCount}</b><small>Users with open work</small></div>
           </section>
@@ -1591,6 +1616,14 @@ import { load } from '../lib/store';
               <div className="admin-users-list">
                 {userRows.map((user) => {
                   const latestOrder = user.orders[0];
+                  const parsedJoinDate = user.created_at ? new Date(user.created_at) : null;
+                  const joinedDate = parsedJoinDate && !Number.isNaN(parsedJoinDate.getTime())
+                    ? parsedJoinDate.toLocaleDateString(undefined, {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric'
+                      })
+                    : 'Unknown';
                   return (
                     <article className="admin-user-row" key={user.id}>
                       <div className="admin-user-avatar">
@@ -1604,9 +1637,10 @@ import { load } from '../lib/store';
                           </span>
                         </div>
                         <small className="admin-user-id">ID · {user.id}</small>
+                        <small className="admin-user-id">Joined: {joinedDate}</small>
                         {latestOrder && (
                           <small className="admin-user-latest">
-                            Latest: {latestOrder.service_name || 'Careerlyst service'}{latestOrder.package_name ? ` · ${latestOrder.package_name}` : ''}
+                            Latest: {latestOrder.service_name || 'Formant service'}{latestOrder.package_name ? ` · ${latestOrder.package_name}` : ''}
                           </small>
                         )}
                       </div>
@@ -1664,6 +1698,73 @@ export function AdminReviews() {
   return <AdminReviewsPage />;
 }
 
+  function parseMessageBody(body) {
+    const prefix = '__CAREERLYST_ATTACHMENT__:';
+    if (typeof body !== 'string' || !body.startsWith(prefix)) {
+      return { text: body || '', attachment: null };
+    }
+
+    try {
+      const payload = JSON.parse(body.slice(prefix.length));
+      return {
+        text: payload.text || '',
+        attachment: payload.attachment || null
+      };
+    } catch {
+      return { text: body, attachment: null };
+    }
+  }
+
+  function AdminMessageAttachmentLink({ attachment, isTeam = false }) {
+    const [url, setUrl] = useState(attachment?.url || '');
+    const [loading, setLoading] = useState(Boolean(attachment?.path && !attachment?.url));
+
+    useEffect(() => {
+      let active = true;
+
+      async function createUrl() {
+        if (!attachment?.path || attachment?.url || !supabase) {
+          if (active) setLoading(false);
+          return;
+        }
+
+        const { data, error } = await supabase.storage
+          .from('message-attachments')
+          .createSignedUrl(attachment.path, 60 * 60);
+
+        if (active) {
+          setUrl(error ? '' : data?.signedUrl || '');
+          setLoading(false);
+        }
+      }
+
+      void createUrl();
+      return () => { active = false; };
+    }, [attachment?.path, attachment?.url]);
+
+    if (loading) {
+      return <div className={`message-attachment ${isTeam ? 'is-mine' : ''}`}>Loading attachment…</div>;
+    }
+
+    if (!url) return null;
+
+    return (
+      <a
+        className={`message-attachment ${isTeam ? 'is-mine' : ''}`}
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        download={attachment.name}
+      >
+        <span className="message-attachment-icon">↗</span>
+        <span className="message-attachment-copy">
+          <strong>{attachment.name}</strong>
+          <small>{attachment.size >= 1024 * 1024 ? `${(attachment.size / (1024 * 1024)).toFixed(1)} MB` : `${Math.round(attachment.size / 1024)} KB`}</small>
+        </span>
+      </a>
+    );
+  }
+
   function AdminMessagesPage() {
     const [staffUserId, setStaffUserId] = useState('');
     const [staffRole, setStaffRole] = useState('');
@@ -1671,6 +1772,8 @@ export function AdminReviews() {
     const [profiles, setProfiles] = useState({});
     const [messageMap, setMessageMap] = useState({});
     const [selectedOrderId, setSelectedOrderId] = useState(null);
+    const [expandedClientId, setExpandedClientId] = useState(null);
+    const [mobileView, setMobileView] = useState('list');
     const [text, setText] = useState('');
     const [search, setSearch] = useState('');
     const [loading, setLoading] = useState(true);
@@ -1680,6 +1783,7 @@ export function AdminReviews() {
     const [notificationsOpen, setNotificationsOpen] = useState(false);
     const [messageToast, setMessageToast] = useState(null);
     const seenRealtimeMessageIdsRef = useRef(new Set());
+    const chatBodyRef = useRef(null);
 
     const selectedOrder = orders.find(
       (order) => String(order.id) === String(selectedOrderId)
@@ -1695,7 +1799,7 @@ export function AdminReviews() {
 
       orders.forEach((order) => {
         const clientName = profiles[order.user_id]?.name || 'Client';
-        const service = String(order.service_name || 'Careerlyst service');
+        const service = String(order.service_name || 'Formant service');
         const packageName = String(order.package_name || '');
         const thread = messageMap[String(order.id)] || [];
         const last = thread[thread.length - 1];
@@ -2099,9 +2203,7 @@ export function AdminReviews() {
     }, [messageToast]);
 
     useEffect(() => {
-      const node = document.querySelector(
-        '.admin-messages-thread-body'
-      );
+      const node = chatBodyRef.current || document.querySelector('.messages-chat-body') || document.querySelector('.admin-messages-thread-body');
 
       if (!node) return;
 
@@ -2109,6 +2211,23 @@ export function AdminReviews() {
         node.scrollTop = node.scrollHeight;
       });
     }, [selectedOrderId, selectedMessages.length]);
+
+    useEffect(() => {
+      if (!selectedOrderId || !expandedClientId) return;
+      const timer = window.setTimeout(() => {
+        const activeBtn = document.querySelector('.messages-admin-project-item.is-active');
+        if (activeBtn) {
+          activeBtn.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      }, 50);
+      return () => window.clearTimeout(timer);
+    }, [selectedOrderId, expandedClientId]);
+
+    useEffect(() => {
+      if (search.trim() && groupedClients.length === 1) {
+        setExpandedClientId(groupedClients[0].userId);
+      }
+    }, [search, groupedClients]);
 
     function formatMessageTime(value) {
       if (!value) return '';
@@ -2223,12 +2342,24 @@ export function AdminReviews() {
 
     function selectOrder(orderId) {
       setSelectedOrderId(orderId);
+      setMobileView('chat');
       setText('');
       setError('');
+
+      const targetOrder = orders.find(
+        (order) => String(order.id) === String(orderId)
+      );
+      if (targetOrder?.user_id) {
+        setExpandedClientId(targetOrder.user_id);
+      }
+    }
+
+    function toggleClient(userId) {
+      setExpandedClientId((prev) => (String(prev) === String(userId) ? null : userId));
     }
 
     function getOrderLabel(order) {
-      const service = order.service_name || 'Careerlyst service';
+      const service = order.service_name || 'Formant service';
       const packageName = order.package_name
         ? ` · ${order.package_name}`
         : '';
@@ -2238,8 +2369,8 @@ export function AdminReviews() {
 
     return (
       <DashboardShell admin>
-        <main className="admin-messages-page">
-          <header className="admin-messages-head">
+        <div className="messages-unified-container">
+          <header className="messages-unified-head">
             <div>
               <p className="eyebrow">ADMIN</p>
               <h1>Messages</h1>
@@ -2248,30 +2379,32 @@ export function AdminReviews() {
               </p>
             </div>
 
-            <div className="admin-messages-head-actions">
-              <div className="admin-messages-notification-wrap">
+            <div className="messages-unified-head-actions">
+              <div className="messages-notif-wrap admin-messages-notification-wrap">
                 <button
                   type="button"
-                  className="admin-messages-notification-button"
+                  className="messages-notif-btn admin-messages-notification-button"
                   onClick={() => setNotificationsOpen((value) => !value)}
                   aria-label={`Notifications${unreadTotal ? `, ${unreadTotal} unread` : ''}`}
                   aria-expanded={notificationsOpen}
                 >
                   <span className="admin-messages-notification-icon" aria-hidden="true">🔔</span>
-                  {unreadTotal > 0 && <b>{unreadTotal > 99 ? '99+' : unreadTotal}</b>}
+                  {unreadTotal > 0 && <span className="messages-notif-badge">{unreadTotal > 99 ? '99+' : unreadTotal}</span>}
                 </button>
                 {notificationsOpen && (
-                  <div className="admin-messages-notification-panel">
-                    <div className="admin-messages-notification-head">
+                  <div className="messages-notif-panel admin-messages-notification-panel">
+                    <div className="messages-notif-panel-head admin-messages-notification-head">
                       <strong>Notifications</strong>
                       <span>{unreadTotal} unread</span>
                     </div>
                     {!notifications.length ? (
-                      <div className="admin-messages-notification-empty">No unread client messages.</div>
+                      <div className="admin-messages-notification-empty" style={{ padding: '14px', fontSize: '12px', color: '#888', textAlign: 'center' }}>
+                        No unread client messages.
+                      </div>
                     ) : notifications.map((notification) => (
                       <button
                         type="button"
-                        className="admin-messages-notification-item"
+                        className="messages-notif-item admin-messages-notification-item"
                         key={`${notification.order.id}-${notification.latest.id}`}
                         onClick={() => {
                           selectOrder(notification.order.id);
@@ -2279,33 +2412,37 @@ export function AdminReviews() {
                         }}
                       >
                         <span className="admin-messages-notification-dot" />
-                        <span>
+                        <div className="messages-notif-item-copy">
                           <strong>{notification.clientName}</strong>
-                          <small>Order #{notification.order.id} · {notification.latest.body || 'New message'}</small>
-                        </span>
-                        <b>{notification.unread}</b>
+                          <small>Order #{notification.order.id} · {parseMessageBody(notification.latest.body).text || (parseMessageBody(notification.latest.body).attachment ? `📎 ${parseMessageBody(notification.latest.body).attachment.name}` : 'New message')}</small>
+                        </div>
+                        {notification.unread > 0 && (
+                          <span className="messages-thread-unread-pill" style={{ margin: 'auto 0 auto auto' }}>{notification.unread}</span>
+                        )}
                       </button>
                     ))}
                   </div>
                 )}
               </div>
-              <span className={`admin-messages-live ${connection}`}>
-                <i />
-                {connection === 'online' ? 'LIVE' : connection === 'connecting' ? 'CONNECTING' : 'OFFLINE'}
-              </span>
+              <div className={`messages-live-indicator ${connection === 'online' ? 'online' : connection === 'connecting' ? 'connecting' : 'offline'}`}>
+                <span className="messages-live-dot" />
+                <span>{connection === 'online' ? 'Live' : connection === 'connecting' ? 'Connecting…' : 'Offline'}</span>
+              </div>
             </div>
           </header>
 
           {error && (
             <div
-              className="admin-messages-error"
+              className="project-brief-error messages-error"
               role="alert"
+              style={{ marginBottom: 0 }}
             >
               <span>{error}</span>
               <button
                 type="button"
                 onClick={() => setError('')}
                 aria-label="Dismiss"
+                style={{ float: 'right', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 800 }}
               >
                 ×
               </button>
@@ -2315,7 +2452,7 @@ export function AdminReviews() {
           {messageToast && (
             <button
               type="button"
-              className="admin-messages-toast"
+              className="messages-toast admin-messages-toast"
               onClick={() => {
                 selectOrder(messageToast.orderId);
                 setNotificationsOpen(false);
@@ -2323,220 +2460,267 @@ export function AdminReviews() {
               }}
             >
               <span className="admin-messages-toast-icon">●</span>
-              <span className="admin-messages-toast-copy">
+              <span className="messages-toast-copy admin-messages-toast-copy">
                 <strong>New message from {messageToast.clientName}</strong>
                 <small>Order #{messageToast.orderId} · {messageToast.preview}</small>
               </span>
-              <span className="admin-messages-toast-close" aria-hidden="true">×</span>
+              <span className="messages-toast-close admin-messages-toast-close" aria-hidden="true">×</span>
             </button>
           )}
 
-          <section className="admin-messages-shell panel">
-            <aside className="admin-messages-inbox">
-              <div className="admin-messages-inbox-head">
-                <div>
-                  <span>CLIENTS</span>
-                  <strong>{groupedClients.length}</strong>
+          <div className={`messages-chat-shell ${mobileView === 'chat' ? 'mobile-view-chat' : 'mobile-view-list'}`}>
+            <aside className="messages-inbox-sidebar">
+              <div className="messages-inbox-header">
+                <div className="messages-inbox-header-title">
+                  <span>Clients</span>
+                  <span className="messages-inbox-count-badge">{groupedClients.length}</span>
                 </div>
 
-                <small>
-                  {visibleOrderCount} project
-                  {visibleOrderCount === 1 ? '' : 's'}
+                <small style={{ fontSize: '11px', color: '#6d7069' }}>
+                  {visibleOrderCount} project{visibleOrderCount === 1 ? '' : 's'}
                 </small>
               </div>
 
-              <label className="admin-messages-search">
-                <span>⌕</span>
-                <input
-                  value={search}
-                  onChange={(event) =>
-                    setSearch(event.target.value)
-                  }
-                  placeholder="Search clients or projects…"
-                />
-              </label>
+              <div className="messages-inbox-search-wrap">
+                <div className="messages-inbox-search">
+                  <span>⌕</span>
+                  <input
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Search clients or projects…"
+                  />
+                </div>
+              </div>
 
-              <div className="admin-messages-client-list">
+              <div className="messages-inbox-list">
                 {loading ? (
-                  <div className="admin-messages-empty-list">
-                    Loading clients…
+                  <div className="messages-empty-state">
+                    <p>Loading clients…</p>
                   </div>
                 ) : !groupedClients.length ? (
-                  <div className="admin-messages-empty-list">
-                    No matching clients.
+                  <div className="messages-empty-state">
+                    <div className="messages-empty-state-icon">⌕</div>
+                    <h3>No matching clients</h3>
+                    <p>Try searching for a different client name or order ID.</p>
                   </div>
                 ) : (
-                  groupedClients.map((group) => (
-                    <section
-                      className="admin-client-group"
-                      key={String(group.userId)}
-                    >
-                      <div className="admin-client-group-head">
-                        <div className="admin-client-group-identity">
-                          <span className="admin-client-group-avatar">
-                            {group.clientName
-                              .charAt(0)
-                              .toUpperCase()}
-                          </span>
+                  groupedClients.map((group) => {
+                    const isExpanded = String(expandedClientId) === String(group.userId);
+                    const hasActiveProject = group.orders.some(
+                      ({ order }) => String(order.id) === String(selectedOrderId)
+                    );
 
-                          <div>
-                            <strong>{group.clientName}</strong>
-                            <small>
-                              {group.orders.length} project
-                              {group.orders.length === 1
-                                ? ''
-                                : 's'}
-                            </small>
+                    return (
+                      <section
+                        className={`messages-admin-client-group admin-client-group ${isExpanded ? 'is-expanded' : ''} ${hasActiveProject ? 'has-active-project' : ''}`}
+                        key={String(group.userId)}
+                      >
+                        <button
+                          type="button"
+                          id={`client-head-${group.userId}`}
+                          className={`messages-admin-client-group-head admin-client-group-head ${isExpanded ? 'is-expanded' : ''}`}
+                          onClick={() => toggleClient(group.userId)}
+                          aria-expanded={isExpanded}
+                          aria-controls={`client-projects-${group.userId}`}
+                        >
+                          <div className="messages-admin-client-identity admin-client-group-identity">
+                            <span className="messages-admin-client-avatar admin-client-group-avatar">
+                              {group.clientName.charAt(0).toUpperCase()}
+                            </span>
+
+                            <div>
+                              <strong>{group.clientName}</strong>
+                              <small>
+                                {group.orders.length} project{group.orders.length === 1 ? '' : 's'}
+                              </small>
+                            </div>
                           </div>
-                        </div>
 
-                        {group.unread > 0 && (
-                          <span className="admin-client-group-unread">
-                            {group.unread}
-                          </span>
-                        )}
-                      </div>
+                          <div className="messages-admin-client-head-right">
+                            {hasActiveProject && !isExpanded && (
+                              <span
+                                className="messages-admin-client-active-dot"
+                                title="Contains active conversation"
+                                aria-label="Contains active conversation"
+                              />
+                            )}
 
-                      <div className="admin-client-projects">
-                        {group.orders.map(({ order, last, unread }) => {
-                          const active =
-                            String(order.id) ===
-                            String(selectedOrderId);
-
-                          return (
-                            <button
-                              className={`admin-client-project ${active ? 'is-active' : ''}`}
-                              type="button"
-                              key={order.id}
-                              onClick={() =>
-                                selectOrder(order.id)
-                              }
-                            >
-                              <span className="admin-client-project-copy">
-                                <span className="admin-client-project-top">
-                                  <small>
-                                    ORDER #{order.id}
-                                  </small>
-                                  <small>
-                                    {last
-                                      ? formatMessageTime(
-                                          last.created_at
-                                        )
-                                      : formatOrderDate(
-                                          order.created_at
-                                        )}
-                                  </small>
-                                </span>
-
-                                <strong>
-                                  {getOrderLabel(order)}
-                                </strong>
-
-                                <span>
-                                  {last?.body ||
-                                    'No messages yet — start the conversation.'}
-                                </span>
+                            {group.unread > 0 && (
+                              <span className="messages-admin-client-unread-badge admin-client-group-unread">
+                                {group.unread}
                               </span>
+                            )}
 
-                              {unread > 0 && (
-                                <b>{unread}</b>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </section>
-                  ))
+                            <span
+                              className={`messages-admin-client-chevron ${isExpanded ? 'is-expanded' : ''}`}
+                              aria-hidden="true"
+                            >
+                              <svg
+                                width="12"
+                                height="12"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2.5"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                <polyline points="6 9 12 15 18 9" />
+                              </svg>
+                            </span>
+                          </div>
+                        </button>
+
+                        {isExpanded && (
+                          <div
+                            id={`client-projects-${group.userId}`}
+                            className="messages-admin-project-list admin-client-projects"
+                            role="region"
+                            aria-labelledby={`client-head-${group.userId}`}
+                          >
+                            {group.orders.map(({ order, last, unread }) => {
+                              const active = String(order.id) === String(selectedOrderId);
+                              const lastParsed = parseMessageBody(last?.body);
+                              const snippetText =
+                                lastParsed.text ||
+                                (lastParsed.attachment
+                                  ? `📎 ${lastParsed.attachment.name}`
+                                  : 'No messages yet — start the conversation.');
+
+                              return (
+                                <button
+                                  className={`messages-admin-project-item admin-client-project ${active ? 'is-active' : ''}`}
+                                  type="button"
+                                  key={order.id}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    selectOrder(order.id);
+                                  }}
+                                >
+                                  <div className="messages-admin-project-copy admin-client-project-copy">
+                                    <div className="messages-admin-project-top admin-client-project-top">
+                                      <small>ORDER #{order.id}</small>
+                                      <small>
+                                        {last
+                                          ? formatMessageTime(last.created_at)
+                                          : formatOrderDate(order.created_at)}
+                                      </small>
+                                    </div>
+
+                                    <strong>{getOrderLabel(order)}</strong>
+
+                                    <span>{snippetText}</span>
+                                  </div>
+
+                                  {unread > 0 && (
+                                    <span className="messages-thread-unread-pill" style={{ marginLeft: 6 }}>
+                                      {unread}
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </section>
+                    );
+                  })
                 )}
               </div>
             </aside>
 
-            <section className="admin-messages-conversation">
+            <section className="messages-chat-pane">
               {!selectedOrder ? (
-                <div className="admin-messages-no-selection">
-                  <span className="admin-messages-no-selection-number">
-                    01
-                  </span>
-                  <h2>Select a project.</h2>
-                  <p>
-                    Choose a project under a client to open
-                    the conversation.
-                  </p>
+                <div className="messages-empty-state">
+                  <div className="messages-empty-state-icon">💬</div>
+                  <h3>Select a project</h3>
+                  <p>Choose a project under a client to open the conversation.</p>
                 </div>
               ) : (
                 <>
-                  <header className="admin-messages-conversation-head">
-                    <div className="admin-messages-client">
-                      <span className="admin-messages-client-avatar">
-                        {(profiles[selectedOrder.user_id]?.name ||
-                          'Client')
-                          .charAt(0)
-                          .toUpperCase()}
-                      </span>
+                  <header className="messages-chat-header">
+                    <div className="messages-chat-header-identity">
+                      <button
+                        type="button"
+                        className="messages-mobile-back-btn"
+                        onClick={() => setMobileView('list')}
+                        title="Back to conversations"
+                        aria-label="Back to conversations"
+                      >
+                        ←
+                      </button>
 
-                      <div>
-                        <strong>
-                          {profiles[selectedOrder.user_id]?.name ||
-                            'Client'}
-                        </strong>
-                        <span>
-                          Order #{selectedOrder.id} ·{' '}
-                          {getOrderLabel(selectedOrder)}
-                        </span>
+                      <div className="messages-chat-avatar">
+                        {(profiles[selectedOrder.user_id]?.name || 'Client').charAt(0).toUpperCase()}
+                      </div>
+
+                      <div className="messages-chat-header-details">
+                        <h2 className="messages-chat-title">
+                          {profiles[selectedOrder.user_id]?.name || 'Client'}
+                        </h2>
+                        <div className="messages-chat-subtitle">
+                          <span>Order #{selectedOrder.id}</span>
+                          <span>·</span>
+                          <span>{getOrderLabel(selectedOrder)}</span>
+                          <span className={`messages-chat-status-pill ${String(selectedOrder.status || '').toLowerCase()}`}>
+                            {String(selectedOrder.status || 'pending').replace(/_/g, ' ')}
+                          </span>
+                        </div>
                       </div>
                     </div>
 
-                    <div className="admin-messages-conversation-meta">
-                      <span>
-                        {String(
-                          selectedOrder.status || 'pending'
-                        ).replace(/_/g, ' ')}
-                      </span>
-                      <Link to="/admin/workspace">
+                    <div className="messages-chat-header-actions">
+                      <Link to="/admin/workspace" className="messages-workspace-link">
                         Open workspace →
                       </Link>
                     </div>
                   </header>
 
-                  <div className="admin-messages-thread-body">
-                    <div className="admin-messages-system-note">
-                      This conversation is shared with the client
-                      in their Careerlyst dashboard.
+                  <div
+                    className="messages-chat-body"
+                    ref={chatBodyRef}
+                  >
+                    <div className="messages-system-notice">
+                      This conversation is shared with the client in their Formant dashboard.
                     </div>
 
                     {!selectedMessages.length ? (
-                      <div className="admin-messages-empty-thread">
-                        <span>NO MESSAGES YET</span>
-                        <h2>Start the project conversation.</h2>
-                        <p>
-                          Send the first update, question or
-                          next-step instruction to the client.
-                        </p>
+                      <div className="messages-empty-state">
+                        <div className="messages-empty-state-icon">✉️</div>
+                        <h3>Start the project conversation</h3>
+                        <p>Send the first update, question or next-step instruction to the client.</p>
                       </div>
                     ) : (
                       selectedMessages.map((message) => {
-                        const isTeam =
-                          String(message.sender_id) ===
-                          String(staffUserId);
+                        const isTeam = String(message.sender_id) === String(staffUserId);
+                        const parsed = parseMessageBody(message.body);
 
                         return (
                           <div
-                            className={`admin-message-row ${isTeam ? 'is-team' : 'is-client'}`}
+                            className={`messages-row ${isTeam ? 'is-sent' : 'is-received'}`}
                             key={message.id}
                           >
-                            <div className="admin-message-bubble">
-                              <p>{message.body}</p>
-                              <small>
-                                {isTeam
-                                  ? 'Careerlyst Team'
-                                  : profiles[
-                                      selectedOrder.user_id
-                                    ]?.name || 'Client'}
-                                {' · '}
-                                {formatMessageTime(
-                                  message.created_at
-                                )}
-                              </small>
+                            <span className="messages-sender-tag">
+                              {isTeam ? 'Formant Team' : profiles[selectedOrder.user_id]?.name || 'Client'}
+                            </span>
+
+                            <div className="messages-bubble">
+                              {parsed.text && (
+                                <div className="messages-bubble-text">
+                                  {parsed.text}
+                                </div>
+                              )}
+
+                              {parsed.attachment && (
+                                <AdminMessageAttachmentLink
+                                  attachment={parsed.attachment}
+                                  isTeam={isTeam}
+                                />
+                              )}
+
+                              <div className="messages-bubble-footer">
+                                <span>{formatMessageTime(message.created_at)}</span>
+                              </div>
                             </div>
                           </div>
                         );
@@ -2545,52 +2729,59 @@ export function AdminReviews() {
                   </div>
 
                   {staffRole === 'finance' && (
-                    <div className="admin-messages-read-only" role="status">
+                    <div className="messages-finance-readonly" role="status" style={{ margin: '8px 18px' }}>
                       Finance has read-only access to client conversations.
                     </div>
                   )}
 
-                  <form
-                    className="admin-messages-composer"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      sendMessage();
-                    }}
-                  >
-                    <textarea
-                      value={text}
-                      onChange={(event) =>
-                        setText(event.target.value)
-                      }
-                      onKeyDown={handleComposerKeyDown}
-                      placeholder={`Write to ${profiles[selectedOrder.user_id]?.name || 'your client'}…`}
-                      maxLength={2000}
-                      rows="2"
-                      disabled={sending || staffRole === 'finance'}
-                    />
+                  <div className="messages-composer-area">
+                    <form
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        sendMessage();
+                      }}
+                    >
+                      <div className="messages-composer-box">
+                        <div className="messages-composer-row">
+                          <textarea
+                            className="messages-composer-textarea"
+                            value={text}
+                            onChange={(event) => setText(event.target.value)}
+                            onKeyDown={handleComposerKeyDown}
+                            placeholder={`Write to ${profiles[selectedOrder.user_id]?.name || 'your client'}…`}
+                            maxLength={2000}
+                            rows={1}
+                            disabled={sending || staffRole === 'finance'}
+                            aria-label="Write a message"
+                          />
 
-                    <div className="admin-messages-composer-bottom">
-                      <span>
-                        Enter to send · Shift + Enter for a new
-                        line · {text.length}/2000
-                      </span>
+                          <button
+                            className="messages-send-btn"
+                            type="submit"
+                            disabled={
+                              sending || staffRole === 'finance' || !text.trim()
+                            }
+                          >
+                            {sending ? 'Sending…' : 'Send ↗'}
+                          </button>
+                        </div>
 
-                      <button
-                        className="btn dark"
-                        type="submit"
-                        disabled={
-                          sending || staffRole === 'finance' || !text.trim()
-                        }
-                      >
-                        {sending ? 'Sending…' : 'Send ↗'}
-                      </button>
-                    </div>
-                  </form>
+                        <div className="messages-composer-footer">
+                          <span className="messages-composer-hint">
+                            Enter to send · Shift + Enter for new line
+                          </span>
+                          <span>
+                            {text.length}/2000
+                          </span>
+                        </div>
+                      </div>
+                    </form>
+                  </div>
                 </>
               )}
             </section>
-          </section>
-        </main>
+          </div>
+        </div>
       </DashboardShell>
     );
   }
@@ -3237,7 +3428,7 @@ function AdminFilesManager() {
             createdAt: message.created_at,
             clientId: order?.user_id || '',
             clientName,
-            serviceName: order?.service_name || 'Careerlyst service',
+            serviceName: order?.service_name || 'Formant service',
             packageName: order?.package_name || '',
             status: order?.status || ''
           };
@@ -3254,7 +3445,7 @@ function AdminFilesManager() {
             profile?.name ||
             profile?.email ||
             `Client #${String(order.user_id || '').slice(0, 8) || 'unknown'}`,
-          serviceName: order.service_name || 'Careerlyst service',
+          serviceName: order.service_name || 'Formant service',
           packageName: order.package_name || '',
           status: order.status || '',
           createdAt: order.created_at
@@ -3297,7 +3488,7 @@ function AdminFilesManager() {
         getFileType(file) === typeFilter;
 
       /*
-       * Existing Careerlyst attachment files are private message attachments.
+       * Existing Formant attachment files are private message attachments.
        * "public" is retained as a UI-compatible filter value but will not
        * incorrectly claim that message attachments are public.
        */
@@ -3658,7 +3849,7 @@ function AdminFilesManager() {
             <p className="eyebrow">ADMIN / FILES</p>
             <h1>File management.</h1>
             <p>
-              Manage files shared through Careerlyst client conversations,
+              Manage files shared through Formant client conversations,
               inspect storage usage, and send new files to orders.
             </p>
           </div>
@@ -4257,7 +4448,7 @@ function AdminFilesManager() {
             </h1>
 
             <p className="muted">
-              Sign in to access the Careerlyst
+              Sign in to access the Formant
               operations workspace.
             </p>
 
@@ -4434,7 +4625,7 @@ function AdminFilesManager() {
             }}
           >
             Staff accounts are managed through
-            Careerlyst's secure authentication system.
+            Formant's secure authentication system.
           </p>
 
         </div>
@@ -4622,35 +4813,6 @@ function AdminFilesManager() {
   }
 
 
-  /* =========================================================
-    LOGO
-    ========================================================= */
-
-  function Logo() {
-
-    return (
-
-      <a
-        className="logo"
-        href="/"
-      >
-
-        <span className="logo-mark">
-
-          <i />
-          <i />
-          <i />
-
-        </span>
-
-        <span>
-          Careerlyst
-        </span>
-
-      </a>
-
-    );
-  }
 
 
   /* =========================================================

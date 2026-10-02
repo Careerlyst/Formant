@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import PublicNav from '../components/PublicNav';
 import Footer from '../components/Footer';
 import { services as fallbackServices } from '../lib/store';
@@ -29,8 +29,9 @@ export function Services() {
 
       const { data, error: queryError } = await supabase
         .from('services')
-        .select('id, slug, name, description, starting_price, active')
+        .select('id, slug, name, description, starting_price, active, show_on_services_page')
         .eq('active', true)
+        .eq('show_on_services_page', true)
         .order('created_at', { ascending: true });
 
       if (!mounted) return;
@@ -79,7 +80,7 @@ export function Services() {
             <div className="services-hero-copy">
 
               <p className="eyebrow">
-                CAREERLYST SERVICES
+                FORMANT SERVICES
               </p>
 
               <h1>
@@ -292,7 +293,6 @@ export function Services() {
 
 export function ServiceDetail() {
   const { id } = useParams();
-  const navigate = useNavigate();
 
   const [service, setService] = useState(null);
   const [packages, setPackages] = useState([]);
@@ -300,10 +300,16 @@ export function ServiceDetail() {
   const [error, setError] = useState('');
   const [selectedPackage, setSelectedPackage] = useState(null);
   const [orderNotes, setOrderNotes] = useState('');
-  const [ordering, setOrdering] = useState(false);
   const [orderError, setOrderError] = useState('');
-  const [orderSuccess, setOrderSuccess] = useState(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+
+  useEffect(() => {
+    if (service?.name) {
+      document.title = `Formant — ${service.name}`;
+    } else if (!loading) {
+      document.title = 'Formant — Services';
+    }
+  }, [service?.name, loading]);
 
   useEffect(() => {
     let mounted = true;
@@ -319,7 +325,10 @@ export function ServiceDetail() {
             ...fallback,
             slug: fallback.slug || fallback.id,
             description: fallback.description || fallback.desc || '',
-            starting_price: fallback.starting_price ?? null
+            starting_price: fallback.starting_price ?? null,
+            active: fallback.active ?? true,
+            show_on_services_page: fallback.show_on_services_page ?? true,
+            accept_orders: fallback.accept_orders ?? true
           } : null);
           setLoading(false);
         }
@@ -328,9 +337,10 @@ export function ServiceDetail() {
 
       const { data, error: queryError } = await supabase
         .from('services')
-        .select('id, slug, name, description, starting_price, active')
+        .select('id, slug, name, description, starting_price, active, show_on_services_page, accept_orders')
         .eq('slug', id)
         .eq('active', true)
+        .eq('show_on_services_page', true)
         .maybeSingle();
 
       if (!mounted) return;
@@ -377,14 +387,13 @@ export function ServiceDetail() {
   }, [id]);
 
   function openPackage(pkg) {
+    if (!service?.accept_orders) return;
     setOrderError('');
     setOrderNotes('');
-    setOrderSuccess(null);
     setSelectedPackage(pkg);
   }
 
   function closePackage() {
-    if (ordering) return;
     setSelectedPackage(null);
     setOrderError('');
     setCheckoutOpen(false);
@@ -392,95 +401,17 @@ export function ServiceDetail() {
 
   function continueToCheckout() {
     if (!selectedPackage || !service) return;
+    if (!service.accept_orders) {
+      setOrderError('This service is not accepting orders right now.');
+      return;
+    }
     setOrderError('');
     setCheckoutOpen(true);
   }
 
   function closeCheckout() {
-    if (ordering) return;
     setCheckoutOpen(false);
     setOrderError('');
-  }
-
-  async function handleCreateOrder() {
-    if (!selectedPackage || !service) return;
-
-    setOrdering(true);
-    setOrderError('');
-
-    try {
-      if (!supabase) {
-        navigate(
-          `/signup?service=${encodeURIComponent(service.slug)}&package=${encodeURIComponent(selectedPackage.id)}`
-        );
-        return;
-      }
-
-      const {
-        data: { session },
-        error: sessionError
-      } = await supabase.auth.getSession();
-
-      if (sessionError) {
-        throw sessionError;
-      }
-
-      if (!session?.user) {
-        navigate(
-          `/signup?service=${encodeURIComponent(service.slug)}&package=${encodeURIComponent(selectedPackage.id)}`
-        );
-        return;
-      }
-
-      /*
-       * Order creation goes through a database function rather than a
-       * browser-side capacity check. This keeps queue assignment and the
-       * 2-active-project limit server-controlled.
-       */
-      const { data, error: createError } = await supabase.rpc(
-        'create_careerlyst_order',
-        {
-          p_service_name: service.name,
-          p_package_name: selectedPackage.name,
-          p_total: Number(selectedPackage.price),
-          p_currency: selectedPackage.currency || 'USD',
-          p_client_notes: orderNotes.trim() || null
-        }
-      );
-
-      if (createError) {
-        console.error('Order creation error:', createError);
-
-        if (
-          createError.message?.includes('create_careerlyst_order') ||
-          createError.code === '42883'
-        ) {
-          throw new Error(
-            'Order system is not connected yet. Run the Careerlyst order SQL migration in Supabase, then try again.'
-          );
-        }
-
-        throw new Error(
-          createError.message || 'We could not create your order right now.'
-        );
-      }
-
-      const createdOrder = Array.isArray(data) ? data[0] : data;
-
-      setOrderSuccess({
-        id: createdOrder?.id,
-        status: createdOrder?.status || 'pending',
-        queue_position: createdOrder?.queue_position ?? null
-      });
-      setSelectedPackage(null);
-      setOrderNotes('');
-    } catch (err) {
-      setOrderError(
-        err?.message || 'We could not create your order right now.'
-      );
-    } finally {
-      setOrdering(false);
-    }
   }
 
   if (loading) {
@@ -490,7 +421,7 @@ export function ServiceDetail() {
         <main>
           <section className="page-hero split">
             <div>
-              <p className="eyebrow">CAREERLYST SERVICE</p>
+              <p className="eyebrow">FORMANT SERVICE</p>
               <h1>Loading…</h1>
               <p>Preparing the service details for you.</p>
             </div>
@@ -508,7 +439,7 @@ export function ServiceDetail() {
         <main>
           <section className="page-hero split">
             <div>
-              <p className="eyebrow">CAREERLYST SERVICE</p>
+              <p className="eyebrow">FORMANT SERVICE</p>
               <h1>Service unavailable.</h1>
               <p>{error || 'This service could not be found.'}</p>
               <Link className="btn lime" to="/services">
@@ -535,7 +466,7 @@ export function ServiceDetail() {
       <main>
         <section className="page-hero split">
           <div>
-            <p className="eyebrow">CAREERLYST SERVICE</p>
+            <p className="eyebrow">FORMANT SERVICE</p>
 
             <h1>{service.name}</h1>
 
@@ -613,53 +544,16 @@ export function ServiceDetail() {
                       type="button"
                       className="service-package-link service-package-button"
                       onClick={() => openPackage(pkg)}
+                      disabled={!service.accept_orders}
+                      aria-disabled={!service.accept_orders}
                     >
-                      Choose package ↗
+                      {service.accept_orders ? 'Choose package ↗' : 'Orders unavailable'}
                     </button>
                   </div>
                 </article>
               ))}
             </div>
           </section>
-        )}
-
-        {orderSuccess && (
-          <div className="order-success-overlay" role="dialog" aria-modal="true">
-            <div className="order-success-card">
-              <span className="order-modal-kicker">ORDER RECEIVED</span>
-
-              <div className="order-success-mark">✓</div>
-
-              <h2>
-                Your project is
-                <br />
-                <span>in the system.</span>
-              </h2>
-
-              <p>
-                We’ve received your {service.name} — {orderSuccess.status === 'queued'
-                  ? 'it has been placed in the queue.'
-                  : 'we’ll review the project and take it from here.'}
-              </p>
-
-              {orderSuccess.queue_position != null && (
-                <div className="order-queue-note">
-                  <span>QUEUE POSITION</span>
-                  <strong>#{orderSuccess.queue_position}</strong>
-                </div>
-              )}
-
-              <div className="order-success-actions">
-                <Link className="btn lime" to="/dashboard/orders">
-                  View my orders ↗
-                </Link>
-
-                <Link className="order-text-link" to="/dashboard">
-                  Back to dashboard
-                </Link>
-              </div>
-            </div>
-          </div>
         )}
 
         {selectedPackage && (
@@ -685,7 +579,6 @@ export function ServiceDetail() {
                   type="button"
                   className="order-modal-close"
                   onClick={closePackage}
-                  disabled={ordering}
                   aria-label="Close"
                 >
                   ×
@@ -721,7 +614,6 @@ export function ServiceDetail() {
                   onChange={(event) => setOrderNotes(event.target.value)}
                   rows="4"
                   placeholder="Tell us about the role, deadline, or anything else that would help us understand the project."
-                  disabled={ordering}
                 />
               </label>
 
@@ -732,19 +624,17 @@ export function ServiceDetail() {
               )}
 
               <div className="order-modal-bottom">
-                <p>
-                  Your order will appear in your Careerlyst dashboard.
-                  Payment can be completed through the payment step once
-                  your order is confirmed.
-                </p>
+                <p>{service.accept_orders
+                  ? 'Secure payment is not available yet. Order placement is paused until payment can be verified.'
+                  : 'This service is not accepting orders right now.'}</p>
 
                 <button
                   type="button"
                   className="btn lime"
                   onClick={continueToCheckout}
-                  disabled={ordering}
+                  disabled={!service.accept_orders}
                 >
-                  Continue to payment ↗
+                  {service.accept_orders ? 'Continue to checkout ↗' : 'Orders unavailable'}
                 </button>
               </div>
             </div>
@@ -759,15 +649,15 @@ export function ServiceDetail() {
             aria-modal="true"
             aria-labelledby="checkout-title"
             onMouseDown={(event) => {
-              if (event.target === event.currentTarget) {
-                closeCheckout();
+                if (event.target === event.currentTarget) {
+                  closeCheckout();
               }
             }}
           >
             <div className="checkout-card">
               <div className="checkout-top">
                 <div>
-                  <span className="order-modal-kicker">SECURE CHECKOUT</span>
+                  <span className="order-modal-kicker">ORDER CHECKOUT</span>
                   <h2 id="checkout-title">Complete your order.</h2>
                 </div>
 
@@ -775,7 +665,6 @@ export function ServiceDetail() {
                   type="button"
                   className="order-modal-close"
                   onClick={closeCheckout}
-                  disabled={ordering}
                   aria-label="Close checkout"
                 >
                   ×
@@ -805,16 +694,14 @@ export function ServiceDetail() {
               </div>
 
               <div className="checkout-payment-placeholder">
-                <span className="checkout-payment-label">
-                  PAYMENT METHOD
-                </span>
+                <span className="checkout-payment-label">PAYMENT STATUS</span>
 
                 <div className="checkout-payment-box">
                   <div>
-                    <strong>Secure online payment</strong>
+                    <strong>Payment provider not connected</strong>
                     <p>
-                      You’ll be redirected to our secure payment provider
-                      to complete your purchase.
+                      Order placement is paused. A verified payment must be
+                      recorded before an order can be created.
                     </p>
                   </div>
 
@@ -830,24 +717,15 @@ export function ServiceDetail() {
 
               <div className="checkout-bottom">
                 <p>
-                  Your order will only be confirmed after successful payment.
+                  No order will be created until payment verification is available.
                 </p>
 
                 <button
                   type="button"
                   className="btn lime"
-                  onClick={() =>
-                    setOrderError(
-                      'Payment is not connected yet. The checkout interface is ready for the payment integration step.'
-                    )
-                  }
+                  disabled
                 >
-                  Pay{' '}
-                  {selectedPackage.currency === 'USD'
-                    ? '$'
-                    : `${selectedPackage.currency} `}
-                  {Number(selectedPackage.price).toFixed(0)}
-                  {' ↗'}
+                  Order placement unavailable
                 </button>
               </div>
             </div>
@@ -1155,7 +1033,7 @@ export function About() {
           <div className="about-hero-inner">
 
             <div className="about-hero-copy">
-              <p className="eyebrow">ABOUT CAREERLYST</p>
+              <p className="eyebrow">ABOUT FORMANT</p>
 
               <h1>
                 Your career deserves
@@ -1164,7 +1042,7 @@ export function About() {
               </h1>
 
               <p className="about-hero-lede">
-                Careerlyst helps students, job seekers and professionals
+                Formant helps students, job seekers and professionals
                 build a clearer, stronger and more credible professional
                 profile — before the opportunity arrives.
               </p>
@@ -1202,7 +1080,7 @@ export function About() {
               </p>
 
               <p>
-                Careerlyst exists to solve that gap. We turn scattered
+                Formant exists to solve that gap. We turn scattered
                 experience into a professional profile that is easier to
                 understand, easier to trust and better aligned with the
                 opportunity you want.
@@ -1215,7 +1093,7 @@ export function About() {
         {/* DARK STATEMENT */}
         <section className="about-statement">
           <div className="about-statement-inner">
-            <p className="eyebrow">THE CAREERLYST STANDARD</p>
+            <p className="eyebrow">THE FORMANT STANDARD</p>
 
             <h2>
               Less noise.
@@ -1285,7 +1163,7 @@ export function About() {
               </h2>
 
               <p>
-                Careerlyst brings the important parts of your professional
+                Formant brings the important parts of your professional
                 presence into one direction — from your resume and LinkedIn
                 profile to GitHub, portfolio and interview preparation.
               </p>
@@ -1320,7 +1198,7 @@ export function About() {
 
             <div className="about-team-text">
               <p>
-                Careerlyst is intentionally focused. Rather than treating
+                Formant is intentionally focused. Rather than treating
                 career preparation like a high-volume template service,
                 we keep the work selective and hands-on.
               </p>
@@ -1770,7 +1648,7 @@ export function Legal({ type }) {
         <section className="page-hero">
 
           <p className="eyebrow">
-            CAREERLYST
+            FORMANT
           </p>
 
           <h1>
@@ -1802,7 +1680,7 @@ export function Legal({ type }) {
           </h2>
 
           <p>
-            Careerlyst may collect account, project, payment and
+            Formant may collect account, project, payment and
             communication information necessary to provide purchased
             services.
           </p>
@@ -1813,7 +1691,7 @@ export function Legal({ type }) {
           </h2>
 
           <p>
-            For questions about this policy, contact your Careerlyst team.
+            For questions about this policy, contact your Formant team.
           </p>
 
         </section>

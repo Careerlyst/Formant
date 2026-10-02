@@ -341,7 +341,7 @@ export default function LeadAssessment() {
       }
 
       /*
-        Save to local Careerlyst store.
+        Save to local Formant store.
       */
       patch((current) => ({
         ...current,
@@ -482,7 +482,7 @@ export default function LeadAssessment() {
               Seven quick questions help us
               understand your situation and
               point you toward the right
-              Careerlyst service.
+              Formant service.
             </p>
 
             <span className="lead-assessment-note">
@@ -629,7 +629,7 @@ export default function LeadAssessment() {
       <footer className="lead-assessment-footer">
 
         <span>
-          CAREERLYST
+          FORMANT
         </span>
 
         <span>

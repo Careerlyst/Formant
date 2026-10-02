@@ -273,7 +273,7 @@ function ReviewDrawer({
 
                 <strong>
                   {review.service_name ||
-                    'Careerlyst service'}
+                    'Formant service'}
                 </strong>
               </div>
 
@@ -1373,7 +1373,7 @@ function AdminReviewsPage() {
           </div>
         )}
 
-        <section className="admin-review-stats">
+        <section className="admin-reviews-stats">
           <StatCard
             label="Total reviews"
             value={
@@ -1659,7 +1659,7 @@ function AdminReviewsPage() {
                           <div className="admin-review-card-service">
                             <strong>
                               {review.service_name ||
-                                'Careerlyst service'}
+                                'Formant service'}
                             </strong>
 
                             <span>

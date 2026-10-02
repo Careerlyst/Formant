@@ -40,6 +40,52 @@ export default function PublicNav() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [session, setSession] = useState(null);
   const [authReady, setAuthReady] = useState(!supabase);
+  const [isProcessInView, setIsProcessInView] = useState(() => {
+    if (typeof window !== 'undefined' && location.pathname === '/') {
+      return location.hash === '#process' || location.hash === '#how-it-works';
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    if (location.pathname !== '/') {
+      setIsProcessInView(false);
+      return;
+    }
+
+    let observer = null;
+    let frameId = null;
+
+    const attachObserver = () => {
+      const processElement = document.getElementById('process');
+      if (!processElement) {
+        frameId = requestAnimationFrame(attachObserver);
+        return;
+      }
+
+      if ('IntersectionObserver' in window) {
+        observer = new IntersectionObserver(
+          ([entry]) => {
+            setIsProcessInView(entry.isIntersecting);
+          },
+          {
+            root: null,
+            rootMargin: '-80px 0px -40% 0px',
+            threshold: 0
+          }
+        );
+
+        observer.observe(processElement);
+      }
+    };
+
+    attachObserver();
+
+    return () => {
+      if (frameId) cancelAnimationFrame(frameId);
+      if (observer) observer.disconnect();
+    };
+  }, [location.pathname]);
 
   useEffect(() => {
     let mounted = true;
@@ -137,21 +183,84 @@ export default function PublicNav() {
     navigate('/login', { replace: true });
   }
 
+  function handleHowItWorksClick(event) {
+    event.preventDefault();
+    closeMenu();
+
+    const scrollToProcess = () => {
+      const target =
+        document.getElementById('how-it-works') ||
+        document.getElementById('process');
+
+      if (target) {
+        target.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start'
+        });
+      }
+    };
+
+    if (location.pathname === '/') {
+      setIsProcessInView(true);
+      scrollToProcess();
+      if (window.location.hash !== '#process') {
+        window.history.pushState(null, '', '#process');
+      }
+    } else {
+      navigate('/#process');
+    }
+  }
+
+  const isServicesActive =
+    location.pathname === '/services' ||
+    location.pathname.startsWith('/services/');
+
+  const isPricingActive =
+    location.pathname === '/pricing' ||
+    location.pathname.startsWith('/pricing/');
+
+  const isAboutActive =
+    location.pathname === '/about' ||
+    location.pathname.startsWith('/about/');
+
+  const isHowItWorksActive =
+    location.pathname === '/' && isProcessInView;
+
   return (
     <header ref={navRef} className={`header ${menuOpen ? 'menu-open' : ''}`}>
       <div className="nav">
         <Logo />
 
-        <nav className="desktop-nav">
-          <NavLink to="/services">Services</NavLink>
+        <nav className="desktop-nav" aria-label="Main navigation">
+          <Link
+            to="/services"
+            className={isServicesActive ? 'active' : ''}
+            aria-current={isServicesActive ? 'page' : undefined}
+          >
+            Services
+          </Link>
           <a
-            className={location.pathname === '/' && location.hash === '#process' ? 'active' : ''}
+            className={isHowItWorksActive ? 'active' : ''}
             href="/#process"
+            onClick={handleHowItWorksClick}
+            aria-current={isHowItWorksActive ? 'page' : undefined}
           >
             How it works
           </a>
-          <NavLink to="/pricing">Pricing</NavLink>
-          <NavLink to="/about">About</NavLink>
+          <Link
+            to="/pricing"
+            className={isPricingActive ? 'active' : ''}
+            aria-current={isPricingActive ? 'page' : undefined}
+          >
+            Pricing
+          </Link>
+          <Link
+            to="/about"
+            className={isAboutActive ? 'active' : ''}
+            aria-current={isAboutActive ? 'page' : undefined}
+          >
+            About
+          </Link>
         </nav>
 
         <div className="nav-actions">
@@ -250,20 +359,40 @@ export default function PublicNav() {
       </div>
 
       <div className="mobile-nav">
-        <nav className="mobile-nav-links">
-          <Link to="/services" onClick={closeMenu}>
+        <nav className="mobile-nav-links" aria-label="Mobile navigation">
+          <Link
+            to="/services"
+            className={isServicesActive ? 'active' : ''}
+            aria-current={isServicesActive ? 'page' : undefined}
+            onClick={closeMenu}
+          >
             <span>Services</span>
             <span>↗</span>
           </Link>
-          <a href="/#process" onClick={closeMenu}>
+          <a
+            href="/#process"
+            className={isHowItWorksActive ? 'active' : ''}
+            aria-current={isHowItWorksActive ? 'page' : undefined}
+            onClick={handleHowItWorksClick}
+          >
             <span>How it works</span>
             <span>↗</span>
           </a>
-          <Link to="/pricing" onClick={closeMenu}>
+          <Link
+            to="/pricing"
+            className={isPricingActive ? 'active' : ''}
+            aria-current={isPricingActive ? 'page' : undefined}
+            onClick={closeMenu}
+          >
             <span>Pricing</span>
             <span>↗</span>
           </Link>
-          <Link to="/about" onClick={closeMenu}>
+          <Link
+            to="/about"
+            className={isAboutActive ? 'active' : ''}
+            aria-current={isAboutActive ? 'page' : undefined}
+            onClick={closeMenu}
+          >
             <span>About</span>
             <span>↗</span>
           </Link>

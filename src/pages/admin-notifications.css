@@ -469,6 +469,326 @@
   font-size: 11px;
 }
 
+/* Delivery Summary Report Card */
+.admin-notifications-report-card {
+  margin-bottom: 24px;
+  padding: 20px;
+  border: 1px solid #161616;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+}
+
+.admin-notifications-report-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #eee;
+}
+
+.admin-notifications-report-kicker {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  color: #888;
+}
+
+.admin-notifications-report-title {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #161616;
+}
+
+.admin-notifications-report-time {
+  margin: 0;
+  font-size: 12px;
+  color: #666;
+}
+
+.admin-notifications-report-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.admin-notifications-report-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid #e5e5e5;
+  border-radius: 6px;
+  background: #fafafa;
+}
+
+.admin-notifications-report-stat.report-success {
+  border-color: #8bcf00;
+  background: #f8fdf0;
+}
+
+.admin-notifications-report-stat.report-warning {
+  border-color: #e59300;
+  background: #fffdf5;
+}
+
+.report-stat-num {
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1;
+  color: #161616;
+}
+
+.report-stat-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #666;
+}
+
+.admin-notifications-report-disclaimer {
+  margin: 0 0 8px;
+  font-size: 11px;
+  color: #777;
+  line-height: 1.4;
+}
+
+.admin-notifications-report-error {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #fdf5f5;
+  border: 1px solid #f0cccc;
+  font-size: 12px;
+  color: #b01b1b;
+}
+
+/* Multi-select client picker */
+.admin-notification-multiselect {
+  margin-bottom: 16px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #fafafa;
+  overflow: hidden;
+}
+
+.admin-notification-multiselect-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-bottom: 1px solid #e0e0e0;
+  background: #fff;
+}
+
+.admin-notification-multiselect-search {
+  flex: 1;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.admin-notification-multiselect-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.admin-notifications-btn-mini {
+  padding: 4px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.admin-notifications-btn-mini:hover {
+  background: #f0f0f0;
+}
+
+.admin-notification-multiselect-summary {
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #666;
+  background: #f5f5f5;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.admin-notification-multiselect-list {
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-notification-multiselect-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.admin-notification-multiselect-item input[type="checkbox"] {
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+}
+
+.admin-notification-multiselect-empty {
+  padding: 14px;
+  text-align: center;
+  font-size: 12px;
+  color: #888;
+}
+
+/* Delivery Channels Group */
+.admin-notification-channels-group {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 1px solid #e2e2e2;
+  border-radius: 6px;
+  background: #fcfcfc;
+}
+
+.admin-notification-channels-title {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #333;
+}
+
+.admin-notification-channels-row {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.admin-notification-channel-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.admin-notification-channel-checkbox input {
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+}
+
+.admin-notification-char-count {
+  display: block;
+  text-align: right;
+  font-size: 11px;
+  color: #888;
+  margin-top: 3px;
+}
+
+/* Live Notification Preview */
+.admin-notification-preview-section {
+  margin-bottom: 20px;
+}
+
+.admin-notification-preview-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  color: #666;
+}
+
+.admin-notification-preview-card {
+  max-width: 440px;
+  padding: 14px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+.admin-notification-preview-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.admin-notification-preview-app-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  object-fit: contain;
+}
+
+.admin-notification-preview-app-info {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+}
+
+.admin-notification-preview-app-title {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .05em;
+  color: #222;
+}
+
+.admin-notification-preview-dot {
+  color: #999;
+  font-size: 10px;
+}
+
+.admin-notification-preview-app-sub {
+  font-size: 11px;
+  color: #777;
+}
+
+.admin-notification-preview-card-body strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  color: #111;
+  margin-bottom: 4px;
+  line-height: 1.3;
+}
+
+.admin-notification-preview-card-body p {
+  margin: 0;
+  font-size: 12px;
+  color: #444;
+  line-height: 1.4;
+}
+
+.admin-notification-preview-card-link {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed #eee;
+  font-size: 11px;
+  color: #777;
+}
+
+.admin-notification-preview-card-link span {
+  color: #111;
+  font-family: monospace;
+}
+
 @media (max-width: 950px) {
   .admin-notifications-stats {
     grid-template-columns: repeat(2, 1fr);
@@ -504,5 +824,19 @@
 
   .admin-notifications-footer {
     flex-direction: column;
+  }
+
+  .admin-notifications-search,
+  .admin-notifications-filter,
+  .admin-notifications-filter-select,
+  .admin-notifications-btn,
+  .admin-notification-action {
+    min-height: 44px;
+  }
+
+  .admin-notifications-search,
+  .admin-notifications-filter-select {
+    height: 44px;
+    box-sizing: border-box;
   }
 }

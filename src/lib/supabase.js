@@ -15,3 +15,16 @@ export const supabase =
 
 export const isSupabaseConfigured =
   Boolean(supabase)
+
+// Handle session persistence when "Remember me" is not enabled
+if (typeof window !== 'undefined' && supabase) {
+  try {
+    const rememberMe = localStorage.getItem('formant_remember_me')
+    const sessionActive = sessionStorage.getItem('formant_session_active')
+    if (rememberMe === 'false' && !sessionActive) {
+      supabase.auth.signOut().catch(() => {})
+    }
+  } catch (e) {
+    // Ignore storage access errors in restricted contexts
+  }
+}

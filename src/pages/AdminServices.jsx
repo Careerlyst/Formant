@@ -239,7 +239,7 @@ const ADMIN_SERVICES_CSS = `
 .admin-services-preview-meta{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}
 .admin-services-preview-meta span{border:1px solid var(--line);border-radius:999px;padding:5px 8px;font-size:11px}
 @media (max-width:1100px){.admin-services-stats{grid-template-columns:repeat(3,minmax(0,1fr))}.admin-service-row{grid-template-columns:54px 1fr}.admin-service-metrics,.admin-service-actions{grid-column:2}.admin-service-actions{justify-content:flex-start}.admin-services-toolbar{grid-template-columns:1fr 1fr}.admin-services-subgrid{grid-template-columns:1fr}}
-@media (max-width:720px){.admin-services-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-service-grid.two,.admin-service-grid.four,.admin-service-switches,.admin-services-performance{grid-template-columns:1fr}.admin-services-toolbar{grid-template-columns:1fr}.admin-service-row{grid-template-columns:44px 1fr;gap:12px}.admin-service-thumb{width:44px;height:44px}.admin-service-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-service-actions{grid-column:1/-1}.admin-services-preview{grid-template-columns:1fr}.admin-services-preview img{width:100%;height:190px}.admin-services-category-row{grid-template-columns:1fr}.admin-service-repeater{grid-template-columns:1fr}.admin-services-editor-actions{flex-direction:column}}
+@media (max-width:720px){.admin-services-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-service-grid.two,.admin-service-grid.four,.admin-service-switches,.admin-services-performance{grid-template-columns:1fr}.admin-services-toolbar{grid-template-columns:1fr}.admin-service-row{grid-template-columns:44px 1fr;gap:12px}.admin-service-thumb{width:44px;height:44px}.admin-service-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-service-actions{grid-column:1/-1}.admin-services-preview{grid-template-columns:1fr}.admin-services-preview img{width:100%;height:190px}.admin-services-category-row{grid-template-columns:1fr}.admin-service-repeater{grid-template-columns:1fr}.admin-services-editor-actions{flex-direction:column}.admin-services-modal-close{width:44px;min-width:44px;height:44px;flex:0 0 44px;display:grid;place-items:center}}
 `;
 
 export function AdminServices() {
@@ -496,10 +496,22 @@ export function AdminServices() {
         faqs: form.faqs.filter((item) => item.question?.trim() || item.answer?.trim())
       };
 
+      // These are the columns present in production's services table. Keep
+      // the two F-05 controls in the same persisted update as service basics.
+      const persistedPayload = {
+        slug,
+        name,
+        description: form.description.trim() || null,
+        starting_price: startingPrice,
+        active: Boolean(form.active),
+        show_on_services_page: Boolean(form.show_on_services_page),
+        accept_orders: Boolean(form.accept_orders)
+      };
+
       if (form.id) {
         const { data, error: updateError } = await supabase
           .from('services')
-          .update(payload)
+          .update(persistedPayload)
           .eq('id', form.id)
           .select('*')
           .single();

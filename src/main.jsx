@@ -9,6 +9,7 @@ import {
 
 import { applyStoredTheme } from './lib/theme';
 import './styles.css';
+import './pages/messages.css';
 
 import Preloader from './components/Preloader';
 
@@ -25,7 +26,8 @@ import {
 
 import Auth, {
   Forgot,
-  ResetPassword
+  ResetPassword,
+  AuthCallback
 } from './pages/Auth';
 
 import Protected from './components/Protected';
@@ -76,12 +78,15 @@ function ScrollManager() {
     const frame = window.requestAnimationFrame(() => {
       if (hash) {
         const targetId = decodeURIComponent(hash.slice(1));
-        const target = document.getElementById(targetId);
+        const target =
+          document.getElementById(targetId) ||
+          (targetId === 'how-it-works' ? document.getElementById('process') : null) ||
+          (targetId === 'process' ? document.getElementById('how-it-works') : null);
 
         if (target) {
           target.scrollIntoView({
             block: 'start',
-            behavior: 'auto'
+            behavior: 'smooth'
           });
           return;
         }
@@ -92,6 +97,66 @@ function ScrollManager() {
 
     return () => window.cancelAnimationFrame(frame);
   }, [pathname, hash]);
+
+  return null;
+}
+
+const ROUTE_TITLES = {
+  '/': 'Formant',
+  '/services': 'Formant — Services',
+  '/pricing': 'Formant — Pricing',
+  '/about': 'Formant — About',
+  '/contact': 'Formant — Contact',
+  '/privacy': 'Formant — Privacy',
+  '/terms': 'Formant — Terms',
+  '/refund': 'Formant — Refund',
+  '/login': 'Formant — Login',
+  '/signup': 'Formant — Sign Up',
+  '/auth/callback': 'Formant — Verifying...',
+  '/forgot-password': 'Formant — Forgot Password',
+  '/reset-password': 'Formant — Reset Password',
+  '/assessment': 'Formant — Assessment',
+  '/dashboard': 'Formant — Dashboard',
+  '/dashboard/profile': 'Formant — Profile',
+  '/dashboard/orders': 'Formant — Orders',
+  '/dashboard/messages': 'Formant — Messages',
+  '/dashboard/files': 'Formant — Files',
+  '/dashboard/payments': 'Formant — Payments',
+  '/dashboard/notifications': 'Formant — Notifications',
+  '/dashboard/settings': 'Formant — Settings',
+  '/admin': 'Formant — Admin',
+  '/admin/workspace': 'Formant — Workspace',
+  '/admin/users': 'Formant — Users',
+  '/admin/leads': 'Formant — Leads',
+  '/admin/orders': 'Formant — Orders',
+  '/admin/projects': 'Formant — Projects',
+  '/admin/services': 'Formant — Services',
+  '/admin/payments': 'Formant — Payments',
+  '/admin/messages': 'Formant — Messages',
+  '/admin/files': 'Formant — Files',
+  '/admin/reviews': 'Formant — Reviews',
+  '/admin/coupons': 'Formant — Coupons',
+  '/admin/notifications': 'Formant — Notifications',
+  '/admin/settings': 'Formant — Settings'
+};
+
+function TitleManager() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    const normalizedPath =
+      pathname.length > 1 && pathname.endsWith('/')
+        ? pathname.slice(0, -1)
+        : pathname;
+
+    if (ROUTE_TITLES[normalizedPath]) {
+      document.title = ROUTE_TITLES[normalizedPath];
+    } else if (normalizedPath.startsWith('/services/')) {
+      document.title = 'Formant — Services';
+    } else {
+      document.title = 'Formant';
+    }
+  }, [pathname]);
 
   return null;
 }
@@ -172,6 +237,11 @@ function App() {
       <Route
         path="/reset-password"
         element={<ResetPassword />}
+      />
+
+      <Route
+        path="/auth/callback"
+        element={<AuthCallback />}
       />
 
 
@@ -414,6 +484,7 @@ createRoot(
 
     <BrowserRouter>
       <ScrollManager />
+      <TitleManager />
       <App />
     </BrowserRouter>
   </>

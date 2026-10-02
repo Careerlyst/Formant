@@ -21,6 +21,26 @@ export default function Footer() {
     );
   }
 
+  function handleHowItWorksClick(event) {
+    if (window.location.pathname === '/') {
+      event.preventDefault();
+      const target =
+        document.getElementById('how-it-works') ||
+        document.getElementById('process');
+
+      if (target) {
+        target.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start'
+        });
+      }
+
+      if (window.location.hash !== '#process') {
+        window.history.pushState(null, '', '#process');
+      }
+    }
+  }
+
   function handleNewsletterSubmit(event) {
     event.preventDefault();
 
@@ -35,11 +55,11 @@ export default function Footer() {
     setNewsletterMessage('');
 
     const subject = encodeURIComponent(
-      'Careerlyst Newsletter Subscription'
+      'Formant Newsletter Subscription'
     );
 
     const body = encodeURIComponent(
-      `Please subscribe this email to Careerlyst updates:\n\n${email}\n\nInterests: Career tips, product updates, promotions.`
+      `Please subscribe this email to Formant updates:\n\n${email}\n\nInterests: Career tips, product updates, promotions.`
     );
 
     window.location.href =
@@ -53,7 +73,7 @@ export default function Footer() {
 
   function renderSocials() {
     return (
-      <div className="footer-socials" aria-label="Careerlyst social links">
+      <div className="footer-socials" aria-label="Formant social links">
         {SOCIAL_LINKS.map((social) =>
           social.href ? (
             <a
@@ -86,17 +106,28 @@ export default function Footer() {
     return (
       <div className={`footer-section ${isOpen ? 'is-open' : ''}`}>
         <button
+          id={`footer-toggle-${key}`}
           type="button"
           className="footer-section-toggle"
           aria-expanded={isOpen}
+          aria-controls={`footer-section-${key}`}
           onClick={() => toggleSection(key)}
         >
           <span>{title}</span>
-          <span aria-hidden="true">{isOpen ? '−' : '+'}</span>
+          <span className="footer-section-icon" aria-hidden="true">
+            {isOpen ? '−' : '+'}
+          </span>
         </button>
 
-        <div className="footer-section-content">
-          {children}
+        <div
+          id={`footer-section-${key}`}
+          className="footer-section-content"
+          role="region"
+          aria-labelledby={`footer-toggle-${key}`}
+        >
+          <div className="footer-section-links">
+            {children}
+          </div>
         </div>
       </div>
     );
@@ -120,7 +151,7 @@ export default function Footer() {
             <div className="footer-column footer-column-desktop">
               <b>Explore</b>
               <Link to="/services">Services</Link>
-              <a href="/#process">How it works</a>
+              <a href="/#process" onClick={handleHowItWorksClick}>How it works</a>
               <Link to="/pricing">Pricing</Link>
               <Link to="/about">About</Link>
             </div>
@@ -150,7 +181,7 @@ export default function Footer() {
               'explore',
               <>
                 <Link to="/services">Services</Link>
-                <a href="/#process">How it works</a>
+                <a href="/#process" onClick={handleHowItWorksClick}>How it works</a>
                 <Link to="/pricing">Pricing</Link>
                 <Link to="/about">About</Link>
               </>
@@ -187,7 +218,7 @@ export default function Footer() {
             <span className="footer-eyebrow">STAY AHEAD</span>
 
             <h2>
-              Careerlyst updates,
+              Formant updates,
               <br />
               straight to your inbox.
             </h2>
@@ -230,7 +261,7 @@ export default function Footer() {
             </div>
 
             <small>
-              By subscribing, you agree to receive Careerlyst
+              By subscribing, you agree to receive Formant
               updates. Unsubscribe anytime.
             </small>
 
@@ -246,7 +277,7 @@ export default function Footer() {
         </div>
 
         <div className="footer-bottom">
-          <span>© 2026 Careerlyst</span>
+          <span>© 2026 Formant</span>
 
           <span className="footer-legal">
             <Link to="/privacy">Privacy</Link>
