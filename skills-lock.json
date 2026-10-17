@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "better-writing": {
+      "source": "forjd/better-writing",
+      "sourceType": "github",
+      "skillPath": "skills/better-writing/SKILL.md",
+      "computedHash": "b7a2b46d49f3f39bece722afd399e4e53e1905c0f5d774a513c7943b21bc91f1"
+    },
+    "ux-writing": {
+      "source": "content-designer/ux-writing-skill",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "7a9be24c109c69070451aaa30f75417825cb6b85435c775ad58185c52449cbfc"
+    }
+  }
+}
