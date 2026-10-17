@@ -908,21 +908,51 @@ export default function AdminShowcase() {
       setError('Every public image needs descriptive alt text.');
       return;
     }
-    const { error: updateError } = await supabase.from('showcase_project_images').update({
+    setError('');
+    setNotice('');
+    const projectId = project.id;
+    const desiredPreviewFlag = image.content_type !== 'application/pdf' && Boolean(edit.is_public_preview);
+    const { data: savedImage, error: updateError } = await supabase.from('showcase_project_images').update({
       alt_text: edit.alt_text.trim(),
       caption: String(edit.caption || '').trim(),
-      is_public_preview: image.content_type !== 'application/pdf' && Boolean(edit.is_public_preview)
-    }).eq('id', image.id);
+      is_public_preview: desiredPreviewFlag
+    }).eq('id', image.id).eq('project_id', projectId)
+      .select('id,project_id,alt_text,caption,is_public_preview').single();
     if (updateError) setError(messageFor(updateError, 'Image details could not be saved.'));
+    else if (!savedImage || savedImage.id !== image.id || savedImage.project_id !== projectId
+      || savedImage.alt_text !== edit.alt_text.trim()
+      || savedImage.caption !== String(edit.caption || '').trim()
+      || savedImage.is_public_preview !== desiredPreviewFlag) {
+      setError('The saved preview details could not be confirmed. Refresh the project and check its saved media status before continuing.');
+    }
     else {
       await loadProjects();
       try {
-        await refreshProject(project.id);
+        const refreshed = await refreshProject(projectId);
+        const refreshedImage = (refreshed.showcase_project_images || []).find((row) => row.id === image.id);
+        setImageEdits(Object.fromEntries((refreshed.showcase_project_images || []).map((row) => [row.id, {
+          alt_text: row.alt_text,
+          caption: row.caption,
+          is_public_preview: row.is_public_preview
+        }])));
+        if (!refreshedImage || refreshedImage.is_public_preview !== desiredPreviewFlag
+          || refreshedImage.alt_text !== savedImage.alt_text || refreshedImage.caption !== savedImage.caption) {
+          setError('The preview update response succeeded, but the refreshed project does not match it. Check the saved media row before continuing.');
+          return;
+        }
+        const projectPubliclyEligible = refreshed.is_published && refreshed.public_content_review_confirmed
+          && (refreshed.project_type !== 'client_work' || refreshed.client_consent_confirmed);
+        if (desiredPreviewFlag && !projectPubliclyEligible) {
+          setNotice('Preview approval saved. This project is not currently eligible for public delivery; complete the required privacy review, client permission if applicable, and publication steps.');
+        } else if (desiredPreviewFlag) {
+          setNotice('Preview approval saved and the project is currently eligible for public delivery.');
+        } else {
+          setNotice('Media details saved. This image remains private and is not included in public previews.');
+        }
       } catch (error) {
         setError(messageFor(error, 'Updated project could not be reloaded.'));
         return;
       }
-      setNotice(project.is_published || project.public_content_review_confirmed || project.client_consent_confirmed ? 'Media details saved. Publication approval was cleared and must be renewed.' : 'Image details saved.');
     }
   }
 

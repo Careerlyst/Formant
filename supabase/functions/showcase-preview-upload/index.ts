@@ -10,7 +10,7 @@ const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const IMAGE_PRESENTATIONS = new Set(["before", "after", "gallery", "thumbnail", "desktop", "mobile"]);
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "apikey, authorization, content-type, x-client-info, x-showcase-project-id, x-showcase-alt-text, x-showcase-caption, x-showcase-replace-media-id, x-showcase-presentation",
+  "Access-Control-Allow-Headers": "apikey, authorization, content-type, x-client-info, x-showcase-project-id, x-showcase-alt-text, x-showcase-caption, x-showcase-replace-media-id, x-showcase-presentation, x-showcase-upload-id",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -19,6 +19,12 @@ function json(body: Record<string, unknown>, status = 200) {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" },
   });
+}
+
+function boundedFetch(input: RequestInfo | URL, init: RequestInit = {}) {
+  const deadline = AbortSignal.timeout(25_000);
+  const signal = init.signal ? AbortSignal.any([init.signal, deadline]) : deadline;
+  return fetch(input, { ...init, signal });
 }
 
 function requestText(request: Request, name: string, maximum: number, required = false): string | null {
@@ -104,6 +110,14 @@ function detectImageType(bytes: Uint8Array): string | null {
   return null;
 }
 
+function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) return false;
+  for (let index = 0; index < left.byteLength; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
+}
+
 async function removeNewUpload(client: ReturnType<typeof createClient>, path: string, mediaId?: string, sourcePath?: string) {
   const failures: string[] = [];
   let rowId = mediaId || "";
@@ -131,6 +145,10 @@ async function removePrivateSource(client: ReturnType<typeof createClient>, path
 }
 
 Deno.serve(async (request: Request) => {
+  const startedAt = Date.now();
+  const logStage = (stage: string, outcome: string, status?: number) => {
+    console.info(JSON.stringify({ function: "showcase-preview-upload", stage, outcome, ...(status ? { status } : {}), duration_ms: Date.now() - startedAt }));
+  };
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
 
@@ -147,7 +165,7 @@ Deno.serve(async (request: Request) => {
   if (!token) return json({ error: "Sign in with an authorized Showcase editor account." }, 401);
 
   const client = createClient(supabaseUrl, anonKey, {
-    global: { headers: { Authorization: `Bearer ${token}` } },
+    global: { headers: { Authorization: `Bearer ${token}` }, fetch: boundedFetch },
     auth: { persistSession: false, autoRefreshToken: false },
   });
   const { data: authData, error: authError } = await client.auth.getUser(token);
@@ -161,12 +179,13 @@ Deno.serve(async (request: Request) => {
   }
 
   const projectId = request.headers.get("x-showcase-project-id") || "";
+  const uploadId = request.headers.get("x-showcase-upload-id") || "";
   const altText = requestText(request, "x-showcase-alt-text", 240, true);
   const caption = requestText(request, "x-showcase-caption", 240);
   const presentation = requestText(request, "x-showcase-presentation", 40, true);
   const replaceMediaId = request.headers.get("x-showcase-replace-media-id") || "";
   const contentType = String(request.headers.get("Content-Type") || "").toLowerCase().split(";")[0].trim();
-  if (!UUID.test(projectId) || altText === null || caption === null || presentation === null
+  if (!UUID.test(projectId) || !UUID.test(uploadId) || altText === null || caption === null || presentation === null
     || !IMAGE_PRESENTATIONS.has(presentation)
     || (replaceMediaId && !UUID.test(replaceMediaId)) || !IMAGE_TYPES.has(contentType)) {
     return json({ error: "Choose a valid project, image presentation, descriptive alt text, and JPG, PNG, or WebP image." }, 400);
@@ -188,6 +207,38 @@ Deno.serve(async (request: Request) => {
       return json({ error: "Only a preview image belonging to this project can be replaced." }, 400);
     }
     replacement = { id: data.id, sort_order: data.sort_order };
+  }
+
+  // A client retains this UUID when retrying an upload whose response timed
+  // out. Stable object paths plus the unique storage_path constraint ensure a
+  // completed request returns its original row instead of creating a duplicate.
+  const path = `${project.id}/${uploadId}.webp`;
+  const sourcePath = `${project.id}/sources/${uploadId}.source`;
+  const { data: priorMedia, error: priorMediaError } = await client.from("showcase_project_images")
+    .select("id,project_id,presentation,content_type,byte_size,alt_text,caption,is_public_preview,sort_order,created_at,created_by")
+    .eq("storage_path", path).maybeSingle();
+  if (priorMediaError) return json({ error: "The prior upload result could not be checked safely. Do not retry with a new upload ID; ask an administrator to inspect project media." }, 500);
+  if (priorMedia) {
+    if (priorMedia.project_id !== project.id || priorMedia.created_by !== authData.user.id) {
+      return json({ error: "This upload request ID is already in use. Choose the image again to start a new upload." }, 409);
+    }
+    if (replacement && replacement.id !== priorMedia.id) {
+      const { error: replaceError } = await client.from("showcase_project_images")
+        .update({ presentation: "gallery", is_public_preview: false })
+        .eq("id", replacement.id).eq("project_id", project.id);
+      if (replaceError) return json({ error: "The preview is saved privately, but the previous preview could not be safely retired." }, 502);
+    }
+    logStage("idempotency", "existing_upload_returned");
+    return json({
+      media: {
+        id: priorMedia.id, project_id: priorMedia.project_id, presentation: priorMedia.presentation,
+        content_type: priorMedia.content_type, byte_size: priorMedia.byte_size, alt_text: priorMedia.alt_text,
+        caption: priorMedia.caption, is_public_preview: priorMedia.is_public_preview,
+        sort_order: priorMedia.sort_order, created_at: priorMedia.created_at,
+      },
+      status: "uploaded_unapproved",
+      publicationReviewInvalidated: Boolean(project.is_published || project.public_content_review_confirmed || project.client_consent_confirmed),
+    }, 200);
   }
 
   let bytes: Uint8Array;
@@ -234,6 +285,7 @@ Deno.serve(async (request: Request) => {
       return json({ error: "The private image renderer returned an unexpected format. No media object or row was created." }, 502);
     }
     derivative = await readRendererImage(rendered);
+    logStage("renderer", "succeeded", rendered.status);
   } catch (error) {
     const failure = error instanceof Error && error.name === "AbortError"
       ? "The private image renderer timed out. No media object or row was created."
@@ -257,31 +309,40 @@ Deno.serve(async (request: Request) => {
     sortOrder = (data || []).reduce((maximum, row) => Math.max(maximum, Number(row.sort_order) || 0), -1) + 1;
   }
 
-  const objectId = crypto.randomUUID();
-  const path = `${project.id}/${objectId}.webp`;
-  const sourcePath = `${project.id}/sources/${objectId}.source`;
   const { error: sourceUploadError } = await client.storage.from("showcase-media").upload(sourcePath, bytes, {
     contentType: detectedType,
     cacheControl: "3600",
     upsert: false,
   });
   if (sourceUploadError) {
-    return json({
-      error: "The unchanged source image could not be preserved in private Showcase storage.",
-      cleanupWarning: "The source upload result was not confirmed; check its unique private path before retrying.",
-    }, 502);
+    const { data: existingSource, error: sourceReadError } = await client.storage.from("showcase-media").download(sourcePath);
+    if (sourceReadError || !existingSource || !sameBytes(new Uint8Array(await existingSource.arrayBuffer()), bytes)) {
+      logStage("private_source_storage", "failed");
+      return json({ error: "The private source upload could not be confirmed. Retry the same selected file so the request can be safely reconciled." }, 502);
+    }
   }
+  logStage("private_source_storage", sourceUploadError ? "existing_upload_verified" : "succeeded");
   const { error: uploadError } = await client.storage.from("showcase-media").upload(path, derivative, {
     contentType: "image/webp",
     cacheControl: "3600",
     upsert: false,
   });
   if (uploadError) {
-    const cleanupFailures = await removePrivateSource(client, sourcePath);
-    return json({
-      error: "The private preview image could not be stored. Check bucket policy and try again.",
-      cleanupWarning: [...cleanupFailures, "The preview upload result was not confirmed; check its unique private path before retrying."].join(" "),
-    }, 502);
+    const { data: existingPreview, error: previewReadError } = await client.storage.from("showcase-media").download(path);
+    if (previewReadError || !existingPreview) {
+      logStage("private_preview_storage", "unconfirmed");
+      return json({ error: "The private preview storage result could not be confirmed. Retry the same selected file; this request uses a stable ID to prevent duplicate records." }, 502);
+    }
+    derivative = new Uint8Array(await existingPreview.arrayBuffer());
+    if (derivative.length < 16 || derivative.length > MAX_DERIVATIVE_BYTES
+      || String.fromCharCode(...derivative.slice(0, 4)) !== "RIFF"
+      || String.fromCharCode(...derivative.slice(8, 12)) !== "WEBP") {
+      logStage("private_preview_storage", "existing_object_invalid");
+      return json({ error: "The existing private preview object is invalid; ask an administrator to inspect the upload before retrying." }, 502);
+    }
+    logStage("private_preview_storage", "existing_upload_verified");
+  } else {
+    logStage("private_preview_storage", "succeeded");
   }
 
   const { data: media, error: insertError } = await client.from("showcase_project_images").insert({
@@ -297,12 +358,39 @@ Deno.serve(async (request: Request) => {
     is_public_preview: false,
   }).select("id,project_id,presentation,content_type,byte_size,alt_text,caption,is_public_preview,sort_order,created_at").single();
   if (insertError || !media) {
+    // Concurrent retries with the same request ID can both reach this insert.
+    // If the other request already committed this exact object, return its row
+    // instead of rolling back (and potentially deleting) the winning upload.
+    const { data: concurrentMedia } = await client.from("showcase_project_images")
+      .select("id,project_id,presentation,content_type,byte_size,alt_text,caption,is_public_preview,sort_order,created_at,created_by")
+      .eq("storage_path", path).maybeSingle();
+    if (concurrentMedia?.project_id === project.id && concurrentMedia.created_by === authData.user.id) {
+      if (replacement && replacement.id !== concurrentMedia.id) {
+        const { error: replaceError } = await client.from("showcase_project_images")
+          .update({ presentation: "gallery", is_public_preview: false })
+          .eq("id", replacement.id).eq("project_id", project.id);
+        if (replaceError) return json({ error: "The preview is saved privately, but the previous preview could not be safely retired." }, 502);
+      }
+      logStage("media_metadata", "concurrent_retry_reconciled");
+      return json({
+        media: {
+          id: concurrentMedia.id, project_id: concurrentMedia.project_id, presentation: concurrentMedia.presentation,
+          content_type: concurrentMedia.content_type, byte_size: concurrentMedia.byte_size, alt_text: concurrentMedia.alt_text,
+          caption: concurrentMedia.caption, is_public_preview: concurrentMedia.is_public_preview,
+          sort_order: concurrentMedia.sort_order, created_at: concurrentMedia.created_at,
+        },
+        status: "uploaded_unapproved",
+        publicationReviewInvalidated: Boolean(project.is_published || project.public_content_review_confirmed || project.client_consent_confirmed),
+      }, 200);
+    }
+    logStage("media_metadata", "failed");
     const cleanupFailures = await removeNewUpload(client, path, undefined, sourcePath);
     return json({
       error: insertError ? "The preview metadata could not be saved." : "The preview metadata response was incomplete.",
       cleanupWarning: cleanupFailures.length ? cleanupFailures.join(" ") : undefined,
     }, 502);
   }
+  logStage("media_metadata", "succeeded");
 
   if (replacement) {
     const { error: replaceError } = await client.from("showcase_project_images")
