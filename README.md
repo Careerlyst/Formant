@@ -7,7 +7,7 @@
 
 ## 1. Project Overview
 
-**Formant** (formerly *Careerlyst*) is a production React 19 single-page web application offering tailored career services for ambitious professionals:
+**Formant** is a production React 19 single-page web application offering tailored career services for ambitious professionals:
 - **Resume & CV Revamp:** ATS-optimized, role-targeted resume development.
 - **LinkedIn Profile Optimization:** Narrative storytelling, headline strategy, and recruiter positioning.
 - **GitHub Developer Profile Curation:** Pinned repository curation, README architecture, and code visibility.
