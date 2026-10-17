@@ -4,6 +4,7 @@ import PublicNav from '../components/PublicNav';
 import Footer from '../components/Footer';
 import { services as fallbackServices } from '../lib/store';
 import { supabase } from '../lib/supabase';
+import { PRODUCTION_ORIGIN, applySeoMetadata } from '../lib/seo';
 
 
 /* =========================================================
@@ -304,12 +305,17 @@ export function ServiceDetail() {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
 
   useEffect(() => {
-    if (service?.name) {
-      document.title = `Formant — ${service.name}`;
-    } else if (!loading) {
-      document.title = 'Formant — Services';
+    if (service?.name && !loading) {
+      const slug = service.slug || id;
+      const canonical = `${PRODUCTION_ORIGIN}/services/${encodeURIComponent(slug)}`;
+      applySeoMetadata(`/services/${id}`, {
+        title: `${service.name} | Formant Career Preparation`,
+        description: service.description || `Explore Formant's ${service.name} service, prepared around your target role, experience and goals.`,
+        canonical,
+        indexable: true
+      });
     }
-  }, [service?.name, loading]);
+  }, [id, loading, service?.name, service?.slug, service?.description]);
 
   useEffect(() => {
     let mounted = true;

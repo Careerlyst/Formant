@@ -1,0 +1,15 @@
+User-agent: *
+Allow: /
+Disallow: /login
+Disallow: /signup
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /auth/
+Disallow: /assessment
+Disallow: /dashboard
+Disallow: /admin
+Disallow: /privacy
+Disallow: /terms
+Disallow: /refund
+
+Sitemap: https://careerlyst-three.vercel.app/sitemap.xml
