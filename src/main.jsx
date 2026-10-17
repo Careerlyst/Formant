@@ -34,6 +34,7 @@ import Protected from './components/Protected';
 import LeadAssessment from './pages/LeadAssessment';
 import AdminLeads from './pages/AdminLeads';
 import AdminSettings from './pages/AdminSettings';
+import { applySeoMetadata } from './lib/seo';
 
 import {
   Dashboard,
@@ -101,61 +102,49 @@ function ScrollManager() {
   return null;
 }
 
-const ROUTE_TITLES = {
-  '/': 'Formant',
-  '/services': 'Formant — Services',
-  '/pricing': 'Formant — Pricing',
-  '/about': 'Formant — About',
-  '/contact': 'Formant — Contact',
-  '/privacy': 'Formant — Privacy',
-  '/terms': 'Formant — Terms',
-  '/refund': 'Formant — Refund',
-  '/login': 'Formant — Login',
-  '/signup': 'Formant — Sign Up',
-  '/auth/callback': 'Formant — Verifying...',
-  '/forgot-password': 'Formant — Forgot Password',
-  '/reset-password': 'Formant — Reset Password',
-  '/assessment': 'Formant — Assessment',
-  '/dashboard': 'Formant — Dashboard',
-  '/dashboard/profile': 'Formant — Profile',
-  '/dashboard/orders': 'Formant — Orders',
-  '/dashboard/messages': 'Formant — Messages',
-  '/dashboard/files': 'Formant — Files',
-  '/dashboard/payments': 'Formant — Payments',
-  '/dashboard/notifications': 'Formant — Notifications',
-  '/dashboard/settings': 'Formant — Settings',
-  '/admin': 'Formant — Admin',
-  '/admin/workspace': 'Formant — Workspace',
-  '/admin/users': 'Formant — Users',
-  '/admin/leads': 'Formant — Leads',
-  '/admin/orders': 'Formant — Orders',
-  '/admin/projects': 'Formant — Projects',
-  '/admin/services': 'Formant — Services',
-  '/admin/payments': 'Formant — Payments',
-  '/admin/messages': 'Formant — Messages',
-  '/admin/files': 'Formant — Files',
-  '/admin/reviews': 'Formant — Reviews',
-  '/admin/coupons': 'Formant — Coupons',
-  '/admin/notifications': 'Formant — Notifications',
-  '/admin/settings': 'Formant — Settings'
-};
-
 function TitleManager() {
   const { pathname } = useLocation();
 
   useEffect(() => {
-    const normalizedPath =
-      pathname.length > 1 && pathname.endsWith('/')
-        ? pathname.slice(0, -1)
-        : pathname;
-
-    if (ROUTE_TITLES[normalizedPath]) {
-      document.title = ROUTE_TITLES[normalizedPath];
-    } else if (normalizedPath.startsWith('/services/')) {
-      document.title = 'Formant — Services';
-    } else {
-      document.title = 'Formant';
-    }
+    const normalizedPath = pathname.length > 1 && pathname.endsWith('/')
+      ? pathname.slice(0, -1)
+      : pathname;
+    const routeTitles = {
+      '/login': 'Formant — Login',
+      '/signup': 'Formant — Sign Up',
+      '/auth/callback': 'Formant — Verifying...',
+      '/forgot-password': 'Formant — Forgot Password',
+      '/reset-password': 'Formant — Reset Password',
+      '/privacy': 'Formant — Privacy',
+      '/terms': 'Formant — Terms',
+      '/refund': 'Formant — Refund',
+      '/assessment': 'Formant — Assessment',
+      '/dashboard': 'Formant — Dashboard',
+      '/dashboard/profile': 'Formant — Profile',
+      '/dashboard/orders': 'Formant — Orders',
+      '/dashboard/messages': 'Formant — Messages',
+      '/dashboard/files': 'Formant — Files',
+      '/dashboard/payments': 'Formant — Payments',
+      '/dashboard/notifications': 'Formant — Notifications',
+      '/dashboard/settings': 'Formant — Settings',
+      '/admin': 'Formant — Admin',
+      '/admin/workspace': 'Formant — Workspace',
+      '/admin/users': 'Formant — Users',
+      '/admin/leads': 'Formant — Leads',
+      '/admin/orders': 'Formant — Orders',
+      '/admin/projects': 'Formant — Projects',
+      '/admin/services': 'Formant — Services',
+      '/admin/payments': 'Formant — Payments',
+      '/admin/messages': 'Formant — Messages',
+      '/admin/files': 'Formant — Files',
+      '/admin/reviews': 'Formant — Reviews',
+      '/admin/coupons': 'Formant — Coupons',
+      '/admin/notifications': 'Formant — Notifications',
+      '/admin/settings': 'Formant — Settings'
+    };
+    const title = routeTitles[normalizedPath] ||
+      (normalizedPath.startsWith('/services/') ? 'Formant — Services' : undefined);
+    applySeoMetadata(pathname, title ? { title } : {});
   }, [pathname]);
 
   return null;
