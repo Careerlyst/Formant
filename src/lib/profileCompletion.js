@@ -1,32 +1,28 @@
-    // Formant — shared profile completion logic
-// Keep this list as the single source of truth for profile completion.
+// Shared profile readiness model. Optional details are recommendations, not
+// required work, so a complete core profile is not penalized for omissions.
+export const PROFILE_COMPLETION_FIELDS = ['name', 'target_role', 'career_background'];
 
-export const PROFILE_COMPLETION_FIELDS = [
-  'name',
-  'phone',
-  'target_role',
-  'experience',
-  'education',
-  'linkedin',
-  'github',
-  'portfolio',
-  'bio'
-];
+export function getProfileProgress(profile = {}) {
+  const hasCareerBackground = Boolean(
+    String(profile?.experience ?? '').trim() || String(profile?.education ?? '').trim()
+  );
+  const checks = [
+    { key: 'name', label: 'Full name', done: Boolean(String(profile?.name ?? '').trim()) },
+    { key: 'target_role', label: 'Target role', done: Boolean(String(profile?.target_role ?? '').trim()) },
+    { key: 'career_background', label: 'Experience or education', done: hasCareerBackground }
+  ];
+  const completed = checks.filter((item) => item.done).length;
+  return {
+    percent: Math.round((completed / checks.length) * 100),
+    checks,
+    missing: checks.filter((item) => !item.done).map((item) => item.key)
+  };
+}
 
 export function getProfileCompletion(profile = {}) {
-  const total = PROFILE_COMPLETION_FIELDS.length;
-
-  if (!total) return 0;
-
-  const completed = PROFILE_COMPLETION_FIELDS.filter(
-    (key) => String(profile?.[key] ?? '').trim().length > 0
-  ).length;
-
-  return Math.round((completed / total) * 100);
+  return getProfileProgress(profile).percent;
 }
 
 export function getMissingProfileFields(profile = {}) {
-  return PROFILE_COMPLETION_FIELDS.filter(
-    (key) => !String(profile?.[key] ?? '').trim()
-  );
+  return getProfileProgress(profile).missing;
 }

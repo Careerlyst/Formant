@@ -29,8 +29,9 @@ export default function Footer() {
         document.getElementById('process');
 
       if (target) {
+        const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
         target.scrollIntoView({
-          behavior: 'smooth',
+          behavior: prefersReducedMotion ? 'auto' : 'smooth',
           block: 'start'
         });
       }
@@ -218,14 +219,13 @@ export default function Footer() {
             <span className="footer-eyebrow">STAY AHEAD</span>
 
             <h2>
-              Formant updates,
+              Want Formant
               <br />
-              straight to your inbox.
+              updates?
             </h2>
 
             <p>
-              Get career tips, product updates and occasional
-              promotions.
+              Request career tips and product updates. Your email app will open with a prefilled message for you to review and send.
             </p>
           </div>
 
@@ -255,14 +255,13 @@ export default function Footer() {
                 type="submit"
                 disabled={newsletterLoading}
               >
-                {newsletterLoading ? 'Please wait…' : 'Subscribe'}
+                {newsletterLoading ? 'Please wait…' : 'Request updates'}
                 <span aria-hidden="true">↗</span>
               </button>
             </div>
 
             <small>
-              By subscribing, you agree to receive Formant
-              updates. Unsubscribe anytime.
+              Submitting opens your email app with a message to hello@careerlyst.com. Nothing is sent until you review and send it.
             </small>
 
             {newsletterMessage && (

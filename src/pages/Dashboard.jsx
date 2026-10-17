@@ -1,14 +1,16 @@
   import React, { useEffect, useMemo, useRef, useState } from 'react';
-  import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
   import DashboardShell from '../components/DashboardShell';
-  import { load, patch } from '../lib/store';
-  import { supabase } from '../lib/supabase';
-  import {
-    getProfileCompletion,
-    getMissingProfileFields,
-    PROFILE_COMPLETION_FIELDS
-  } from '../lib/profileCompletion';
+import { load, patch, services } from '../lib/store';
+import { supabase } from '../lib/supabase';
+import { showcaseTabForService } from '../lib/showcase';
+import { fetchProfile, saveProfile } from '../lib/profileRepository';
+import { subscribeToClientMessages } from '../lib/messageRealtime';
+import { useMessageViewport } from '../lib/messageViewport';
+import MessageActions from '../components/MessageActions';
+  import { getProfileCompletion, getProfileProgress } from '../lib/profileCompletion';
   import './my-profile.css';
+  import './workspace-client.css';
   import {
     applyTheme,
     getStoredThemePreference,
@@ -144,9 +146,103 @@
     );
   }
 
-  export function Dashboard() {
+  function RoadmapPreview({ order, roadmap }) {
+    const stages = Array.isArray(roadmap.stages) ? roadmap.stages : [];
+    const currentStageIndex = stages.findIndex(
+      (stage) => stage.stage_key === roadmap.current_stage_key
+    );
+    const currentStage = currentStageIndex >= 0 ? stages[currentStageIndex] : null;
+    const completedStages = stages
+      .filter((stage) => stage.status === 'COMPLETED')
+      .slice(-2);
+    const nextStage = currentStageIndex >= 0
+      ? stages.slice(currentStageIndex + 1).find((stage) => stage.status === 'NOT_STARTED')
+      : null;
+    const previewStages = [...completedStages, currentStage, nextStage]
+      .filter(Boolean)
+      .filter((stage, index, list) => list.findIndex((item) => item.stage_key === stage.stage_key) === index);
+    const rawProgress = roadmap.progress;
+    const progress = rawProgress !== null && rawProgress !== undefined && rawProgress !== '' && Number.isFinite(Number(rawProgress))
+      ? Math.max(0, Math.min(100, Number(rawProgress)))
+      : null;
+    const isComplete = roadmap.current_status === 'COMPLETED';
+    const currentDescription = currentStage?.description || roadmap.client_update || '';
+    const hasClientAction = roadmap.current_status === 'WAITING_ON_CLIENT'
+      && (roadmap.client_action_title || roadmap.client_action_description);
 
-    const s = load();
+    return (
+      <article className="overview-roadmap-card">
+        <header className="overview-roadmap-card-head">
+          <div>
+            <span className="overview-roadmap-order">ORDER #{order.id}</span>
+            <h3>{roadmap.service_name}</h3>
+          </div>
+          <strong className="overview-roadmap-percent">
+            {progress === null ? '—' : `${progress}%`}
+          </strong>
+        </header>
+
+        {progress !== null ? (
+          <div
+            className="overview-roadmap-progress"
+            role="progressbar"
+            aria-label={`Service delivery progress for order ${order.id}`}
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow={progress}
+          >
+            <span style={{ width: `${progress}%` }} />
+          </div>
+        ) : (
+          <p className="overview-roadmap-progress-unavailable">Progress unavailable</p>
+        )}
+
+        <div className="overview-roadmap-current">
+          <span className="overview-roadmap-label">{isComplete ? 'COMPLETE' : 'CURRENT STAGE'}</span>
+          <strong>{roadmap.current_stage_title || 'Stage unavailable'}</strong>
+          {currentDescription && <p>{currentDescription}</p>}
+        </div>
+
+        {previewStages.length > 0 && (
+          <ol className="overview-roadmap-timeline" aria-label={`Roadmap preview for order ${order.id}`}>
+            {previewStages.map((stage) => {
+              const isCurrent = stage.stage_key === roadmap.current_stage_key && !isComplete;
+              const isCompleted = stage.status === 'COMPLETED' || (stage.stage_key === roadmap.current_stage_key && isComplete);
+              return (
+                <li
+                  key={stage.stage_key}
+                  className={isCompleted ? 'is-completed' : isCurrent ? 'is-current' : 'is-upcoming'}
+                >
+                  <span className="overview-roadmap-marker" aria-hidden="true">{isCompleted ? '✓' : isCurrent ? '●' : '○'}</span>
+                  <strong>{stage.title}</strong>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+
+        {hasClientAction && (
+          <div className="overview-roadmap-client-action">
+            {roadmap.client_action_title && <strong>{roadmap.client_action_title}</strong>}
+            {roadmap.client_action_description && <p>{roadmap.client_action_description}</p>}
+          </div>
+        )}
+
+        <Link className="overview-roadmap-link" to={`/dashboard/orders?order=${encodeURIComponent(order.id)}`}>
+          View full roadmap <span aria-hidden="true">↗</span>
+        </Link>
+      </article>
+    );
+  }
+
+  export function Dashboard() {
+    const [s, setStoreSnapshot] = useState(() => load());
+
+    useEffect(() => {
+      const refresh = () => setStoreSnapshot(load());
+      window.addEventListener('careerlyst-store', refresh);
+      return () => window.removeEventListener('careerlyst-store', refresh);
+    }, []);
 
     const firstName =
       s.user?.name?.split(' ')[0] ||
@@ -155,13 +251,20 @@
 
     const [orders, setOrders] = useState(s.orders || []);
     const [ordersLoading, setOrdersLoading] = useState(Boolean(supabase));
+    const [roadmaps, setRoadmaps] = useState({});
+    const [roadmapsLoading, setRoadmapsLoading] = useState(Boolean(supabase));
+    const [roadmapsError, setRoadmapsError] = useState(false);
 
     useEffect(() => {
       let mounted = true;
 
       async function loadOverviewOrders() {
         if (!supabase) {
-          if (mounted) setOrdersLoading(false);
+          if (mounted) {
+            setOrdersLoading(false);
+            setRoadmapsLoading(false);
+            setRoadmapsError(Boolean((s.orders || []).length));
+          }
           return;
         }
 
@@ -171,7 +274,11 @@
           await supabase.auth.getSession();
 
         if (sessionError || !sessionData?.session?.user) {
-          if (mounted) setOrdersLoading(false);
+          if (mounted) {
+            setOrdersLoading(false);
+            setRoadmapsLoading(false);
+            setRoadmapsError(true);
+          }
           return;
         }
 
@@ -183,12 +290,40 @@
           .eq('user_id', sessionData.session.user.id)
           .order('created_at', { ascending: false });
 
-        if (mounted) {
-          if (!queryError) {
-            setOrders(data || []);
-          }
+        if (!mounted) return;
+        if (queryError) {
+          setRoadmapsError(true);
           setOrdersLoading(false);
+          setRoadmapsLoading(false);
+          return;
         }
+
+        const nextOrders = data || [];
+        setOrders(nextOrders);
+        setOrdersLoading(false);
+        const orderIds = nextOrders.map((order) => order.id).filter(Boolean);
+        if (!orderIds.length) {
+          setRoadmaps({});
+          setRoadmapsError(false);
+          setRoadmapsLoading(false);
+          return;
+        }
+
+        const { data: roadmapData, error: roadmapError } = await supabase.rpc(
+          'get_my_order_roadmaps_v1',
+          { p_order_ids: orderIds }
+        );
+        if (!mounted) return;
+        if (roadmapError) {
+          setRoadmapsError(true);
+          setRoadmaps({});
+        } else {
+          setRoadmaps(Object.fromEntries(
+            (roadmapData || []).map((roadmap) => [String(roadmap.order_id), roadmap])
+          ));
+          setRoadmapsError(false);
+        }
+        setRoadmapsLoading(false);
       }
 
       loadOverviewOrders();
@@ -207,6 +342,17 @@
 
     const activeOrders = activeOrderList.length;
     const currentOrder = activeOrderList[0] || null;
+    const nonCancelledOrders = orders.filter((order) => {
+      const status = String(order.status || '').trim().toLowerCase();
+      return !['cancelled', 'canceled'].includes(status);
+    });
+    const completedOrders = nonCancelledOrders.filter((order) => String(order.status || '').trim().toLowerCase() === 'completed');
+    const roadmapCandidates = [...activeOrderList, ...completedOrders]
+      .map((order) => ({ order, roadmap: roadmaps[String(order.id)] }))
+      .filter((item) => item.roadmap)
+      .slice(0, 2);
+    const hasAdditionalOrders = orders.length > roadmapCandidates.length;
+    const hasEligibleOrders = nonCancelledOrders.length > 0;
 
     const unreadMessages =
       s.messages?.filter(
@@ -216,6 +362,12 @@
     const totalFiles = s.files?.length || 0;
 
     const profileProgress = getProfileCompletion(s.profile);
+    const dashboardChecklist = [
+      { label: 'Core profile ready', done: profileProgress === 100 },
+      { label: 'Career assessment completed', done: Boolean(s.user?.assessmentCompleted) },
+      { label: 'Service order started', done: orders.length > 0 },
+      { label: 'Professional link added', done: Boolean(s.profile?.linkedin || s.profile?.github || s.profile?.portfolio) }
+    ];
 
     const activeOrdersValue = ordersLoading ? '—' : (activeOrders || '—');
     const activeOrdersDetail = ordersLoading
@@ -269,7 +421,6 @@
             </div>
 
           </section>
-
 
           {/* =====================================================
               QUICK STATS
@@ -368,25 +519,11 @@
 
               <div className="overview-checklist">
 
-                <ProgressItem done>
-                  Profile information completed
-                </ProgressItem>
-
-                <ProgressItem done>
-                  Resume submitted
-                </ProgressItem>
-
-                <ProgressItem done>
-                  LinkedIn reviewed
-                </ProgressItem>
-
-                <ProgressItem>
-                  Interview preparation
-                </ProgressItem>
-
-                <ProgressItem>
-                  Portfolio
-                </ProgressItem>
+                {dashboardChecklist.map((item) => (
+                  <ProgressItem key={item.label} done={item.done}>
+                    {item.label}
+                  </ProgressItem>
+                ))}
 
               </div>
 
@@ -482,6 +619,43 @@
 
             </div>
 
+          </section>
+
+          <section className="overview-roadmap-section" aria-labelledby="overview-roadmap-title">
+            <div className="overview-roadmap-heading">
+              <div>
+                <span className="overview-roadmap-label">SERVICE ROADMAP</span>
+                <h2 id="overview-roadmap-title">Your progress.</h2>
+                <p>See where your services stand and what comes next.</p>
+              </div>
+              {hasAdditionalOrders && (
+                <Link className="overview-roadmap-link overview-roadmap-all" to="/dashboard/orders">
+                  View all services <span aria-hidden="true">↗</span>
+                </Link>
+              )}
+            </div>
+
+            {ordersLoading || roadmapsLoading ? (
+              <div className="overview-roadmap-state" role="status">Loading your service progress…</div>
+            ) : roadmapsError ? (
+              <div className="overview-roadmap-state" role="alert">
+                <p>Service progress is temporarily unavailable.</p>
+                <Link className="overview-roadmap-link" to="/dashboard/orders">View all services <span aria-hidden="true">↗</span></Link>
+              </div>
+            ) : roadmapCandidates.length ? (
+              <div className="overview-roadmap-grid">
+                {roadmapCandidates.map(({ order, roadmap }) => (
+                  <RoadmapPreview key={order.id} order={order} roadmap={roadmap} />
+                ))}
+              </div>
+            ) : (
+              <div className="overview-roadmap-state">
+                <p>{hasEligibleOrders ? 'No service roadmap is available yet.' : 'Your service roadmap will appear here after you start a service.'}</p>
+                {hasEligibleOrders && <Link className="overview-roadmap-link" to="/dashboard/orders">View all services <span aria-hidden="true">↗</span></Link>}
+                {!hasEligibleOrders && <Link className="overview-roadmap-link" to="/services">Explore services <span aria-hidden="true">↗</span></Link>}
+                {!hasEligibleOrders && orders.length > 0 && <Link className="overview-roadmap-link" to="/dashboard/orders">View all services <span aria-hidden="true">↗</span></Link>}
+              </div>
+            )}
           </section>
 
 
@@ -664,6 +838,9 @@
       location: initial.location || '',
       skills: initial.skills || '',
       certifications: initial.certifications || '',
+      lead_score: initial.lead_score ?? null,
+      lead_status: initial.lead_status || '',
+      lead_assessment_completed_at: initial.lead_assessment_completed_at || null,
       preferences: {
         cv_style: initial.preferences?.cv_style || 'modern_tech',
         language: initial.preferences?.language || 'en_us',
@@ -685,6 +862,11 @@
     const [rolePickerOpen, setRolePickerOpen] = useState(false);
     const [roleSearch, setRoleSearch] = useState('');
     const [copiedLink, setCopiedLink] = useState(false);
+    const allowNavigationRef = useRef(false);
+    const [emailVerified, setEmailVerified] = useState(false);
+    const [fieldErrors, setFieldErrors] = useState({});
+    const [profileLoadFailed, setProfileLoadFailed] = useState(false);
+    const [assessmentSummary, setAssessmentSummary] = useState(null);
 
     // Initial Profile Load from Supabase or Fallback
     useEffect(() => {
@@ -714,40 +896,14 @@
           setUserId(user.id);
 
           const authName =
+            user.user_metadata?.full_name ||
             user.user_metadata?.name ||
             user.email?.split('@')[0] ||
             '';
 
-          const meta = user.user_metadata?.formant_profile_meta || {};
-
-          const {
-            data,
-            error: profileError
-          } = await supabase
-            .from('profiles')
-            .select(`
-              id,
-              name,
-              phone,
-              target_role,
-              experience,
-              education,
-              linkedin,
-              github,
-              portfolio,
-              bio
-            `)
-            .eq('id', user.id)
-            .maybeSingle();
+          const data = await fetchProfile(user.id);
 
           if (!mounted) return;
-
-          if (profileError) {
-            console.error('Profile load error:', profileError);
-            setError('We could not load your profile. Please try again.');
-            setLoading(false);
-            return;
-          }
 
           const loaded = {
             name: data?.name || authName,
@@ -760,18 +916,26 @@
             github: data?.github || '',
             portfolio: data?.portfolio || '',
             bio: data?.bio || '',
-            location: meta.location || '',
-            skills: meta.skills || '',
-            certifications: meta.certifications || '',
+            location: data.location || '',
+            skills: Array.isArray(data.skills) ? data.skills.join(', ') : (data.skills || ''),
+            certifications: data.certifications || '',
+            lead_score: data.lead_score,
+            lead_status: data.lead_status || '',
+            lead_assessment_completed_at: data.lead_assessment_completed_at || null,
+            lead_assessment: data.lead_assessment,
             preferences: {
-              cv_style: meta.preferences?.cv_style || 'modern_tech',
-              language: meta.preferences?.language || 'en_us',
-              tone: meta.preferences?.tone || 'authoritative',
-              career_interest: meta.preferences?.career_interest || 'full_time',
-              interview_focus: meta.preferences?.interview_focus || 'tech_system',
-              ...(meta.preferences || {})
+              cv_style: data.preferences?.cv_style || 'modern_tech',
+              language: data.preferences?.language || 'en_us',
+              tone: data.preferences?.tone || 'authoritative',
+              career_interest: data.preferences?.career_interest || 'full_time',
+              interview_focus: data.preferences?.interview_focus || 'tech_system',
+              ...(data.preferences || {})
             }
           };
+
+          setProfileLoadFailed(false);
+          setAssessmentSummary(data.lead_assessment || user.user_metadata?.careerlyst_lead_assessment || null);
+          setEmailVerified(Boolean(user.email_confirmed_at));
 
           setForm(loaded);
           setSavedForm(loaded);
@@ -791,7 +955,10 @@
         } catch (loadErr) {
           console.error('Unexpected profile load exception:', loadErr);
           if (mounted) {
-            setError('Failed to initialize profile. Using local offline data.');
+            setProfileLoadFailed(true);
+            setForm(emptyForm);
+            setSavedForm(emptyForm);
+            setError('We could not load your saved profile from the server. Refresh to try again; local cache is not being treated as current.');
           }
         } finally {
           if (mounted) setLoading(false);
@@ -822,37 +989,55 @@
       };
     }, [rolePickerOpen]);
 
+    const dirty = JSON.stringify(form) !== JSON.stringify(savedForm);
+    useEffect(() => {
+      if (!dirty) return undefined;
+      const warnBeforeUnload = (event) => {
+        if (allowNavigationRef.current) return;
+        event.preventDefault();
+        event.returnValue = '';
+      };
+      const confirmRouteLink = (event) => {
+        if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        const anchor = event.target.closest?.('a[href]');
+        if (!anchor || anchor.target === '_blank') return;
+        const next = new URL(anchor.href, window.location.href);
+        if (next.origin !== window.location.origin || (next.pathname === window.location.pathname && next.search === window.location.search && next.hash === window.location.hash)) return;
+        if (!window.confirm('You have unsaved profile changes. Leave this page and discard them?')) {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation?.();
+        } else allowNavigationRef.current = true;
+      };
+      window.addEventListener('beforeunload', warnBeforeUnload);
+      window.addEventListener('click', confirmRouteLink, true);
+      return () => {
+        window.removeEventListener('beforeunload', warnBeforeUnload);
+        window.removeEventListener('click', confirmRouteLink, true);
+      };
+    }, [dirty]);
+
     // Helpers & Calculations
-    const completion = getProfileCompletion(form);
-    const missingKeys = getMissingProfileFields(form);
+    const profileProgress = getProfileProgress(form);
+    const completion = profileProgress.percent;
+    const missingKeys = profileProgress.missing;
 
     const FIELD_LABELS = {
       name: 'Full name',
       phone: 'Phone number',
       target_role: 'Target role',
-      experience: 'Work experience',
-      education: 'Education history',
-      linkedin: 'LinkedIn profile',
-      github: 'GitHub profile',
-      portfolio: 'Portfolio link',
-      bio: 'Professional summary'
+      career_background: 'Experience or education'
     };
 
     const FIELD_SUGGESTIONS = {
       name: 'Add your full name so our career consultants can identify your records.',
       target_role: 'Select your target role to calibrate your resume and interview preparation.',
-      phone: 'Add a contact phone number for interview and application correspondence.',
-      experience: 'Summarize your career experience or years in the field.',
-      education: 'Add your academic background or degree qualifications.',
-      linkedin: 'Link your LinkedIn profile for profile optimization and review.',
-      github: 'Add your GitHub profile URL for technical code evaluation.',
-      portfolio: 'Provide your personal website or portfolio link.',
-      bio: 'Write a brief professional summary about your background and career goals.'
+      career_background: 'Add either experience or education to give the team career context.'
     };
 
     const nextSuggestion = useMemo(() => {
       if (!missingKeys.length) {
-        return 'Your core profile is 100% complete! Your Formant operations team has comprehensive context for all services.';
+        return 'Your core profile is complete. Optional details can still improve service-specific tailoring.';
       }
       const nextField = missingKeys[0];
       return FIELD_SUGGESTIONS[nextField] || `Add your ${FIELD_LABELS[nextField] || nextField} to strengthen your profile.`;
@@ -882,6 +1067,23 @@
       customRoleSearch &&
       !allRolesList.some((role) => role.toLowerCase() === customRoleSearch.toLowerCase());
 
+    function handleRolePickerKeyDown(event) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setRolePickerOpen(false);
+        document.getElementById('field-target-role')?.focus();
+      } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        const options = Array.from(rolePickerRef.current?.querySelectorAll('[role="option"]') || []);
+        if (!options.length) return;
+        event.preventDefault();
+        const currentIndex = options.indexOf(document.activeElement);
+        const nextIndex = event.key === 'ArrowDown'
+          ? (currentIndex + 1) % options.length
+          : (currentIndex <= 0 ? options.length - 1 : currentIndex - 1);
+        options[nextIndex].focus();
+      }
+    }
+
     function cleanUrl(url) {
       if (!url) return '';
       const trimmed = url.trim();
@@ -890,13 +1092,21 @@
       return `https://${trimmed}`;
     }
 
-    function isValidUrl(url) {
-      if (!url || !url.trim()) return true;
+    function urlError(value, expectedHost = null) {
+      if (!String(value || '').trim()) return '';
+      const rawValue = String(value).trim();
+      if (/^[a-z][a-z\d+.-]*:/i.test(rawValue) && !/^https?:\/\//i.test(rawValue)) {
+        return 'Use an HTTP or HTTPS URL.';
+      }
       try {
-        const parsed = new URL(cleanUrl(url));
-        return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+        const parsed = new URL(cleanUrl(value));
+        if (!['http:', 'https:'].includes(parsed.protocol)) return 'Use an HTTP or HTTPS URL.';
+        if (expectedHost && !(parsed.hostname === expectedHost || parsed.hostname.endsWith(`.${expectedHost}`))) {
+          return `Enter a valid ${expectedHost} URL.`;
+        }
+        return '';
       } catch {
-        return false;
+        return 'Enter a valid website URL.';
       }
     }
 
@@ -907,6 +1117,7 @@
       }));
       setMessage('');
       setError('');
+      setFieldErrors((current) => ({ ...current, [key]: '' }));
     }
 
     function updatePreference(key, value) {
@@ -930,6 +1141,7 @@
     function cancelEditing() {
       setForm({ ...savedForm });
       setEditingSection(null);
+      setFieldErrors({});
       setError('');
       setMessage('');
     }
@@ -947,25 +1159,34 @@
     async function handleSave(e, section = null) {
       if (e && e.preventDefault) e.preventDefault();
       if (saving) return;
+      if (supabase && profileLoadFailed) {
+        setError('The saved profile has not loaded. Refresh before editing so a stale cache cannot overwrite server data.');
+        return;
+      }
 
       const cleanName = String(form.name || '').trim();
       if (!cleanName) {
-        setError('Full name is required to maintain your professional identity.');
+        setFieldErrors((current) => ({ ...current, name: 'Full name is required.' }));
+        setError('Please fix the highlighted field before saving.');
+        return;
+      }
+      const validatesRole = section === 'career' || section === 'all' || form.target_role !== savedForm.target_role;
+      if (validatesRole && !String(form.target_role || '').trim()) {
+        setFieldErrors((current) => ({ ...current, target_role: 'Choose or enter a target role.' }));
+        setError('Please fix the highlighted field before saving.');
+        document.getElementById('field-target-role')?.focus();
         return;
       }
 
-      if (!isValidUrl(form.linkedin)) {
-        setError('Please enter a valid LinkedIn URL (e.g. https://linkedin.com/in/yourname).');
-        return;
-      }
-
-      if (!isValidUrl(form.github)) {
-        setError('Please enter a valid GitHub URL (e.g. https://github.com/yourusername).');
-        return;
-      }
-
-      if (!isValidUrl(form.portfolio)) {
-        setError('Please enter a valid portfolio URL (e.g. https://yourportfolio.com).');
+      const shouldValidateLinks = section === 'links' || section === 'all';
+      const nextFieldErrors = {};
+      if (shouldValidateLinks || form.linkedin !== savedForm.linkedin) nextFieldErrors.linkedin = urlError(form.linkedin, 'linkedin.com');
+      if (shouldValidateLinks || form.github !== savedForm.github) nextFieldErrors.github = urlError(form.github, 'github.com');
+      if (shouldValidateLinks || form.portfolio !== savedForm.portfolio) nextFieldErrors.portfolio = urlError(form.portfolio);
+      setFieldErrors((current) => ({ ...current, ...nextFieldErrors }));
+      const invalidLink = Object.values(nextFieldErrors).some(Boolean);
+      if (invalidLink) {
+        setError('Please fix the highlighted links before saving.');
         return;
       }
 
@@ -973,68 +1194,73 @@
       setError('');
       setMessage('');
 
-      const cleanCore = {
+      const profileValues = {
         name: cleanName,
         phone: String(form.phone || '').trim(),
+        location: String(form.location || '').trim(),
         target_role: String(form.target_role || '').trim(),
         experience: String(form.experience || '').trim(),
         education: String(form.education || '').trim(),
+        skills: String(form.skills || '').split(',').map((skill) => skill.trim()).filter(Boolean),
+        certifications: String(form.certifications || '').trim(),
         linkedin: cleanUrl(form.linkedin),
         github: cleanUrl(form.github),
         portfolio: cleanUrl(form.portfolio),
-        bio: String(form.bio || '').trim()
-      };
-
-      const cleanMeta = {
-        location: String(form.location || '').trim(),
-        skills: typeof form.skills === 'string' ? form.skills.trim() : form.skills,
-        certifications: String(form.certifications || '').trim(),
+        bio: String(form.bio || '').trim(),
         preferences: form.preferences || {}
       };
 
       try {
+        let persisted = profileValues;
         if (supabase) {
-          if (!userId) {
-            setError('Your session could not be verified. Please sign in again.');
-            setSaving(false);
-            return;
+          persisted = await saveProfile(userId, profileValues);
+          let nameSyncError = null;
+          const { data: authUserData, error: authUserError } = await supabase.auth.getUser();
+          if (authUserError) {
+            nameSyncError = authUserError;
+          } else {
+            const { error: authUpdateError } = await supabase.auth.updateUser({
+              data: { ...(authUserData?.user?.user_metadata || {}), name: cleanName, full_name: cleanName }
+            });
+            nameSyncError = authUpdateError;
           }
 
-          // 1. Save core fields to public.profiles table
-          const { error: profileSaveError } = await supabase
-            .from('profiles')
-            .update(cleanCore)
-            .eq('id', userId);
-
-          if (profileSaveError) {
-            console.error('Profile save error:', profileSaveError);
-            throw profileSaveError;
+          const nextState = {
+            ...form,
+            ...persisted,
+            skills: Array.isArray(persisted.skills) ? persisted.skills.join(', ') : (persisted.skills || ''),
+            preferences: persisted.preferences || form.preferences,
+            email: form.email
+          };
+          patch((current) => ({
+            ...current,
+            user: { ...(current.user || {}), id: userId, name: cleanName, email: form.email },
+            profile: { ...(current.profile || {}), ...nextState }
+          }));
+          window.dispatchEvent(new CustomEvent('careerlyst-profile-updated', { detail: { userId, name: cleanName } }));
+          setForm(nextState);
+          setSavedForm(nextState);
+          setEditingSection(null);
+          if (nameSyncError) {
+            console.error('Profile saved but Auth display-name compatibility sync failed:', nameSyncError);
+            setError('Your profile was saved, but the account display-name mirror could not be updated. The saved profile name remains authoritative; please retry or refresh.');
+          } else {
+            setMessage('Your profile has been saved successfully.');
           }
-
-          // 2. Save extended metadata to auth user_metadata
-          const { error: metaUpdateError } = await supabase.auth.updateUser({
-            data: {
-              formant_profile_meta: cleanMeta
-            }
-          });
-
-          if (metaUpdateError) {
-            console.warn('Metadata save notice:', metaUpdateError);
-          }
+          return;
         }
 
-        // 3. Sync to local demo store
         const nextState = {
           ...form,
-          ...cleanCore,
-          ...cleanMeta
+          ...profileValues,
+          skills: profileValues.skills.join(', ')
         };
 
         patch((current) => ({
           ...current,
           user: {
             ...(current.user || {}),
-            name: cleanCore.name,
+            name: profileValues.name,
             email: form.email
           },
           profile: {
@@ -1256,8 +1482,12 @@
                             onChange={(e) => updateField('name', e.target.value)}
                             placeholder="e.g. Eleanor Vance"
                             autoComplete="name"
+                            aria-required="true"
+                            aria-invalid={Boolean(fieldErrors.name)}
+                            aria-describedby={fieldErrors.name ? 'field-name-error' : undefined}
                             required
                           />
+                          {fieldErrors.name && <span className="profile-field-error" id="field-name-error">{fieldErrors.name}</span>}
                         </div>
 
                         <div className="profile-form-field">
@@ -1338,7 +1568,9 @@
                         <span className="profile-data-label">Email Address</span>
                         <span className="profile-data-value">
                           {form.email || <span className="empty-state">Not linked</span>}
-                          <span style={{ marginLeft: 8, fontSize: 11, color: '#6d7069', background: '#f0f0ea', padding: '2px 6px', borderRadius: 4 }}>Verified</span>
+                          <span className={`profile-email-status ${emailVerified ? 'is-verified' : 'is-pending'}`}>
+                            {emailVerified ? 'Verified' : 'Pending confirmation'}
+                          </span>
                         </span>
                       </div>
 
@@ -1396,7 +1628,7 @@
                   {isEditing('career') ? (
                     <form onSubmit={(e) => handleSave(e, 'career')}>
                       <div className="profile-form-grid">
-                        <div className="profile-form-field span-two" ref={rolePickerRef} style={{ position: 'relative' }}>
+                        <div className="profile-form-field span-two" ref={rolePickerRef} onKeyDown={handleRolePickerKeyDown} style={{ position: 'relative' }}>
                           <label className="profile-form-label" htmlFor="field-target-role">
                             <span>Target Role *</span>
                             <span className="helper">Select or enter a custom title</span>
@@ -1407,8 +1639,21 @@
                               id="field-target-role"
                               className="profile-form-input"
                               type="text"
+                              role="combobox"
+                              aria-autocomplete="list"
+                              aria-haspopup="listbox"
+                              aria-expanded={rolePickerOpen}
+                              aria-controls="target-role-options"
+                              aria-required="true"
+                              aria-invalid={Boolean(fieldErrors.target_role)}
+                              aria-describedby={fieldErrors.target_role ? 'field-target-role-error' : undefined}
                               value={form.target_role}
-                              onFocus={() => setRolePickerOpen(true)}
+                              onFocus={(event) => {
+                                // Closing the picker returns focus to this input. Do not
+                                // immediately reopen it when focus came from inside the picker.
+                                if (event.relatedTarget?.closest?.('.target-role-picker')) return;
+                                setRolePickerOpen(true);
+                              }}
                               onClick={() => setRolePickerOpen(true)}
                               onChange={(e) => {
                                 updateField('target_role', e.target.value);
@@ -1423,12 +1668,15 @@
                               type="button"
                               className="target-role-toggle"
                               aria-label="Toggle role picker menu"
+                              aria-haspopup="listbox"
                               aria-expanded={rolePickerOpen}
+                              aria-controls="target-role-options"
                               onClick={() => setRolePickerOpen((open) => !open)}
                             >
                               <span>⌄</span>
                             </button>
                           </div>
+                          {fieldErrors.target_role && <span className="profile-field-error" id="field-target-role-error">{fieldErrors.target_role}</span>}
 
                           {rolePickerOpen && (
                             <div className="target-role-picker" style={{ zIndex: 120 }}>
@@ -1440,7 +1688,10 @@
                                 <button
                                   type="button"
                                   className="target-role-close"
-                                  onClick={() => setRolePickerOpen(false)}
+                                  onClick={() => {
+                                    setRolePickerOpen(false);
+                                    document.getElementById('field-target-role')?.focus();
+                                  }}
                                   aria-label="Close role picker"
                                 >
                                   ×
@@ -1454,11 +1705,12 @@
                                   value={roleSearch}
                                   onChange={(e) => setRoleSearch(e.target.value)}
                                   placeholder="Type to filter roles…"
+                                  aria-label="Search suggested target roles"
                                   autoFocus
                                 />
                               </div>
 
-                              <div className="target-role-options">
+                              <div className="target-role-options" id="target-role-options" role="listbox" aria-label="Suggested target roles">
                                 {filteredRoleGroups.map((group) => (
                                   <div className="target-role-group" key={group.title}>
                                     <span className="target-role-group-title">{group.title}</span>
@@ -1467,11 +1719,14 @@
                                         <button
                                           type="button"
                                           className={`target-role-option ${form.target_role === role ? 'is-selected' : ''}`}
+                                          role="option"
+                                          aria-selected={form.target_role === role}
                                           key={role}
                                           onClick={() => {
                                             updateField('target_role', role);
                                             setRoleSearch('');
                                             setRolePickerOpen(false);
+                                            requestAnimationFrame(() => document.getElementById('field-target-role')?.focus());
                                           }}
                                         >
                                           <span>{role}</span>
@@ -1486,10 +1741,13 @@
                                   <button
                                     type="button"
                                     className="target-role-custom"
+                                    role="option"
+                                    aria-selected={form.target_role === customRoleSearch}
                                     onClick={() => {
                                       updateField('target_role', customRoleSearch);
                                       setRoleSearch('');
                                       setRolePickerOpen(false);
+                                      requestAnimationFrame(() => document.getElementById('field-target-role')?.focus());
                                     }}
                                   >
                                     <span>+ Use “{customRoleSearch}” as custom target role</span>
@@ -1702,11 +1960,15 @@
                           <input
                             id="field-linkedin"
                             className="profile-form-input"
-                            type="url"
+                            type="text"
+                            inputMode="url"
+                            aria-invalid={Boolean(fieldErrors.linkedin)}
+                            aria-describedby={fieldErrors.linkedin ? 'field-linkedin-error' : undefined}
                             value={form.linkedin}
                             onChange={(e) => updateField('linkedin', e.target.value)}
                             placeholder="https://linkedin.com/in/yourname"
                           />
+                          {fieldErrors.linkedin && <span className="profile-field-error" id="field-linkedin-error">{fieldErrors.linkedin}</span>}
                         </div>
 
                         <div className="profile-form-field span-two">
@@ -1716,11 +1978,15 @@
                           <input
                             id="field-github"
                             className="profile-form-input"
-                            type="url"
+                            type="text"
+                            inputMode="url"
+                            aria-invalid={Boolean(fieldErrors.github)}
+                            aria-describedby={fieldErrors.github ? 'field-github-error' : undefined}
                             value={form.github}
                             onChange={(e) => updateField('github', e.target.value)}
                             placeholder="https://github.com/yourusername"
                           />
+                          {fieldErrors.github && <span className="profile-field-error" id="field-github-error">{fieldErrors.github}</span>}
                         </div>
 
                         <div className="profile-form-field span-two">
@@ -1730,11 +1996,15 @@
                           <input
                             id="field-portfolio"
                             className="profile-form-input"
-                            type="url"
+                            type="text"
+                            inputMode="url"
+                            aria-invalid={Boolean(fieldErrors.portfolio)}
+                            aria-describedby={fieldErrors.portfolio ? 'field-portfolio-error' : undefined}
                             value={form.portfolio}
                             onChange={(e) => updateField('portfolio', e.target.value)}
                             placeholder="https://yourportfolio.com"
                           />
+                          {fieldErrors.portfolio && <span className="profile-field-error" id="field-portfolio-error">{fieldErrors.portfolio}</span>}
                         </div>
                       </div>
 
@@ -1987,6 +2257,7 @@
                     className="profile-progress-bar-fill"
                     style={{ width: `${completion}%` }}
                     role="progressbar"
+                    aria-label="Profile strength"
                     aria-valuenow={completion}
                     aria-valuemin="0"
                     aria-valuemax="100"
@@ -1998,14 +2269,13 @@
                 </p>
 
                 <div className="profile-strength-checklist">
-                  {PROFILE_COMPLETION_FIELDS.map((key) => {
-                    const isDone = Boolean(String(form[key] || '').trim());
+                  {profileProgress.checks.map(({ key, label, done: isDone }) => {
                     return (
                       <div key={key} className={`profile-checklist-item ${isDone ? 'is-done' : ''}`}>
                         <span className="profile-check-indicator" aria-hidden="true">
                           {isDone ? '✓' : '·'}
                         </span>
-                        <span>{FIELD_LABELS[key] || key}</span>
+                        <span>{label || FIELD_LABELS[key] || key}</span>
                       </div>
                     );
                   })}
@@ -2037,8 +2307,30 @@
                   <span aria-hidden="true">🛡</span> Confidential & Secure
                 </h4>
                 <p>
-                  Your profile details are strictly confidential, protected by PostgreSQL Row Level Security (RLS), and shared only with Formant team members assigned to your projects.
+                  Your profile is protected by database access controls. Authorized Formant staff roles may review client profiles to support service operations.
                 </p>
+              </div>
+
+              <div className="profile-service-panel profile-pathways-panel">
+                <h3 className="profile-service-panel-title">Keep your career context current</h3>
+                <p className="profile-service-panel-desc">Assessment helps us understand your goals. Your profile stores the professional details used to deliver services.</p>
+                <div className="profile-service-list">
+                  <Link className="profile-pathway-link" to="/assessment">Review career assessment ↗</Link>
+                  <Link className="profile-pathway-link" to="/service-selection">Explore service recommendations ↗</Link>
+                </div>
+              </div>
+
+              <div className="profile-service-panel">
+                <h3 className="profile-service-panel-title">Career assessment</h3>
+                {assessmentSummary ? (
+                  <div className="profile-assessment-summary">
+                    <p>Assessment answers are used for service recommendations and team context.</p>
+                    <span>Status: {form.lead_status || assessmentSummary.leadStatus || 'Submitted'}</span>
+                    {form.lead_score != null && <span>Score: {form.lead_score}</span>}
+                    {(form.lead_assessment_completed_at || assessmentSummary.completedAt) && <span>Completed: {new Date(form.lead_assessment_completed_at || assessmentSummary.completedAt).toLocaleDateString()}</span>}
+                  </div>
+                ) : <p className="profile-service-panel-desc">No completed assessment is recorded yet. You can add career-goal context separately from this profile.</p>}
+                <Link className="profile-pathway-link" to="/assessment">Open assessment ↗</Link>
               </div>
 
             </div>
@@ -2058,7 +2350,16 @@
 
   export function Orders() {
     const localState = load();
+    const location = useLocation();
     const [orders, setOrders] = useState([]);
+    const [clientTasks, setClientTasks] = useState({});
+    const [clientGoals, setClientGoals] = useState({});
+    const [clientNotes, setClientNotes] = useState({});
+    const [clientRoadmaps, setClientRoadmaps] = useState({});
+    const [clientWorkspaceError, setClientWorkspaceError] = useState('');
+    const [clientWorkspaceLoading, setClientWorkspaceLoading] = useState(false);
+    const [roadmapReveal, setRoadmapReveal] = useState({ orderId: null, mode: null });
+    const [canHoverOrders, setCanHoverOrders] = useState(false);
     const [loading, setLoading] = useState(Boolean(supabase));
     const [error, setError] = useState('');
     const [briefOrder, setBriefOrder] = useState(null);
@@ -2082,6 +2383,20 @@
     const [briefSaving, setBriefSaving] = useState(false);
     const [briefMessage, setBriefMessage] = useState('');
     const [briefError, setBriefError] = useState('');
+
+    useEffect(() => {
+      const requestedOrderId = new URLSearchParams(location.search).get('order');
+      if (!requestedOrderId) return;
+      setRoadmapReveal({ orderId: String(requestedOrderId), mode: 'tap' });
+    }, [location.search]);
+
+    useEffect(() => {
+      const hoverQuery = window.matchMedia('(hover: hover) and (pointer: fine)');
+      const updateHoverCapability = () => setCanHoverOrders(hoverQuery.matches);
+      updateHoverCapability();
+      hoverQuery.addEventListener?.('change', updateHoverCapability);
+      return () => hoverQuery.removeEventListener?.('change', updateHoverCapability);
+    }, []);
 
     useEffect(() => {
       let mounted = true;
@@ -2110,6 +2425,38 @@
         } else {
           setOrders(data || []);
           setError('');
+          const orderIds = (data || []).map((order) => order.id).filter(Boolean);
+          if (orderIds.length) {
+            setClientWorkspaceLoading(true);
+            const [taskResult, goalResult, noteResult, roadmapResult] = await Promise.all([
+              supabase.from('workspace_tasks').select('id, order_id, title, description, status, priority, due_at').in('order_id', orderIds).eq('client_visible', true).order('due_at', { ascending: true, nullsFirst: false }),
+              supabase.from('workspace_goals').select('id, order_id, title, description, status, target_date').in('order_id', orderIds).eq('client_visible', true).order('target_date', { ascending: true, nullsFirst: false }),
+              supabase.from('workspace_notes').select('id, order_id, body, created_at').in('order_id', orderIds).eq('visibility', 'shared').order('created_at', { ascending: false }).limit(100),
+              supabase.rpc('get_my_order_roadmaps_v1', { p_order_ids: orderIds })
+            ]);
+            if (!mounted) return;
+            const groupByOrder = (rows) => (rows || []).reduce((grouped, row) => {
+              grouped[String(row.order_id)] ||= [];
+              grouped[String(row.order_id)].push(row);
+              return grouped;
+            }, {});
+            const failed = [taskResult, goalResult, noteResult].some((result) => result.error);
+            if (failed) console.error('Client workspace context load error:', taskResult.error || goalResult.error || noteResult.error);
+            setClientTasks(groupByOrder(taskResult.data));
+            setClientGoals(groupByOrder(goalResult.data));
+            setClientNotes(groupByOrder(noteResult.data));
+            setClientRoadmaps(Object.fromEntries((roadmapResult.data || []).map((roadmap) => [String(roadmap.order_id), roadmap])));
+            const roadmapFailed = Boolean(roadmapResult.error);
+            if (roadmapFailed) console.error('Client roadmap load error:', roadmapResult.error);
+            setClientWorkspaceError(failed || roadmapFailed ? 'Some client-visible delivery context is temporarily unavailable.' : '');
+            setClientWorkspaceLoading(false);
+          } else {
+            setClientTasks({});
+            setClientGoals({});
+            setClientNotes({});
+            setClientRoadmaps({});
+            setClientWorkspaceError('');
+          }
         }
         setLoading(false);
       }
@@ -2118,31 +2465,17 @@
     }, []);
 
     function formatDate(value) {
-      if (!value) return 'Recently';
+      if (!value) return 'Date unavailable';
       try {
-        return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(value));
-      } catch { return 'Recently'; }
+        const date = new Date(value);
+        return Number.isNaN(date.getTime())
+          ? 'Date unavailable'
+          : new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
+      } catch { return 'Date unavailable'; }
     }
 
     function statusClass(status) {
       return String(status || 'pending').toLowerCase().replace(/\s+/g, '-');
-    }
-
-    function timelineState(status, paymentStatus) {
-      const normalized = String(status || 'pending').toLowerCase();
-      const paymentDone = String(paymentStatus || '').toLowerCase() === 'paid';
-      if (normalized === 'cancelled') return { payment: paymentDone ? 'done' : '', information: '', progress: '', review: '', completed: '' };
-      const informationDone = ['queued', 'in progress', 'internal review', 'client review', 'revision', 'completed'].includes(normalized);
-      const progressDone = ['internal review', 'client review', 'revision', 'completed'].includes(normalized);
-      const reviewDone = normalized === 'completed';
-      const current = normalized === 'pending' ? 'payment' : normalized === 'information required' ? 'information' : ['queued', 'in progress'].includes(normalized) ? 'progress' : ['internal review', 'client review', 'revision'].includes(normalized) ? 'review' : 'completed';
-      return {
-        payment: paymentDone || current !== 'payment' ? 'done' : '',
-        information: informationDone ? 'done' : current === 'information' ? 'current' : '',
-        progress: progressDone ? 'done' : current === 'progress' ? 'current' : '',
-        review: reviewDone ? 'done' : current === 'review' ? 'current' : '',
-        completed: normalized === 'completed' ? 'done current' : ''
-      };
     }
 
     function briefType(order) {
@@ -2320,51 +2653,170 @@
 
     return (
       <DashboardShell>
-        <div className="dash-head">
-          <div><p className="eyebrow">MY ORDERS</p><h1>Your projects.</h1></div>
-          <Link className="btn lime" to="/services">New service ↗</Link>
+        <div className="dash-head orders-page-header">
+          <div className="orders-header-copy">
+            <p className="eyebrow">MY ORDERS</p>
+            <h1>Your projects.</h1>
+            <p className="orders-page-subtitle">Track the progress of your services and see what’s happening next.</p>
+          </div>
+          <Link className="btn lime" to="/service-selection">New service ↗</Link>
         </div>
-        <div className="panel table-panel">
+        <div className="panel table-panel orders-list-panel">
           {loading ? (
             <div className="empty"><h3>Loading your orders…</h3><p>We’re fetching your projects from your Formant workspace.</p></div>
           ) : error ? (
             <div className="empty"><h3>We couldn’t load your orders.</h3><p>{error}</p><button type="button" className="btn dark" onClick={() => window.location.reload()}>Try again ↗</button></div>
           ) : orders.length ? (
             orders.map((o) => {
-              const timeline = timelineState(o.status, o.payment_status);
               const currency = o.currency === 'USD' ? '$' : `${o.currency || 'USD'} `;
+              const serviceName = o.service_name || 'Formant service';
+              const serviceType = briefType(o);
+              const showcaseTab = showcaseTabForService(o.service_name, o.package_name);
+              const serviceDescription = services.find((service) => service.id === serviceType)?.desc;
+              const statusLabel = String(o.status || 'Pending').replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
               const needsBrief =
                 ['information required', 'pending'].includes(
                   String(o.status || '').toLowerCase()
                 ) &&
                 String(o.payment_status || '').toLowerCase() === 'paid';
+              const visibleTasks = clientTasks[String(o.id)] || [];
+              const visibleGoals = clientGoals[String(o.id)] || [];
+              const sharedNotes = clientNotes[String(o.id)] || [];
+              const serviceRoadmap = clientRoadmaps[String(o.id)] || null;
+              const roadmapStages = serviceRoadmap?.stages || [];
+              const currentStageIndex = roadmapStages.findIndex((stage) => stage.stage_key === serviceRoadmap?.current_stage_key);
+              const currentRoadmapStage = currentStageIndex >= 0 ? roadmapStages[currentStageIndex] : null;
+              const nextRoadmapStage = currentStageIndex >= 0 ? roadmapStages[currentStageIndex + 1] : null;
+              const roadmapOrderId = String(o.id);
+              const hasOrderDetails = clientWorkspaceLoading || Boolean(serviceRoadmap) || Boolean(clientWorkspaceError) || visibleTasks.length > 0 || visibleGoals.length > 0 || sharedNotes.length > 0;
+              const isRoadmapExpanded = roadmapReveal.orderId === roadmapOrderId;
+              const revealRoadmap = (mode) => setRoadmapReveal({ orderId: roadmapOrderId, mode });
+              const handleOrderFocus = (event) => {
+                if (canHoverOrders && hasOrderDetails && !event.target.closest('.order-progress-toggle')) {
+                  revealRoadmap('focus');
+                }
+              };
+              const handleOrderBlur = (event) => {
+                if (!canHoverOrders || !hasOrderDetails || event.currentTarget.contains(event.relatedTarget)) return;
+                const remainsHovered = event.currentTarget.matches(':hover');
+                setRoadmapReveal((current) => current.orderId === roadmapOrderId && current.mode === 'focus'
+                  ? (remainsHovered ? { orderId: roadmapOrderId, mode: 'hover' } : { orderId: null, mode: null })
+                  : current);
+              };
               return (
-                <div className="order-row detailed" key={o.id}>
-                  <div>
-                    <b>#{o.id}</b>
-                    <p>{o.service_name || 'Formant service'}{o.package_name ? ` · ${o.package_name}` : ''}</p>
-                    <small>Placed {formatDate(o.created_at)}</small>
+                <div
+                  key={o.id}
+                  className={`client-order-card${isRoadmapExpanded ? ' is-roadmap-expanded' : ''}`}
+                  onMouseEnter={() => {
+                    if (canHoverOrders && hasOrderDetails) revealRoadmap('hover');
+                  }}
+                  onMouseLeave={() => {
+                    if (canHoverOrders) {
+                      setRoadmapReveal((current) => current.orderId === roadmapOrderId && current.mode === 'hover'
+                        ? { orderId: null, mode: null }
+                        : current);
+                    }
+                  }}
+                  onFocusCapture={handleOrderFocus}
+                  onBlurCapture={handleOrderBlur}
+                >
+                  <div className="order-row detailed">
+                    <div className="order-card-header">
+                      <div className="order-card-identity">
+                        <strong className="order-number">#{o.id}</strong>
+                        <span className="order-card-date">Placed {formatDate(o.created_at)}</span>
+                      </div>
+                      <div className={`order-service-icon order-service-icon-${serviceType}`} aria-hidden="true">
+                        {serviceType === 'linkedin' ? (
+                          <span className="order-service-linkedin">in</span>
+                        ) : serviceType === 'github' ? (
+                          <svg viewBox="0 0 24 24" focusable="false"><path d="M12 2.25a9.75 9.75 0 0 0-3.08 19c.49.09.67-.21.67-.47v-1.82c-2.74.6-3.32-1.16-3.32-1.16-.45-1.14-1.1-1.44-1.1-1.44-.9-.61.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.89 1.53 2.34 1.08 2.91.83.09-.65.35-1.08.64-1.33-2.19-.25-4.49-1.1-4.49-4.87 0-1.08.39-1.96 1.03-2.65-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.69 1.02a9.36 9.36 0 0 1 4.9 0c1.86-1.29 2.69-1.02 2.69-1.02.54 1.37.2 2.39.1 2.64.64.69 1.03 1.57 1.03 2.65 0 3.78-2.3 4.61-4.5 4.85.36.31.68.91.68 1.84v2.72c0 .26.18.56.68.46A9.76 9.76 0 0 0 12 2.25Z" /></svg>
+                        ) : serviceType === 'portfolio' ? (
+                          <svg viewBox="0 0 24 24" focusable="false"><rect x="3.5" y="4.5" width="17" height="15" rx="2" /><path d="M4 8h16M7 6.25h.01M10 6.25h.01M7 15l3-3 2.5 2 2-2 3.5 3" /></svg>
+                        ) : serviceType === 'interview' ? (
+                          <svg viewBox="0 0 24 24" focusable="false"><path d="M5 5.5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-6l-4.5 3v-3H5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z" /><path d="M7 10h10M7 13.5h6" /></svg>
+                        ) : (
+                          <svg viewBox="0 0 24 24" focusable="false"><path d="M6 3.5h8l4 4v13H6z" /><path d="M14 3.5v4h4M9 12h6M9 15.5h6" /></svg>
+                        )}
+                      </div>
+                      <div className="order-card-copy">
+                        <h2>
+                          {serviceName}
+                          {o.package_name && <span className="order-card-package"> · {o.package_name}</span>}
+                        </h2>
+                        {serviceDescription && <p className="order-card-description">{serviceDescription}</p>}
+                        <Link className="order-showcase-link" to={showcaseTab ? `/showcase?tab=${showcaseTab}` : '/showcase'}>
+                          Explore related work <span aria-hidden="true">↗</span>
+                        </Link>
+                      </div>
+                      <strong className="order-card-price">{currency}{Number(o.total || 0).toFixed(0)}</strong>
+                      <span className={`status order-card-status ${statusClass(o.status)}`}>{statusLabel}</span>
+                      <div className="order-card-actions">
+                        <button
+                          type="button"
+                          className={`order-brief-button ${needsBrief ? 'is-required' : ''}`}
+                          onClick={() => openBrief(o)}
+                        >
+                          {needsBrief ? 'Complete project brief ↗' : 'Open project brief ↗'}
+                        </button>
+                        {hasOrderDetails && <button
+                          type="button"
+                          className="order-progress-toggle"
+                          aria-label={`${isRoadmapExpanded ? 'Hide' : 'View'} progress for order #${o.id}`}
+                          aria-expanded={isRoadmapExpanded}
+                          aria-controls={`order-progress-${roadmapOrderId}`}
+                          onClick={() => setRoadmapReveal((current) => current.orderId === roadmapOrderId
+                            ? { orderId: null, mode: null }
+                            : { orderId: roadmapOrderId, mode: 'tap' })}
+                        >
+                          <span className="order-progress-label">{isRoadmapExpanded ? 'Hide progress' : 'View progress'}</span>
+                          <span className="order-progress-icon" aria-hidden="true">{isRoadmapExpanded ? '⌃' : '⌄'}</span>
+                        </button>}
+                      </div>
+                    </div>
                   </div>
-                  <div className="order-timeline">
-                    <span className={timeline.payment}>Payment</span>
-                    <span className={timeline.information}>Information</span>
-                    <span className={timeline.progress}>In progress</span>
-                    <span className={timeline.review}>Review</span>
-                    <span className={timeline.completed}>Completed</span>
-                  </div>
-                  <div className="order-row-meta">
-                    <strong>{currency}{Number(o.total || 0).toFixed(0)}</strong>
-                    <span className={`status ${statusClass(o.status)}`}>{o.status || 'Pending'}</span>
-                    {String(o.status || '').toLowerCase() === 'queued' && o.queue_position != null && <small>Queue #{o.queue_position}</small>}
-                    <small>Payment: {o.payment_status || 'Pending'}</small>
-                    <button
-                      type="button"
-                      className={`order-brief-button ${needsBrief ? 'is-required' : ''}`}
-                      onClick={() => openBrief(o)}
-                    >
-                      {needsBrief ? 'Complete project brief ↗' : 'Open project brief ↗'}
-                    </button>
-                  </div>
+                  {hasOrderDetails && <div
+                    id={`order-progress-${roadmapOrderId}`}
+                    className={`client-order-details${isRoadmapExpanded ? ' is-expanded' : ''}`}
+                    aria-hidden={!isRoadmapExpanded}
+                    inert={!isRoadmapExpanded ? true : undefined}
+                  >
+                    <div className="client-order-details-inner">
+                      {clientWorkspaceLoading ? <section className="client-order-roadmap" role="status">Loading your service progress…</section>
+                        : serviceRoadmap ? <section className="client-order-roadmap" aria-label={`Service progress for order ${o.id}`}>
+                          <div className="client-roadmap-summary">
+                            <header><div><p className="eyebrow">YOUR SERVICE PROGRESS</p><h3>{serviceRoadmap.service_name}</h3></div><strong>{serviceRoadmap.progress}%</strong></header>
+                            <div className="client-roadmap-progress" role="progressbar" aria-label="Service delivery progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow={serviceRoadmap.progress}><span style={{ width: `${serviceRoadmap.progress}%` }} /></div>
+                            <div className="client-roadmap-current"><span className="client-roadmap-current-icon" aria-hidden="true">◎</span><div><small>{serviceRoadmap.current_status === 'WAITING_ON_CLIENT' ? 'ACTION REQUIRED' : serviceRoadmap.current_status === 'BLOCKED' ? 'IN PROGRESS' : serviceRoadmap.current_status === 'COMPLETED' ? 'COMPLETE' : 'CURRENT STAGE'}</small><strong>{serviceRoadmap.current_stage_title}</strong>{serviceRoadmap.client_update && <p>{serviceRoadmap.client_update}</p>}</div></div>
+                            {(currentRoadmapStage?.description || serviceRoadmap.client_update) && <div className="client-roadmap-about"><span>ABOUT THIS STAGE</span><p>{currentRoadmapStage?.description || serviceRoadmap.client_update}</p></div>}
+                            {nextRoadmapStage && serviceRoadmap.current_status !== 'COMPLETED' && <div className="client-roadmap-next"><span aria-hidden="true">›</span><div><small>NEXT STEP</small><strong>{nextRoadmapStage.title}</strong><p>{nextRoadmapStage.description}</p></div></div>}
+                            {serviceRoadmap.current_status === 'WAITING_ON_CLIENT' && <div className="client-roadmap-action"><strong>{serviceRoadmap.client_action_title}</strong><p>{serviceRoadmap.client_action_description}</p></div>}
+                          </div>
+                          <div className="client-roadmap-stage-list">
+                            <p className="eyebrow">SERVICE ROADMAP</p>
+                            <ol className="client-roadmap-stages">{(serviceRoadmap.stages || []).map((stage) => <li key={stage.stage_key} className={`is-${String(stage.status).toLowerCase()}`} aria-current={stage.stage_key === serviceRoadmap.current_stage_key ? 'step' : undefined}><span aria-hidden="true">{stage.status === 'COMPLETED' ? '✓' : stage.stage_key === serviceRoadmap.current_stage_key ? (serviceRoadmap.current_status === 'WAITING_ON_CLIENT' || serviceRoadmap.current_status === 'BLOCKED' ? '!' : serviceRoadmap.current_status === 'COMPLETED' ? '✓' : '●') : '○'}</span><div><strong>{stage.title}</strong><small>{stage.description}</small></div></li>)}</ol>
+                          </div>
+                        </section> : clientWorkspaceError ? <section className="client-order-roadmap" role="alert">Your service progress is temporarily unavailable.</section> : null}
+                      {(clientWorkspaceLoading || clientWorkspaceError || visibleTasks.length > 0 || visibleGoals.length > 0 || sharedNotes.length > 0) && (
+                        <section className="client-order-action-plan" aria-label={`Action plan for order ${o.id}`}>
+                          <h3>Delivery updates</h3>
+                          {clientWorkspaceLoading ? <p role="status">Loading your delivery updates…</p>
+                            : clientWorkspaceError ? <p role="alert">{clientWorkspaceError}</p>
+                              : <>
+                                {visibleTasks.length > 0 && <ul>{visibleTasks.map((task) => (
+                                <li key={task.id}>
+                                  <div><strong>{task.title}</strong>{task.description && <p>{task.description}</p>}</div>
+                                  <span>{String(task.status || 'todo').replace(/_/g, ' ')}</span>
+                                  {task.due_at && <time dateTime={task.due_at}>Due {formatDate(task.due_at)}</time>}
+                                </li>
+                              ))}</ul>}
+                                {visibleGoals.length > 0 && <div className="client-order-shared-items"><strong>Goals</strong><ul>{visibleGoals.map((goal) => <li key={goal.id}><div><strong>{goal.title}</strong>{goal.description && <p>{goal.description}</p>}</div><span>{String(goal.status || 'active').replace(/_/g, ' ')}</span>{goal.target_date && <time dateTime={goal.target_date}>Target {formatDate(goal.target_date)}</time>}</li>)}</ul></div>}
+                                {sharedNotes.length > 0 && <div className="client-order-shared-items"><strong>Notes from your team</strong><ul>{sharedNotes.map((note) => <li key={note.id}><div><p>{note.body}</p></div><time dateTime={note.created_at}>{formatDate(note.created_at)}</time></li>)}</ul></div>}
+                              </>}
+                        </section>
+                      )}
+                    </div>
+                  </div>}
                 </div>
               );
             })
@@ -2764,6 +3216,7 @@
 
   export function Messages() {
     const localState = load();
+    const location = useLocation();
 
     const [userId, setUserId] = useState('');
     const [orders, setOrders] = useState([]);
@@ -2771,9 +3224,32 @@
     const [mobileView, setMobileView] = useState('list');
     const [orderSearch, setOrderSearch] = useState('');
     const [messages, setMessages] = useState([]);
+    const [messageMap, setMessageMap] = useState({});
+    const [messageSummaries, setMessageSummaries] = useState({});
+    const [threadError, setThreadError] = useState('');
+    const [hasOlderMessages, setHasOlderMessages] = useState(false);
     const [text, setText] = useState('');
+    const [drafts, setDrafts] = useState({});
     const [attachment, setAttachment] = useState(null);
     const [attachmentError, setAttachmentError] = useState('');
+    const [liveAnnouncement, setLiveAnnouncement] = useState('');
+    const [replyTo, setReplyTo] = useState(null);
+    const [editingMessage, setEditingMessage] = useState(null);
+    const [highlightedMessageId, setHighlightedMessageId] = useState(null);
+    const [activeActionMessageId, setActiveActionMessageId] = useState(null);
+
+    const ordersRef = useRef(orders);
+    const selectedOrderIdRef = useRef(selectedOrderId);
+    const userIdRef = useRef(userId);
+    const messageMapRef = useRef(messageMap);
+    const threadRequestRef = useRef(0);
+    const actionScrollProgrammaticRef = useRef(false);
+    const actionScrollTimerRef = useRef(0);
+
+    useEffect(() => { ordersRef.current = orders; }, [orders]);
+    useEffect(() => { selectedOrderIdRef.current = selectedOrderId; }, [selectedOrderId]);
+    useEffect(() => { userIdRef.current = userId; }, [userId]);
+    useEffect(() => { messageMapRef.current = messageMap; }, [messageMap]);
 
     const [loadingOrders, setLoadingOrders] = useState(Boolean(supabase));
     const [loadingMessages, setLoadingMessages] = useState(false);
@@ -2786,10 +3262,53 @@
 
     const chatBodyRef = useRef(null);
     const textareaRef = useRef(null);
+    const messagesRootRef = useRef(null);
+    const handleMessageComposerFocus = useMessageViewport(messagesRootRef, mobileView === 'chat');
 
     const selectedOrder = orders.find(
       (order) => String(order.id) === String(selectedOrderId)
     ) || null;
+
+    useEffect(() => {
+      setActiveActionMessageId(null);
+    }, [selectedOrderId]);
+
+    useEffect(() => {
+      if (activeActionMessageId == null) return undefined;
+      const onOutsidePointer = (event) => {
+        if (event.target.closest?.('.messages-row, .message-actions-menu-portal')) return;
+        setActiveActionMessageId(null);
+      };
+      document.addEventListener('pointerdown', onOutsidePointer);
+      return () => document.removeEventListener('pointerdown', onOutsidePointer);
+    }, [activeActionMessageId]);
+
+    useEffect(() => {
+      const body = chatBodyRef.current;
+      if (!body || activeActionMessageId == null) return undefined;
+      let previousTop = body.scrollTop;
+      let userScrollIntent = false;
+      const onScroll = () => {
+        const actionHasFocus = document.activeElement?.closest?.('.message-actions, .message-actions-menu-portal');
+        const moved = Math.abs(body.scrollTop - previousTop) > 18;
+        if (moved && (userScrollIntent || (!actionScrollProgrammaticRef.current && !actionHasFocus))) setActiveActionMessageId(null);
+        previousTop = body.scrollTop;
+        userScrollIntent = false;
+      };
+      const onUserScrollIntent = () => {
+        userScrollIntent = true;
+        actionScrollProgrammaticRef.current = false;
+        window.clearTimeout(actionScrollTimerRef.current);
+      };
+      body.addEventListener('scroll', onScroll, { passive: true });
+      body.addEventListener('wheel', onUserScrollIntent, { passive: true });
+      body.addEventListener('touchmove', onUserScrollIntent, { passive: true });
+      return () => {
+        body.removeEventListener('scroll', onScroll);
+        body.removeEventListener('wheel', onUserScrollIntent);
+        body.removeEventListener('touchmove', onUserScrollIntent);
+      };
+    }, [activeActionMessageId, selectedOrderId]);
 
     function scrollToBottom(behavior = 'smooth') {
       const node = chatBodyRef.current;
@@ -2798,6 +3317,33 @@
       node.scrollTo({
         top: node.scrollHeight,
         behavior
+      });
+    }
+
+    function selectMessageForActions(messageId) {
+      const key = String(messageId);
+      if (activeActionMessageId === key) {
+        setActiveActionMessageId(null);
+        return;
+      }
+      setActiveActionMessageId(key);
+      requestAnimationFrame(() => {
+        const body = chatBodyRef.current;
+        const actions = document.getElementById(`message-${key}`)?.querySelector('.message-actions.is-contextual');
+        if (!body || !actions) return;
+        const bodyRect = body.getBoundingClientRect();
+        const actionsRect = actions.getBoundingClientRect();
+        const delta = actionsRect.bottom > bodyRect.bottom - 8
+          ? actionsRect.bottom - bodyRect.bottom + 8
+          : actionsRect.top < bodyRect.top + 8
+            ? actionsRect.top - bodyRect.top - 8
+            : 0;
+        if (delta) {
+          actionScrollProgrammaticRef.current = true;
+          body.scrollBy({ top: delta, behavior: 'smooth' });
+          window.clearTimeout(actionScrollTimerRef.current);
+          actionScrollTimerRef.current = window.setTimeout(() => { actionScrollProgrammaticRef.current = false; }, 450);
+        }
       });
     }
 
@@ -2832,6 +3378,46 @@
             new Date(b.created_at || 0).getTime()
         );
       });
+    }
+
+    async function loadThreadPage(orderId, before = null, appendOlder = false) {
+      if (!supabase || !orderId) return;
+      const requestId = ++threadRequestRef.current;
+      setThreadError('');
+      if (!appendOlder) setLoadingMessages(true);
+      try {
+        const { data, error: pageError } = await supabase.rpc(
+          'list_message_thread_actions_v1',
+          {
+            p_order_id: Number(orderId),
+            p_before_created_at: before?.created_at || null,
+            p_before_id: before?.id || null,
+            p_limit: 50
+          }
+        );
+        if (pageError) throw pageError;
+        if (requestId !== threadRequestRef.current) return;
+        const page = [...(data || [])].reverse();
+        setHasOlderMessages((data || []).length === 50);
+        setMessages((current) => {
+          if (!appendOlder) return page;
+          const ids = new Set(current.map((message) => String(message.id)));
+          return [...page.filter((message) => !ids.has(String(message.id))), ...current];
+        });
+        setMessageMap((current) => ({
+          ...current,
+          [String(orderId)]: appendOlder
+            ? [...page, ...(current[String(orderId)] || [])]
+                .filter((message, index, rows) => rows.findIndex((row) => String(row.id) === String(message.id)) === index)
+            : page
+        }));
+      } catch (pageError) {
+        if (requestId === threadRequestRef.current) {
+          setThreadError(pageError?.message || 'We could not load this conversation.');
+        }
+      } finally {
+        if (requestId === threadRequestRef.current) setLoadingMessages(false);
+      }
     }
 
     function formatMessageTime(value) {
@@ -2892,6 +3478,122 @@
       }
     }
 
+    function updateMessageEverywhere(updated) {
+      const merge = (rows) => rows.map((row) => String(row.id) === String(updated.id) ? { ...row, ...updated } : row);
+      setMessages((rows) => merge(rows));
+      setMessageMap((current) => {
+        const key = String(updated.order_id);
+        return { ...current, [key]: merge(current[key] || []) };
+      });
+      if (supabase && updated.order_id) {
+        void supabase.rpc('list_message_summaries_v1', { p_order_ids: [Number(updated.order_id)] }).then(({ data, error: summaryError }) => {
+          if (summaryError) return;
+          const summary = data?.[0];
+          if (summary) setMessageSummaries((current) => ({ ...current, [String(summary.order_id)]: summary }));
+        });
+      }
+    }
+
+    function beginReply(message) {
+      setEditingMessage(null);
+      setReplyTo(message);
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    }
+
+    function beginEdit(message) {
+      if (message.deleted_at) return;
+      const originalText = parseMessageBody(message.body).text;
+      setEditingMessage({ id: message.id, orderId: String(message.order_id), originalText, draft: text, draftAttachment: attachment });
+      setReplyTo(null);
+      setAttachment(null);
+      setText(originalText);
+      requestAnimationFrame(() => {
+        textareaRef.current?.focus();
+        resizeComposer();
+      });
+    }
+
+    function cancelEdit() {
+      if (!editingMessage) return;
+      setText(editingMessage.draft);
+      setAttachment(editingMessage.draftAttachment || null);
+      setEditingMessage(null);
+    }
+
+    async function saveEditedMessage() {
+      if (!editingMessage || editingMessage.orderId !== String(selectedOrderId) || !supabase) return;
+      const nextBody = text.trim();
+      if (!nextBody || nextBody.length > 2000 || nextBody === editingMessage.originalText) {
+        if (nextBody === editingMessage.originalText) cancelEdit();
+        return;
+      }
+      setSending(true);
+      setError('');
+      try {
+        const { data, error: editError } = await supabase.rpc('edit_message_v1', {
+          p_message_id: Number(editingMessage.id), p_body: nextBody
+        });
+        if (editError) throw editError;
+        const updated = Array.isArray(data) ? data[0] : data;
+        if (!updated) throw new Error('The edited message was not returned.');
+        updateMessageEverywhere(updated);
+        setText(editingMessage.draft);
+        setAttachment(editingMessage.draftAttachment || null);
+        setEditingMessage(null);
+        setLiveAnnouncement('Message edited');
+      } catch (editError) {
+        setError(editError?.message || 'Could not edit this message.');
+      } finally {
+        setSending(false);
+      }
+    }
+
+    async function deleteOwnMessage(message) {
+      if (!supabase || String(message.sender_id) !== String(userId) || !window.confirm('Delete this message? Its text will no longer be visible.')) return;
+      setError('');
+      try {
+        const { data, error: deleteError } = await supabase.rpc('delete_message_v1', { p_message_id: Number(message.id) });
+        if (deleteError) throw deleteError;
+        const deleted = Array.isArray(data) ? data[0] : data;
+        if (!deleted) throw new Error('The deleted message was not returned.');
+        updateMessageEverywhere(deleted);
+        if (deleted.storage_path) {
+          const { error: storageError } = await supabase.storage.from(ATTACHMENT_BUCKET).remove([deleted.storage_path]);
+          if (storageError) setError('Message deleted, but its attachment could not be removed. Contact support to clean up the stored file.');
+        }
+        setLiveAnnouncement('Message deleted');
+      } catch (deleteError) {
+        setError(deleteError?.message || 'Could not delete this message.');
+      }
+    }
+
+    async function scrollToReferencedMessage(messageId) {
+      let target = messages.find((item) => String(item.id) === String(messageId));
+      if (!target && supabase) {
+        const { data, error: contextError } = await supabase.rpc('get_message_reply_context_v1', { p_message_id: Number(messageId) });
+        if (contextError) {
+          setError(contextError.message || 'Could not load the referenced message.');
+          return;
+        }
+        target = Array.isArray(data) ? data[0] : data;
+        if (target && String(target.order_id) === String(selectedOrderId)) {
+          setMessages((current) => current.some((item) => String(item.id) === String(target.id))
+            ? current : [...current, target].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)));
+          setMessageMap((current) => {
+            const key = String(target.order_id);
+            const rows = current[key] || [];
+            return { ...current, [key]: rows.some((item) => String(item.id) === String(target.id)) ? rows : [...rows, target].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)) };
+          });
+        }
+      }
+      if (!target) return;
+      setHighlightedMessageId(String(messageId));
+      requestAnimationFrame(() => {
+        document.getElementById(`message-${messageId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        window.setTimeout(() => setHighlightedMessageId(null), 1600);
+      });
+    }
+
     function handleAttachmentChange(event) {
       const file = event.target.files?.[0] || null;
       event.target.value = '';
@@ -2947,6 +3649,12 @@
     }
 
     function handleComposerKeyDown(event) {
+      if (event.key === 'Escape' && (editingMessage || replyTo)) {
+        event.preventDefault();
+        if (editingMessage) cancelEdit();
+        else setReplyTo(null);
+        return;
+      }
       // Keep Enter available to IME/composition input methods.
       if (event.nativeEvent?.isComposing) {
         return;
@@ -2963,15 +3671,25 @@
     }
 
     async function sendMessage() {
+      if (editingMessage) {
+        await saveEditedMessage();
+        return;
+      }
       const body = text.trim();
 
       if ((!body && !attachment) || sending || !selectedOrderId) {
         return;
       }
 
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        setError('You appear to be offline. Please check your internet connection and try again.');
+        return;
+      }
+
       setSending(true);
       setError('');
       setAttachmentError('');
+      let uploadedPath = '';
 
       try {
         let attachmentData = null;
@@ -3003,6 +3721,7 @@
         if (attachment && supabase) {
           const safeName = attachment.name.replace(/[^a-zA-Z0-9._-]/g, '-');
           const path = `${currentUserId}/${selectedOrderId}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+          uploadedPath = path;
 
           const { error: uploadError } = await supabase.storage
             .from(ATTACHMENT_BUCKET)
@@ -3037,12 +3756,21 @@
             order_id: Number(selectedOrderId),
             sender_id: currentUserId,
             body: storedBody,
+            reply_to_message_id: replyTo?.id || null,
             created_at: new Date().toISOString()
           };
 
           appendMessage(fallbackMessage);
+          setMessageMap((current) => {
+            const key = String(selectedOrderId);
+            const thread = current[key] || [];
+            return { ...current, [key]: [...thread, fallbackMessage] };
+          });
           setText('');
+          setReplyTo(null);
           setAttachment(null);
+          setDrafts((current) => ({ ...current, [String(selectedOrderId)]: { text: '', attachment: null } }));
+          setLiveAnnouncement('Message sent');
 
           requestAnimationFrame(() => {
             resizeComposer();
@@ -3057,10 +3785,11 @@
           .insert({
             order_id: Number(selectedOrderId),
             sender_id: currentUserId,
-            body: storedBody
+            body: storedBody,
+            reply_to_message_id: replyTo?.id || null
           })
           .select(
-            'id, order_id, sender_id, body, created_at, read_at'
+            'id, order_id, sender_id, body, created_at, read_at, reply_to_message_id, edited_at, deleted_at'
           )
           .single();
 
@@ -3069,8 +3798,17 @@
         }
 
         appendMessage(data);
+        setMessageMap((current) => {
+          const key = String(selectedOrderId);
+          const thread = current[key] || [];
+          if (thread.some((m) => String(m.id) === String(data.id))) return current;
+          return { ...current, [key]: [...thread, data] };
+        });
         setText('');
+        setReplyTo(null);
         setAttachment(null);
+        setDrafts((current) => ({ ...current, [String(selectedOrderId)]: { text: '', attachment: null } }));
+        setLiveAnnouncement('Message sent');
 
         requestAnimationFrame(() => {
           resizeComposer();
@@ -3078,10 +3816,22 @@
         });
       } catch (sendError) {
         console.error('Message send error:', sendError);
-        setError(
-          sendError?.message ||
-          'Your message could not be sent. Please try again.'
-        );
+        if (uploadedPath && supabase) {
+          const { error: cleanupError } = await supabase.storage
+            .from(ATTACHMENT_BUCKET)
+            .remove([uploadedPath]);
+          if (cleanupError) {
+            sendError.message = `${sendError.message || 'Message could not be sent.'} The uploaded file could not be cleaned up; contact support with path ${uploadedPath}.`;
+          }
+        }
+        const errMsg =
+          sendError?.message && typeof sendError.message === 'string'
+            ? sendError.message
+            : 'Your message could not be sent. Please check your network connection and try again.';
+        setError(errMsg);
+        if (attachment) {
+          setAttachmentError(errMsg);
+        }
       } finally {
         setSending(false);
       }
@@ -3089,6 +3839,8 @@
 
     useEffect(() => {
       let mounted = true;
+      let unsubscribeMessages = null;
+      let eventCleanup = null;
 
       async function loadConversationList() {
         setError('');
@@ -3097,11 +3849,33 @@
           const fallbackOrders = Array.isArray(localState.orders)
             ? localState.orders
             : [];
+          const fallbackMessages = Array.isArray(localState.messages)
+            ? localState.messages
+            : [];
+
+          const grouped = {};
+          fallbackMessages.forEach((msg) => {
+            const key = String(msg.order_id);
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push({
+              ...msg,
+              sender_id: msg.sender_id || (msg.from === 'You' ? 'local-user' : 'careerlyst-team'),
+              read_at: msg.read_at || null
+            });
+          });
 
           if (mounted) {
             setUserId('local-user');
             setOrders(fallbackOrders);
-            setSelectedOrderId(fallbackOrders[0]?.id ?? null);
+            setMessageMap(grouped);
+            const requestedId = new URLSearchParams(location.search).get('order');
+            const requestedOrder = fallbackOrders.find((order) => String(order.id) === String(requestedId));
+            const activeId = requestedOrder?.id ?? fallbackOrders[0]?.id ?? null;
+            selectedOrderIdRef.current = activeId;
+            setSelectedOrderId(activeId);
+            if (activeId) {
+              setMessages(grouped[String(activeId)] || []);
+            }
             setLoadingOrders(false);
             setConnectionState('offline');
           }
@@ -3150,19 +3924,223 @@
           if (!mounted) return;
 
           const nextOrders = data || [];
-
           setUserId(currentUser.id);
           setOrders(nextOrders);
 
+          const requestedId = new URLSearchParams(location.search).get('order');
+          const requestedOrder = nextOrders.find((order) => String(order.id) === String(requestedId));
+          const initialOrderId = requestedOrder?.id ?? nextOrders[0]?.id ?? null;
+          selectedOrderIdRef.current = initialOrderId;
           setSelectedOrderId((current) => {
             const stillExists = nextOrders.some(
               (order) => String(order.id) === String(current)
             );
 
-            return stillExists
-              ? current
-              : nextOrders[0]?.id ?? null;
+            return stillExists ? current : initialOrderId;
           });
+
+          const orderIds = nextOrders.map((o) => o.id).filter(Boolean);
+          if (orderIds.length) {
+            const { data: summaryData, error: summaryError } = await supabase.rpc(
+              'list_message_summaries_v1',
+              { p_order_ids: orderIds }
+            );
+            if (summaryError) throw summaryError;
+            if (mounted) {
+              const summaryByOrder = {};
+              const previews = {};
+              (summaryData || []).forEach((summary) => {
+                const key = String(summary.order_id);
+                summaryByOrder[key] = summary;
+                previews[key] = summary.latest_message_id ? [{
+                  id: summary.latest_message_id,
+                  order_id: summary.order_id,
+                  sender_id: summary.latest_sender_id,
+                  body: summary.latest_body,
+                  created_at: summary.latest_created_at,
+                  read_at: null
+                }] : [];
+              });
+              setMessageSummaries(summaryByOrder);
+              setMessageMap(previews);
+              const activeId = selectedOrderIdRef.current || initialOrderId;
+              if (activeId) void loadThreadPage(activeId);
+            }
+          }
+
+          const reconcile = async () => {
+            const { data: latestSummaries, error: latestError } = await supabase.rpc(
+              'list_message_summaries_v1',
+              { p_order_ids: orderIds }
+            );
+            if (latestError) throw latestError;
+            if (!mounted) return;
+            const nextSummaries = {};
+            const previews = {};
+            (latestSummaries || []).forEach((summary) => {
+              const key = String(summary.order_id);
+              nextSummaries[key] = summary;
+              previews[key] = summary.latest_message_id ? [{
+                id: summary.latest_message_id,
+                order_id: summary.order_id,
+                sender_id: summary.latest_sender_id,
+                body: summary.latest_body,
+                created_at: summary.latest_created_at,
+                read_at: null
+              }] : [];
+            });
+            setMessageSummaries(nextSummaries);
+            setMessageMap((current) => {
+              const next = { ...previews };
+              Object.entries(current).forEach(([key, thread]) => {
+                if (key === String(selectedOrderIdRef.current) && thread?.length > 1) next[key] = thread;
+              });
+              return next;
+            });
+            if (selectedOrderIdRef.current) await loadThreadPage(selectedOrderIdRef.current);
+          };
+
+          // One scoped subscription handles all of this client's orders.
+          unsubscribeMessages = subscribeToClientMessages(currentUser.id, {
+            onMessage: (payload) => {
+                if (!mounted || (!payload?.new && !payload?.old)) return;
+
+                const next = payload.new || payload.old;
+                const orderId = next?.order_id;
+                if (!orderId) return;
+
+                const belongs = ordersRef.current.some(
+                  (o) => String(o.id) === String(orderId)
+                );
+                if (!belongs) return;
+
+                const key = String(orderId);
+
+                if (payload.eventType === 'INSERT') {
+                  const inserted = payload.new;
+                  setMessageSummaries((current) => ({
+                    ...current,
+                    [key]: {
+                      ...(current[key] || {}),
+                      order_id: orderId,
+                      latest_message_id: inserted.id,
+                      latest_sender_id: inserted.sender_id,
+                      latest_body: inserted.body,
+                      latest_created_at: inserted.created_at,
+                      unread_count: String(inserted.sender_id) === String(userIdRef.current)
+                        ? current[key]?.unread_count || 0
+                        : Number(current[key]?.unread_count || 0) + 1
+                    }
+                  }));
+                  setMessageMap((current) => {
+                    const thread = current[key] ? [...current[key]] : [];
+                    if (thread.some((m) => String(m.id) === String(inserted.id))) {
+                      return current;
+                    }
+                    thread.push(inserted);
+                    thread.sort(
+                      (a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)
+                    );
+                    return { ...current, [key]: thread };
+                  });
+
+                  if (String(orderId) === String(selectedOrderIdRef.current)) {
+                    setMessages((current) => {
+                      if (current.some((m) => String(m.id) === String(inserted.id))) {
+                        return current;
+                      }
+                      return [...current, inserted].sort(
+                        (a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)
+                      );
+                    });
+
+                    if (
+                      String(inserted.sender_id) !== String(userIdRef.current) &&
+                      !inserted.read_at
+                    ) {
+                      setLiveAnnouncement('New message from Formant Team');
+                      void markConversationAsRead(selectedOrderIdRef.current);
+                    }
+
+                    requestAnimationFrame(() => {
+                      scrollToBottom('smooth');
+                    });
+                  }
+                } else if (payload.eventType === 'UPDATE') {
+                  const updated = payload.new;
+                  void supabase.rpc('list_message_summaries_v1', { p_order_ids: [Number(orderId)] }).then(({ data, error: summaryError }) => {
+                    const summary = !summaryError ? data?.[0] : null;
+                    if (summary) setMessageSummaries((current) => ({ ...current, [key]: summary }));
+                  });
+                  setMessageMap((current) => {
+                    const thread = current[key];
+                    if (!thread) return current;
+                    return {
+                      ...current,
+                      [key]: thread.map((m) =>
+                        String(m.id) === String(updated.id) ? { ...m, ...updated } : m
+                      )
+                    };
+                  });
+
+                  if (String(orderId) === String(selectedOrderIdRef.current)) {
+                    setMessages((current) =>
+                      current.map((m) =>
+                        String(m.id) === String(updated.id) ? { ...m, ...updated } : m
+                      )
+                    );
+                  }
+                } else if (payload.eventType === 'DELETE') {
+                  const deletedId = String(payload.old.id);
+                  setMessageMap((current) => {
+                    const thread = current[key];
+                    if (!thread) return current;
+                    return {
+                      ...current,
+                      [key]: thread.filter((m) => String(m.id) !== deletedId)
+                    };
+                  });
+
+                  if (String(orderId) === String(selectedOrderIdRef.current)) {
+                    setMessages((current) =>
+                      current.filter((m) => String(m.id) !== deletedId)
+                    );
+                  }
+                }
+            },
+            onStatus: (status) => {
+              if (!mounted) return;
+              if (status === 'SUBSCRIBED') {
+                setConnectionState('online');
+                void reconcile().catch((reconcileError) => {
+                  setThreadError(reconcileError?.message || 'Could not refresh messages after reconnect.');
+                });
+              } else if (
+                status === 'CHANNEL_ERROR' ||
+                status === 'TIMED_OUT' ||
+                status === 'CLOSED'
+              ) {
+                setConnectionState('offline');
+              }
+            }
+          });
+          const handleVisibility = () => {
+            if (document.visibilityState === 'visible') {
+              void reconcile().catch((reconcileError) => {
+                setThreadError(reconcileError?.message || 'Could not refresh messages.');
+              });
+            }
+          };
+          document.addEventListener('visibilitychange', handleVisibility);
+          const handleOnline = () => void reconcile().catch(() => setConnectionState('offline'));
+          const handleOffline = () => setConnectionState('offline');
+          window.addEventListener('online', handleOnline);
+          window.addEventListener('offline', handleOffline);
+          eventCleanup = () => {
+            document.removeEventListener('visibilitychange', handleVisibility);
+            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('offline', handleOffline);
+          };
         } catch (loadError) {
           console.error('Messages orders load error:', loadError);
 
@@ -3186,13 +4164,43 @@
 
       return () => {
         mounted = false;
+        eventCleanup?.();
+        unsubscribeMessages?.();
       };
-    }, []);
+    }, [location.search]);
 
     async function markConversationAsRead(orderId) {
       if (!orderId || !userId) return;
 
       const readAt = new Date().toISOString();
+
+      setMessageMap((current) => {
+        const key = String(orderId);
+        const thread = current[key];
+        if (!thread || !thread.length) return current;
+
+        let changed = false;
+        const nextThread = thread.map((m) => {
+          if (String(m.sender_id) !== String(userId) && !m.read_at) {
+            changed = true;
+            return { ...m, read: true, read_at: readAt };
+          }
+          return m;
+        });
+
+        if (!changed) return current;
+        return { ...current, [key]: nextThread };
+      });
+
+      setMessages((current) =>
+        current.map((m) =>
+          String(m.order_id) === String(orderId) &&
+          String(m.sender_id) !== String(userId) &&
+          !m.read_at
+            ? { ...m, read: true, read_at: readAt }
+            : m
+        )
+      );
 
       /*
        * Local/demo mode.
@@ -3227,25 +4235,6 @@
             : current.messages
         }));
 
-        setMessages((current) =>
-          current.map((message) => {
-            const incoming =
-              String(message?.sender_id) !== String(userId);
-
-            return (
-              String(message?.order_id) === String(orderId) &&
-              incoming &&
-              !message.read_at
-            )
-              ? {
-                  ...message,
-                  read: true,
-                  read_at: readAt
-                }
-              : message;
-          })
-        );
-
         return;
       }
 
@@ -3255,210 +4244,49 @@
        * This uses a SECURITY DEFINER RPC so the client only gets
        * permission to mark its own incoming messages as read.
        */
-      const { data, error } = await supabase.rpc(
-        'mark_order_messages_read',
-        {
-          p_order_id: orderId
+      try {
+        const { error } = await supabase.rpc(
+          'mark_order_messages_read_v1',
+          {
+            p_order_id: Number(orderId)
+          }
+        );
+
+        if (error) {
+          console.error(
+            'Message mark-as-read failed:',
+            error
+          );
+        } else {
+          setMessageSummaries((current) => ({
+            ...current,
+            [String(orderId)]: { ...(current[String(orderId)] || {}), unread_count: 0 }
+          }));
         }
-      );
-
-      if (error) {
-        console.error(
-          'Message mark-as-read failed:',
-          error
-        );
-        return;
-      }
-
-      if (Array.isArray(data) && data.length) {
-        setMessages((current) =>
-          current.map((message) => {
-            const updated = data.find(
-              (row) => String(row.id) === String(message.id)
-            );
-
-            return updated
-              ? {
-                  ...message,
-                  ...updated
-                }
-              : message;
-          })
-        );
-      } else {
-        // The RPC may return no rows when nothing was unread.
-        // Still update the visible state defensively.
-        setMessages((current) =>
-          current.map((message) =>
-            String(message?.order_id) === String(orderId) &&
-            String(message?.sender_id) !== String(userId) &&
-            !message.read_at
-              ? {
-                  ...message,
-                  read_at: readAt
-                }
-              : message
-          )
-        );
+      } catch (rpcErr) {
+        console.error('Message mark-as-read RPC error:', rpcErr);
       }
     }
 
     useEffect(() => {
-      if (!selectedOrderId || !userId) {
+      if (!selectedOrderId) {
         setMessages([]);
         setLoadingMessages(false);
-        return undefined;
+        setThreadError('');
+        return;
       }
-
       if (!supabase) {
-        const fallback = Array.isArray(localState.messages)
-          ? localState.messages
-          : [];
-
-        setMessages(
-          fallback
-            .filter((message) => {
-              if (!message?.order_id) return true;
-
-              return String(message.order_id) === String(selectedOrderId);
-            })
-            .map((message, index) => ({
-              id: message.id || `local-${selectedOrderId}-${index}`,
-              order_id: Number(selectedOrderId),
-              sender_id:
-                message.sender_id ||
-                (message.from === 'You'
-                  ? userId
-                  : 'careerlyst-team'),
-              body: message.body || message.text || '',
-              created_at:
-                message.created_at ||
-                new Date().toISOString(),
-              read: Boolean(message.read),
-              read_at: message.read_at || null
-            }))
-        );
-
-        setConnectionState('offline');
-
-        requestAnimationFrame(() => {
-          scrollToBottom('auto');
-        });
-
-        return undefined;
+        const thread = messageMap[String(selectedOrderId)] || [];
+        setMessages(thread);
+        setLoadingMessages(false);
+        return;
       }
-
-      let active = true;
-
-      const channel = supabase
-        .channel(`client-messages-${userId}-${selectedOrderId}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'messages',
-            filter: `order_id=eq.${selectedOrderId}`
-          },
-          (payload) => {
-            if (!active || !payload.new) {
-              return;
-            }
-
-            appendMessage(payload.new);
-
-            if (
-              String(payload.new.sender_id) !== String(userId) &&
-              !payload.new.read_at
-            ) {
-              void markConversationAsRead(
-                selectedOrderId
-              );
-            }
-
-            requestAnimationFrame(() => {
-              scrollToBottom('smooth');
-            });
-          }
-        )
-        .subscribe((status) => {
-          if (!active) {
-            return;
-          }
-
-          if (status === 'SUBSCRIBED') {
-            setConnectionState('online');
-            return;
-          }
-
-          if (
-            status === 'CHANNEL_ERROR' ||
-            status === 'TIMED_OUT' ||
-            status === 'CLOSED'
-          ) {
-            setConnectionState('offline');
-          }
-        });
-
-      async function loadThread() {
-        setLoadingMessages(true);
-        setError('');
-        setConnectionState('connecting');
-        setMessages([]);
-
-        try {
-          const {
-            data,
-            error: messageError
-          } = await supabase
-            .from('messages')
-            .select(
-              'id, order_id, sender_id, body, created_at, read_at'
-            )
-            .eq('order_id', Number(selectedOrderId))
-            .order('created_at', {
-              ascending: true
-            });
-
-          if (!active) return;
-
-          if (messageError) {
-            throw messageError;
-          }
-
-          setMessages(data || []);
-
-          // Seeing the conversation marks all incoming team messages as read.
-          await markConversationAsRead(
-            selectedOrderId
-          );
-
-          requestAnimationFrame(() => {
-            scrollToBottom('auto');
-          });
-        } catch (messageError) {
-          console.error('Messages load error:', messageError);
-
-          if (active) {
-            setMessages([]);
-            setError(
-              messageError?.message ||
-              'We could not load this conversation right now.'
-            );
-          }
-        } finally {
-          if (active) {
-            setLoadingMessages(false);
-          }
+      void loadThreadPage(selectedOrderId).then(() => {
+        if (selectedOrderIdRef.current === selectedOrderId) {
+          void markConversationAsRead(selectedOrderId);
         }
-      }
-
-      void loadThread();
-
-      return () => {
-        active = false;
-        supabase.removeChannel(channel);
-      };
+        requestAnimationFrame(() => scrollToBottom('auto'));
+      });
     }, [selectedOrderId, userId]);
 
     useEffect(() => {
@@ -3488,7 +4316,7 @@
 
     return (
       <DashboardShell>
-        <div className="messages-unified-container">
+        <div ref={messagesRootRef} className={`messages-unified-container ${mobileView === 'chat' ? 'mobile-chat-active' : ''}`}>
           <div className="messages-unified-head">
             <div>
               <p className="eyebrow">MESSAGES</p>
@@ -3527,6 +4355,7 @@
                       placeholder="Search projects…"
                       value={orderSearch}
                       onChange={(e) => setOrderSearch(e.target.value)}
+                      aria-label="Search projects"
                     />
                   </div>
                 </div>
@@ -3540,12 +4369,35 @@
                 ) : filteredOrders.length ? (
                   filteredOrders.map((order) => {
                     const active = String(order.id) === String(selectedOrderId);
+                    const isOrderOpen =
+                      active &&
+                      (mobileView === 'chat' || (typeof window !== 'undefined' && window.innerWidth > 768));
+                    const thread = messageMap[String(order.id)] || [];
+                    const summary = messageSummaries[String(order.id)];
+                    const unreadCount = isOrderOpen
+                      ? 0
+                      : Number(summary?.unread_count ?? thread.filter(
+                          (m) => String(m.sender_id) !== String(userId) && !m.read_at
+                        ).length);
+
+                    const lastMessage = thread.length ? thread[thread.length - 1] : null;
+                    const lastParsed = lastMessage ? parseMessageBody(lastMessage.body) : null;
+                    const snippet = lastParsed
+                      ? (lastParsed.text || (lastParsed.attachment ? `📎 ${lastParsed.attachment.name}` : ''))
+                      : (order.package_name || 'No messages yet');
+
+                    const timeDisplay = lastMessage?.created_at
+                      ? formatMessageTime(lastMessage.created_at)
+                      : (order.created_at
+                          ? new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(order.created_at))
+                          : '');
 
                     return (
                       <button
                         type="button"
                         className={`messages-thread-item ${active ? 'is-active' : ''}`}
                         key={order.id}
+                        disabled={sending}
                         onClick={() => {
                           if (active) {
                             setMobileView('chat');
@@ -3553,12 +4405,22 @@
                           }
 
                           setError('');
-                          setText('');
-                          setAttachment(null);
+                          if (selectedOrderId) {
+                            setDrafts((current) => ({
+                              ...current,
+                              [String(selectedOrderId)]: { text: editingMessage?.draft ?? text, attachment: editingMessage?.draftAttachment ?? attachment }
+                            }));
+                          }
+                          setEditingMessage(null);
+                          setReplyTo(null);
+                          const nextDraft = drafts[String(order.id)] || { text: '', attachment: null };
+                          setText(nextDraft.text);
+                          setAttachment(nextDraft.attachment);
                           setAttachmentError('');
-                          setMessages([]);
+                          setMessages(messageMap[String(order.id)] || []);
                           setSelectedOrderId(order.id);
                           setMobileView('chat');
+                          void markConversationAsRead(order.id);
 
                           requestAnimationFrame(() => {
                             resizeComposer();
@@ -3574,24 +4436,32 @@
                             <span className="messages-thread-label">
                               Order #{order.id}
                             </span>
-                            {order.created_at && (
+                            {timeDisplay && (
                               <span className="messages-thread-time">
-                                {new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(order.created_at))}
+                                {timeDisplay}
                               </span>
                             )}
                           </div>
                           <div className="messages-thread-title">
                             {order.service_name || 'Formant Service'}
                           </div>
-                          {order.package_name && (
+                          {snippet && (
                             <div className="messages-thread-snippet">
-                              {order.package_name}
+                              {snippet}
                             </div>
                           )}
                           <div className="messages-thread-badge-row">
                             <span className="messages-thread-status">
                               {String(order.status || 'Pending').replace(/-/g, ' ')}
                             </span>
+                            {unreadCount > 0 && (
+                              <span
+                                className="messages-thread-unread-pill"
+                                aria-label={`${unreadCount} unread message${unreadCount === 1 ? '' : 's'}`}
+                              >
+                                {unreadCount}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </button>
@@ -3668,7 +4538,8 @@
               <div
                 className="messages-chat-body"
                 ref={chatBodyRef}
-                aria-live="polite"
+                role="log"
+                aria-label="Conversation messages"
               >
                 {!selectedOrderId ? (
                   <div className="messages-empty-state">
@@ -3680,8 +4551,25 @@
                   <div className="messages-empty-state">
                     <p>Loading messages…</p>
                   </div>
+                ) : threadError ? (
+                  <div className="messages-empty-state messages-empty-state-error">
+                    <div className="messages-empty-state-icon">⚠️</div>
+                    <h3>Could not load conversation</h3>
+                    <p>{threadError}</p>
+                    <button type="button" className="btn dark" onClick={() => void loadThreadPage(selectedOrderId)}>Retry</button>
+                  </div>
                 ) : messages.length ? (
                   <>
+                    {hasOlderMessages && (
+                      <button
+                        type="button"
+                        className="messages-load-older"
+                        disabled={loadingMessages}
+                        onClick={() => void loadThreadPage(selectedOrderId, messages[0], true)}
+                      >
+                        {loadingMessages ? 'Loading…' : 'Load older messages'}
+                      </button>
+                    )}
                     <div className="messages-system-notice">
                       Project conversation started · You are speaking directly with Formant specialists.
                     </div>
@@ -3693,7 +4581,20 @@
 
                       return (
                         <div
-                          className={`messages-row ${mine ? 'is-sent' : 'is-received'}`}
+                          id={`message-${message.id}`}
+                          tabIndex={0}
+                          role="group"
+                          aria-label={`Message from ${mine ? 'you' : 'Formant Team'}. Press Enter or Space to show actions.`}
+                          onClick={(event) => {
+                            if (event.target.closest?.('button, a, input, textarea, .message-actions')) return;
+                            selectMessageForActions(message.id);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
+                            event.preventDefault();
+                            selectMessageForActions(message.id);
+                          }}
+                          className={`messages-row ${mine ? 'is-sent' : 'is-received'} ${String(activeActionMessageId) === String(message.id) ? 'has-context-actions' : ''} ${String(highlightedMessageId) === String(message.id) ? 'is-highlighted' : ''}`}
                           key={message.id}
                         >
                           <span className="messages-sender-tag">
@@ -3701,13 +4602,20 @@
                           </span>
 
                           <div className="messages-bubble">
-                            {parsed.text && (
+                            {message.reply_to_message_id && (() => {
+                              const original = messages.find((item) => String(item.id) === String(message.reply_to_message_id));
+                              const originalText = original?.deleted_at ? 'Original message was deleted' : original ? parseMessageBody(original.body).text || 'Attachment' : 'Referenced message';
+                              return <button type="button" className="messages-reply-reference" onClick={() => void scrollToReferencedMessage(message.reply_to_message_id)}><strong>You replied to {original && (String(original.sender_id) === String(userId) ? 'your message' : 'Formant Team')}</strong><span>{originalText.slice(0, 120)}</span></button>;
+                            })()}
+                            {message.deleted_at ? (
+                              <div className="messages-deleted-copy" role="note">This message was deleted.</div>
+                            ) : parsed.text && (
                               <div className="messages-bubble-text">
                                 {parsed.text}
                               </div>
                             )}
 
-                            {parsed.attachment && (
+                            {!message.deleted_at && parsed.attachment && (
                               <MessageAttachmentLink
                                 attachment={parsed.attachment}
                                 mine={mine}
@@ -3716,23 +4624,28 @@
 
                             <div className="messages-bubble-footer">
                               <span>{formatMessageTime(message.created_at)}</span>
+                              {message.edited_at && !message.deleted_at && <span className="messages-edited-label"> · Edited</span>}
                               {mine && (
-                                <span className="messages-read-status" title={isRead ? 'Seen by team' : 'Delivered'}>
-                                  {isRead ? ' · Seen ✓' : ' · Delivered'}
+                                <span className="messages-read-status" title={isRead ? 'Seen by team' : 'Sent'}>
+                                  {isRead ? ' · Seen ✓' : ' · Sent'}
                                 </span>
                               )}
                             </div>
                           </div>
+                          <MessageActions
+                            active={String(activeActionMessageId) === String(message.id)}
+                            contextual
+                            canReply
+                            canEdit={Boolean(supabase) && mine && !message.deleted_at && !parsed.attachment}
+                            canDelete={Boolean(supabase) && mine && !message.deleted_at}
+                            onReply={() => { setActiveActionMessageId(null); beginReply(message); }}
+                            onEdit={() => { setActiveActionMessageId(null); beginEdit(message); }}
+                            onDelete={() => { setActiveActionMessageId(null); void deleteOwnMessage(message); }}
+                          />
                         </div>
                       );
                     })}
                   </>
-                ) : error ? (
-                  <div className="messages-empty-state">
-                    <div className="messages-empty-state-icon">⚠️</div>
-                    <h3>Could not load conversation</h3>
-                    <p>{error}</p>
-                  </div>
                 ) : (
                   <div className="messages-empty-state">
                     <div className="messages-empty-state-icon">✉️</div>
@@ -3743,6 +4656,14 @@
               </div>
 
               <div className="messages-composer-area">
+                <div
+                  className="sr-only"
+                  aria-live="polite"
+                  aria-atomic="true"
+                  role="status"
+                >
+                  {liveAnnouncement}
+                </div>
                 <form
                   onSubmit={(event) => {
                     event.preventDefault();
@@ -3750,6 +4671,12 @@
                   }}
                 >
                   <div className="messages-composer-box">
+                    {(replyTo || editingMessage) && (
+                      <div className={`messages-composer-context ${editingMessage ? 'is-editing' : ''}`} role="status">
+                        <div><strong>{editingMessage ? 'Editing message' : 'Replying to'}</strong><span>{editingMessage ? editingMessage.originalText : (replyTo.deleted_at ? 'Original message was deleted' : parseMessageBody(replyTo.body).text || 'Attachment').slice(0, 120)}</span></div>
+                        <button type="button" onClick={() => editingMessage ? cancelEdit() : setReplyTo(null)} aria-label={editingMessage ? 'Cancel edit' : 'Cancel reply'}>×</button>
+                      </div>
+                    )}
                     {attachment && (
                       <div className="messages-attachment-preview">
                         <span>📎</span>
@@ -3781,7 +4708,7 @@
                           type="file"
                           accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.jpg,.jpeg,.png,.webp"
                           onChange={handleAttachmentChange}
-                          disabled={!selectedOrderId || sending}
+                          disabled={!selectedOrderId || sending || Boolean(editingMessage)}
                           aria-label="Attach file"
                         />
                         <span>+</span>
@@ -3790,6 +4717,7 @@
                       <textarea
                         ref={textareaRef}
                         className="messages-composer-textarea"
+                        onFocus={handleMessageComposerFocus}
                         value={text}
                         onChange={handleComposerChange}
                         onKeyDown={handleComposerKeyDown}
@@ -3801,7 +4729,7 @@
                         rows={1}
                         maxLength={2000}
                         disabled={!selectedOrderId || sending}
-                        aria-label="Write a message"
+                        aria-label={editingMessage ? 'Edit message text' : 'Write a message'}
                       />
 
                       <button
@@ -3812,8 +4740,9 @@
                           (!text.trim() && !attachment) ||
                           sending
                         }
+                        aria-label={editingMessage ? 'Save edited message' : replyTo ? 'Send reply' : 'Send message'}
                       >
-                        {sending ? 'Sending…' : 'Send ↗'}
+                        {sending ? (editingMessage ? 'Saving…' : 'Sending…') : editingMessage ? 'Save edit' : 'Send ↗'}
                       </button>
                     </div>
 
@@ -3821,7 +4750,10 @@
                       <span className="messages-composer-hint">
                         Enter to send · Shift + Enter for new line · Max 10 MB file
                       </span>
-                      <span>
+                      <span
+                        className="messages-composer-counter"
+                        aria-label={`${text.length} of 2000 characters`}
+                      >
                         {text.length}/2000
                       </span>
                     </div>
@@ -3915,7 +4847,48 @@
   export function Files() {
     const [files, setFiles] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const [hasMoreFiles, setHasMoreFiles] = useState(false);
     const [error, setError] = useState('');
+    const orderMapRef = useRef({});
+    const attachmentCursorRef = useRef(null);
+
+    async function loadMoreFiles() {
+      if (!supabase || !hasMoreFiles || loadingMore || !attachmentCursorRef.current) return;
+      const cursor = attachmentCursorRef.current;
+      setLoadingMore(true);
+      setError('');
+      try {
+        const { data, error: pageError } = await supabase.rpc('list_client_message_attachments_v1', {
+          p_order_ids: Object.keys(orderMapRef.current).map(Number),
+          p_before_created_at: cursor.createdAt,
+          p_before_id: Number(cursor.messageId),
+          p_limit: 100
+        });
+        if (pageError) throw pageError;
+        if (data?.length) {
+          const oldestRow = data[data.length - 1];
+          attachmentCursorRef.current = { created_at: oldestRow.created_at, messageId: oldestRow.id };
+        }
+        const nextFiles = (data || []).map((message) => {
+          const attachment = parseAttachmentMessage(message.body);
+          return attachment?.path ? {
+            ...attachment,
+            messageId: message.id,
+            orderId: message.order_id,
+            senderId: message.sender_id,
+            createdAt: message.created_at,
+            order: orderMapRef.current[String(message.order_id)] || null
+          } : null;
+        }).filter(Boolean);
+        setFiles((current) => [...current, ...nextFiles]);
+        setHasMoreFiles((data || []).length === 100);
+      } catch (pageError) {
+        setError(pageError?.message || 'More files could not be loaded.');
+      } finally {
+        setLoadingMore(false);
+      }
+    }
 
     useEffect(() => {
       let mounted = true;
@@ -3950,22 +4923,24 @@
           if (orderError) throw orderError;
 
           const orderIds = (orderData || []).map((order) => order.id);
+          orderMapRef.current = Object.fromEntries(
+            (orderData || []).map((order) => [String(order.id), order])
+          );
           if (!orderIds.length) {
-            if (mounted) setFiles([]);
+            if (mounted) {
+              setFiles([]);
+              setHasMoreFiles(false);
+              attachmentCursorRef.current = null;
+            }
             return;
           }
 
-          const { data: messageData, error: messageError } = await supabase
-            .from('messages')
-            .select('id, order_id, sender_id, body, created_at')
-            .in('order_id', orderIds)
-            .order('created_at', { ascending: false });
+          const { data: messageData, error: messageError } = await supabase.rpc(
+            'list_client_message_attachments_v1',
+            { p_order_ids: orderIds, p_limit: 100 }
+          );
 
           if (messageError) throw messageError;
-
-          const orderMap = Object.fromEntries(
-            (orderData || []).map((order) => [String(order.id), order])
-          );
 
           const extracted = (messageData || [])
             .map((message) => {
@@ -3977,12 +4952,19 @@
                 orderId: message.order_id,
                 senderId: message.sender_id,
                 createdAt: message.created_at,
-                order: orderMap[String(message.order_id)] || null
+                order: orderMapRef.current[String(message.order_id)] || null
               };
             })
             .filter(Boolean);
 
-          if (mounted) setFiles(extracted);
+          if (mounted) {
+            setFiles(extracted);
+            setHasMoreFiles((messageData || []).length === 100);
+            const oldestRow = messageData?.[messageData.length - 1];
+            attachmentCursorRef.current = oldestRow
+              ? { created_at: oldestRow.created_at, messageId: oldestRow.id }
+              : null;
+          }
         } catch (loadError) {
           console.error('Client files load error:', loadError);
           if (mounted) setError(loadError?.message || 'Files could not be loaded.');
@@ -4033,6 +5015,11 @@
                   </div>
                 ))}
               </div>
+            )}
+            {hasMoreFiles && (
+              <button type="button" className="messages-load-older" onClick={() => void loadMoreFiles()} disabled={loadingMore}>
+                {loadingMore ? 'Loading…' : 'Load more files'}
+              </button>
             )}
           </section>
         </main>

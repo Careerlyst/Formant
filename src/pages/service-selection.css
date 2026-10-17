@@ -1,0 +1,686 @@
+/* =========================================================
+   FORMANT — SERVICE SELECTION (REDESIGNED EDITORIAL SYSTEM)
+   Aligned with Formant Design System 2.0.
+   - Section 01: Contained Lime Hero Box
+   - Section 02: Our Next Mission Statement
+   - Section 03: 3-Col (Desktop/Tablet) & 2-Col (Mobile) Grid
+   - Section 04: Quiet Dashboard Escape
+   ========================================================= */
+
+.service-selection-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--cream, #fbfaf3);
+  color: var(--ink, #11120f);
+  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  overflow-x: hidden;
+}
+
+.service-selection-main {
+  flex: 1;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: clamp(24px, 3.5vw, 44px) clamp(16px, 3.5vw, 40px) clamp(64px, 8vw, 100px);
+  box-sizing: border-box;
+}
+
+/* =========================================================
+   SECTION 01 — LARGE LIME HERO BOX (CONTAINED)
+   ========================================================= */
+
+.service-selection-hero-box {
+  width: 100%;
+  box-sizing: border-box;
+  background-color: var(--lime, #c7f72f);
+  background-image: radial-gradient(circle, rgba(17, 18, 15, 0.08) 1.2px, transparent 1.2px);
+  background-size: 22px 22px;
+  border-radius: 24px;
+  border: 1px solid rgba(17, 18, 15, 0.12);
+  padding: clamp(40px, 6vw, 76px) clamp(22px, 5vw, 56px);
+  color: #11120f;
+  margin-bottom: clamp(52px, 7.5vw, 88px);
+  box-shadow: 0 4px 20px rgba(17, 18, 15, 0.03);
+  position: relative;
+  overflow: hidden;
+}
+
+.service-selection-hero-content {
+  position: relative;
+  z-index: 1;
+  max-width: 800px;
+}
+
+.service-selection-hero-eyebrow {
+  margin: 0 0 12px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: rgba(17, 18, 15, 0.72);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.service-selection-hero-title {
+  margin: 0 0 16px;
+  font-family: 'Manrope', sans-serif;
+  font-size: clamp(48px, 8.5vw, 92px);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 0.95;
+  color: #11120f;
+  text-transform: uppercase;
+}
+
+.service-selection-hero-sub {
+  margin: 0;
+  font-size: clamp(15px, 1.8vw, 19px);
+  font-weight: 600;
+  color: rgba(17, 18, 15, 0.85);
+  line-height: 1.45;
+}
+
+/* =========================================================
+   SECTION 02 — OUR NEXT MISSION (EDITORIAL STATEMENT)
+   ========================================================= */
+
+.service-selection-mission {
+  text-align: center;
+  max-width: 860px;
+  margin: 0 auto clamp(60px, 8.5vw, 104px);
+  padding: 0 12px;
+  box-sizing: border-box;
+}
+
+.service-selection-mission-eyebrow {
+  margin: 0 0 18px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--muted, #6d7069);
+}
+
+.service-selection-mission-statement {
+  margin: 0;
+  font-family: 'Manrope', sans-serif;
+  font-size: clamp(28px, 4.4vw, 50px);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.18;
+  color: var(--ink, #11120f);
+}
+
+.service-selection-mission-highlight {
+  position: relative;
+  display: inline-block;
+  background: var(--lime, #c7f72f);
+  color: #11120f;
+  padding: 0 10px 3px;
+  border-radius: 6px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  white-space: nowrap;
+}
+
+/* =========================================================
+   SECTION 03 — SERVICES CATALOGUE & GRID
+   ========================================================= */
+
+.service-selection-catalogue {
+  margin-bottom: clamp(56px, 8vw, 92px);
+}
+
+.service-selection-catalogue-header {
+  margin-bottom: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.service-selection-catalogue-eyebrow {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--muted, #6d7069);
+}
+
+/* =========================================================
+   STRICT RESPONSIVE GRID
+   - Desktop: 3 columns
+   - Tablet: 3 columns (STRICT: never 2)
+   - Mobile: 2 columns (STRICT: never 1)
+   ========================================================= */
+
+.service-selection-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 22px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Tablet (768px – 1023px): STRICTLY 3 COLUMNS */
+@media (max-width: 1023px) and (min-width: 768px) {
+  .service-selection-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+  }
+}
+
+/* Mobile (< 768px): STRICTLY 2 COLUMNS */
+@media (max-width: 767px) {
+  .service-selection-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+}
+
+@media (max-width: 360px) {
+  .service-selection-grid {
+    gap: 8px;
+  }
+}
+
+/* =========================================================
+   CARD BASE STRUCTURE
+   ========================================================= */
+
+.service-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border-radius: 18px;
+  padding: 28px 24px 24px;
+  text-decoration: none;
+  min-height: 270px;
+  box-sizing: border-box;
+  overflow: hidden;
+  word-break: break-word;
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.service-card:hover {
+  transform: translateY(-3px);
+}
+
+.service-card:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--lime, #c7f72f), 0 0 0 5px var(--ink, #11120f);
+}
+
+/* Card Top: Icon & Recommended Badge */
+.service-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  gap: 8px;
+}
+
+.service-card-icon-box {
+  width: 42px;
+  height: 42px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  transition: transform 180ms ease;
+}
+
+.service-card:hover .service-card-icon-box {
+  transform: scale(1.05);
+}
+
+.service-card-rec-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* Card Middle: Title & Refined Description */
+.service-card-middle {
+  flex: 1;
+  margin-bottom: 22px;
+}
+
+.service-card-title {
+  margin: 0 0 8px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.22;
+}
+
+.service-card-desc {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+/* Card Bottom: Price & Arrow */
+.service-card-bottom {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding-top: 16px;
+  border-top: 1px solid transparent;
+}
+
+.service-card-price-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.service-card-price-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.service-card-price-value {
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.service-card-arrow {
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1;
+  transition: transform 180ms ease;
+}
+
+.service-card:hover .service-card-arrow {
+  transform: translateX(3px);
+}
+
+/* =========================================================
+   CARD THEME 1: BLACK CARD (CARD 1, 3, 5... / ODD)
+   Formant near-black background, white/light typography
+   ========================================================= */
+
+.service-card.card-theme-dark,
+.service-card:nth-child(odd) {
+  background: var(--ink, #11120f);
+  color: #fbfbf8;
+  border: 1px solid var(--ink, #11120f);
+  box-shadow: 0 8px 24px rgba(17, 18, 15, 0.08);
+}
+
+.service-card.card-theme-dark:hover,
+.service-card:nth-child(odd):hover {
+  border-color: var(--lime, #c7f72f);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.22);
+}
+
+.service-card.card-theme-dark .service-card-icon-box,
+.service-card:nth-child(odd) .service-card-icon-box {
+  background: #1c1d19;
+  color: var(--lime, #c7f72f);
+  border: 1px solid #292a25;
+}
+
+.service-card.card-theme-dark .service-card-title,
+.service-card:nth-child(odd) .service-card-title {
+  color: #ffffff;
+}
+
+.service-card.card-theme-dark .service-card-desc,
+.service-card:nth-child(odd) .service-card-desc {
+  color: #9da096;
+}
+
+.service-card.card-theme-dark .service-card-bottom,
+.service-card:nth-child(odd) .service-card-bottom {
+  border-top-color: #242621;
+}
+
+.service-card.card-theme-dark .service-card-price-label,
+.service-card:nth-child(odd) .service-card-price-label {
+  color: #797c72;
+}
+
+.service-card.card-theme-dark .service-card-price-value,
+.service-card:nth-child(odd) .service-card-price-value {
+  color: #ffffff;
+}
+
+.service-card.card-theme-dark .service-card-arrow,
+.service-card:nth-child(odd) .service-card-arrow {
+  color: var(--lime, #c7f72f);
+}
+
+.service-card.card-theme-dark .service-card-rec-badge,
+.service-card:nth-child(odd) .service-card-rec-badge {
+  background: var(--lime, #c7f72f);
+  color: #11120f;
+  border: none;
+}
+
+/* =========================================================
+   CARD THEME 2: LIME CARD (CARD 2, 4, 6... / EVEN)
+   Formant lime background (#C7F72F), near-black typography
+   ========================================================= */
+
+.service-card.card-theme-lime,
+.service-card:nth-child(even) {
+  background: var(--lime, #c7f72f);
+  color: #11120f;
+  border: 1px solid rgba(17, 18, 15, 0.15);
+  box-shadow: 0 8px 24px rgba(199, 247, 47, 0.18);
+}
+
+.service-card.card-theme-lime:hover,
+.service-card:nth-child(even):hover {
+  border-color: #11120f;
+  box-shadow: 0 14px 36px rgba(199, 247, 47, 0.32);
+}
+
+.service-card.card-theme-lime .service-card-icon-box,
+.service-card:nth-child(even) .service-card-icon-box {
+  background: #11120f;
+  color: var(--lime, #c7f72f);
+  border: 1px solid #11120f;
+}
+
+.service-card.card-theme-lime .service-card-title,
+.service-card:nth-child(even) .service-card-title {
+  color: #11120f;
+}
+
+.service-card.card-theme-lime .service-card-desc,
+.service-card:nth-child(even) .service-card-desc {
+  color: rgba(17, 18, 15, 0.8);
+}
+
+.service-card.card-theme-lime .service-card-bottom,
+.service-card:nth-child(even) .service-card-bottom {
+  border-top-color: rgba(17, 18, 15, 0.14);
+}
+
+.service-card.card-theme-lime .service-card-price-label,
+.service-card:nth-child(even) .service-card-price-label {
+  color: rgba(17, 18, 15, 0.65);
+}
+
+.service-card.card-theme-lime .service-card-price-value,
+.service-card:nth-child(even) .service-card-price-value {
+  color: #11120f;
+}
+
+.service-card.card-theme-lime .service-card-arrow,
+.service-card:nth-child(even) .service-card-arrow {
+  color: #11120f;
+}
+
+.service-card.card-theme-lime .service-card-rec-badge,
+.service-card:nth-child(even) .service-card-rec-badge {
+  background: #11120f;
+  color: var(--lime, #c7f72f);
+  border: none;
+}
+
+/* =========================================================
+   SECTION 04 — SMALL DASHBOARD ESCAPE
+   ========================================================= */
+
+.service-selection-escape {
+  margin-top: clamp(60px, 8vw, 96px);
+  padding-top: 36px;
+  border-top: 1px solid var(--line, #deded5);
+  text-align: center;
+}
+
+.service-selection-escape-inner {
+  max-width: 460px;
+  margin: 0 auto;
+}
+
+.service-selection-escape-kicker {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+  color: var(--muted, #6d7069);
+}
+
+.service-selection-escape-text {
+  margin: 0 0 20px;
+  font-size: 14.5px;
+  color: var(--muted, #6d7069);
+  line-height: 1.5;
+}
+
+.service-selection-escape-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 24px;
+  border-radius: 999px;
+  background: var(--ink, #11120f);
+  color: #ffffff;
+  font-size: 13.5px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: transform 180ms ease, background 180ms ease;
+}
+
+.service-selection-escape-btn:hover {
+  background: #000000;
+  transform: translateY(-2px);
+}
+
+.service-selection-escape-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--lime, #c7f72f), 0 0 0 5px var(--ink, #11120f);
+}
+
+/* =========================================================
+   LOADING & ERROR STATES
+   ========================================================= */
+
+.service-selection-loading {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: var(--cream, #fbfaf3);
+  color: var(--ink, #11120f);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* =========================================================
+   RESPONSIVE TUNING
+   ========================================================= */
+
+/* Tablet (768px – 1023px): 3 columns maintained */
+@media (max-width: 1023px) and (min-width: 768px) {
+  .service-card {
+    padding: 22px 18px 20px;
+    min-height: 250px;
+  }
+
+  .service-card-title {
+    font-size: 18px;
+  }
+
+  .service-card-desc {
+    font-size: 13px;
+  }
+}
+
+/* Mobile (< 768px): STRICTLY 2 COLUMNS PRESERVED */
+@media (max-width: 767px) {
+  .service-selection-main {
+    padding: 20px 14px 60px;
+  }
+
+  .service-selection-hero-box {
+    border-radius: 18px;
+    padding: 34px 20px;
+    margin-bottom: 40px;
+  }
+
+  .service-selection-hero-eyebrow {
+    font-size: 10px;
+    margin-bottom: 8px;
+  }
+
+  .service-selection-hero-title {
+    font-size: clamp(38px, 11vw, 54px);
+    margin-bottom: 12px;
+  }
+
+  .service-selection-hero-sub {
+    font-size: 14.5px;
+  }
+
+  .service-selection-mission {
+    margin-bottom: 44px;
+    padding: 0 6px;
+  }
+
+  .service-selection-mission-eyebrow {
+    font-size: 10px;
+    margin-bottom: 12px;
+  }
+
+  .service-selection-mission-statement {
+    font-size: clamp(22px, 5.8vw, 32px);
+  }
+
+  .service-selection-mission-highlight {
+    padding: 0 6px 2px;
+    border-radius: 4px;
+  }
+
+  .service-card {
+    border-radius: 14px;
+    padding: 16px 13px 14px;
+    min-height: 210px;
+  }
+
+  .service-card-top {
+    margin-bottom: 14px;
+  }
+
+  .service-card-icon-box {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+  }
+
+  .service-card-icon-box svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  .service-card-rec-badge {
+    padding: 3px 6px;
+    font-size: 8px;
+    letter-spacing: .04em;
+  }
+
+  .service-card-middle {
+    margin-bottom: 14px;
+  }
+
+  .service-card-title {
+    font-size: 15px;
+    margin-bottom: 5px;
+  }
+
+  .service-card-desc {
+    font-size: 11.5px;
+    line-height: 1.4;
+  }
+
+  .service-card-bottom {
+    padding-top: 10px;
+  }
+
+  .service-card-price-label {
+    font-size: 8.5px;
+    margin-bottom: 2px;
+  }
+
+  .service-card-price-value {
+    font-size: 12.5px;
+  }
+
+  .service-card-arrow {
+    font-size: 14px;
+  }
+
+  .service-selection-escape {
+    margin-top: 48px;
+    padding-top: 28px;
+  }
+
+  .service-selection-escape-kicker {
+    font-size: 10px;
+  }
+
+  .service-selection-escape-text {
+    font-size: 13.5px;
+    margin-bottom: 16px;
+  }
+
+  .service-selection-escape-btn {
+    padding: 9px 20px;
+    font-size: 13px;
+  }
+}
+
+/* Extra small mobile (< 360px): Guaranteed zero overflow */
+@media (max-width: 360px) {
+  .service-selection-main {
+    padding: 16px 10px 48px;
+  }
+
+  .service-card {
+    padding: 14px 10px 12px;
+    min-height: 195px;
+  }
+
+  .service-card-title {
+    font-size: 13.5px;
+  }
+
+  .service-card-desc {
+    font-size: 10.5px;
+    line-height: 1.35;
+  }
+
+  .service-card-rec-badge {
+    font-size: 7.5px;
+    padding: 2px 5px;
+  }
+
+  .service-card-price-value {
+    font-size: 11.5px;
+  }
+}
