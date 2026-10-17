@@ -494,12 +494,22 @@ export default function Auth({ signup = false }) {
         })
 
         if (error) {
-          if (error.message.includes('Email not confirmed')) {
+          const errorMessage = String(error.message || '')
+          const errorCode = String(error.code || '')
+          if (errorMessage.includes('Email not confirmed')) {
             setMessage('Please confirm your email address before logging in.')
             setMessageType('error')
             setUnverifiedEmail(cleanEmail)
-          } else {
+          } else if (
+            errorCode === 'invalid_credentials' ||
+            errorMessage.toLowerCase().includes('invalid login credentials')
+          ) {
             setMessage('Invalid login credentials — check your email or password.')
+            setMessageType('error')
+          } else {
+            setMessage(
+              errorMessage || 'Login could not be completed. Check your connection and try again.'
+            )
             setMessageType('error')
           }
           return

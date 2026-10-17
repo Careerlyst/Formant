@@ -5,9 +5,15 @@ import { load } from '../lib/store';
 import PublicNav from '../components/PublicNav';
 import Footer from '../components/Footer';
 import { services } from '../lib/store';
+import { FeaturedShowcase } from './Showcase';
 
-function PublicHome({ user = null }) {
+const serviceDescriptions = Object.fromEntries(
+  services.map(({ id, desc }) => [id, desc])
+);
+
+function PublicHome({ user = null, profileName = '' }) {
   const firstName =
+    profileName?.split(' ')[0] ||
     user?.user_metadata?.name?.split(' ')[0] ||
     user?.user_metadata?.full_name?.split(' ')[0] ||
     user?.name?.split(' ')[0] ||
@@ -224,227 +230,108 @@ function PublicHome({ user = null }) {
         {/* =========================
             SERVICES
         ========================== */}
-        {/* =========================
-    SERVICES
-========================== */}
-<section className="home-services">
+        <section className="home-services" aria-labelledby="home-services-title">
+          <div className="home-services-heading">
+            <div>
+              <span className="service-label">SERVICES</span>
+              <h2 id="home-services-title">
+                Everything you need
+                <br />
+                to <span>look ready.</span>
+              </h2>
+            </div>
+            <p>
+              Practical career support designed around the role you want next.
+            </p>
+          </div>
 
-  <div className="home-services-heading">
-    <div>
-      <span className="service-label">SERVICES</span>
+          <div className="home-services-grid">
+            <Link to="/services/resume" className="career-service-card light-card">
+              <div className="career-card-top"><span aria-hidden="true">01</span></div>
+              <div className="career-card-main">
+                <div className="career-card-copy">
+                  <h3 className="career-card-title">Resume / CV</h3>
+                  <p className="career-card-description">{serviceDescriptions.resume}</p>
+                </div>
+                <div className="career-visual resume-visual" aria-hidden="true">
+                  <div className="resume-paper"><i></i><i></i><i></i><i></i></div>
+                </div>
+              </div>
+              <span className="career-card-cta">Learn more <span aria-hidden="true">↗</span></span>
+            </Link>
 
-      <h2>
-        Everything you need
-        <br />
-        to <span>look ready.</span>
-      </h2>
-    </div>
+            <Link to="/services/linkedin" className="career-service-card light-card is-text-led">
+              <div className="career-card-top"><span aria-hidden="true">02</span></div>
+              <div className="career-card-main is-text-led">
+                <div className="career-card-copy">
+                  <h3 className="career-card-title">LinkedIn</h3>
+                  <p className="career-card-description">{serviceDescriptions.linkedin}</p>
+                </div>
+              </div>
+              <span className="career-card-cta">Learn more <span aria-hidden="true">↗</span></span>
+            </Link>
 
-    <p>
-      Practical career support designed around the role
-      you want next.
-    </p>
-  </div>
+            <Link to="/services/github" className="career-service-card light-card">
+              <div className="career-card-top"><span aria-hidden="true">03</span></div>
+              <div className="career-card-main">
+                <div className="career-card-copy">
+                  <h3 className="career-card-title">GitHub</h3>
+                  <p className="career-card-description">{serviceDescriptions.github}</p>
+                </div>
+                <div className="career-visual github-visual" aria-hidden="true">
+                  <div className="github-box"><span>&lt;/&gt;</span></div>
+                  <div className="github-lines"><i></i><i></i><i></i></div>
+                </div>
+              </div>
+              <span className="career-card-cta">Learn more <span aria-hidden="true">↗</span></span>
+            </Link>
 
+            <Link to="/services/portfolio" className="career-service-card light-card">
+              <div className="career-card-top"><span aria-hidden="true">04</span></div>
+              <div className="career-card-main">
+                <div className="career-card-copy">
+                  <h3 className="career-card-title">Portfolio</h3>
+                  <p className="career-card-description">{serviceDescriptions.portfolio}</p>
+                </div>
+                <div className="career-visual portfolio-visual" aria-hidden="true">
+                  <div className="portfolio-window"><b></b><i></i><i></i></div>
+                </div>
+              </div>
+              <span className="career-card-cta">Learn more <span aria-hidden="true">↗</span></span>
+            </Link>
 
-  <div className="home-services-grid">
+            <Link to="/services/cover-letter" className="career-service-card light-card is-text-led">
+              <div className="career-card-top"><span aria-hidden="true">05</span></div>
+              <div className="career-card-main is-text-led">
+                <div className="career-card-copy">
+                  <h3 className="career-card-title">Cover Letter</h3>
+                  <p className="career-card-description">{serviceDescriptions.cover}</p>
+                </div>
+              </div>
+              <span className="career-card-cta">Learn more <span aria-hidden="true">↗</span></span>
+            </Link>
 
-    {/* 01 — Resume */}
-    <Link
-      to="/services/resume"
-      className="career-service-card light-card"
-    >
-      <div className="career-card-top">
-        <span>01</span>
-        <span className="career-card-arrow">↗</span>
-      </div>
+            <Link to="/services/interview-preparation" className="career-service-card light-card">
+              <div className="career-card-top"><span aria-hidden="true">06</span></div>
+              <div className="career-card-main">
+                <div className="career-card-copy">
+                  <h3 className="career-card-title">Interview Preparation</h3>
+                  <p className="career-card-description">{serviceDescriptions.interview}</p>
+                </div>
+                <div className="career-visual interview-visual" aria-hidden="true">
+                  <div className="interview-note"><b>Q&amp;A</b><i></i><i></i></div>
+                </div>
+              </div>
+              <span className="career-card-cta">Learn more <span aria-hidden="true">↗</span></span>
+            </Link>
+          </div>
 
-      <div className="career-card-title">
-        <span>Resume / CV</span>
-      </div>
+          <div className="home-services-footer">
+            <Link to="/services">Explore all services <span aria-hidden="true">→</span></Link>
+          </div>
+        </section>
 
-      <div className="career-visual resume-visual">
-        <div className="resume-paper">
-          <i></i>
-          <i></i>
-          <i></i>
-          <i></i>
-        </div>
-        <div className="resume-circle"></div>
-        <div className="resume-line"></div>
-      </div>
-
-      <div className="career-card-bottom">
-        <span>Focused for your target role</span>
-        <span>Learn more ↗</span>
-      </div>
-    </Link>
-
-
-    {/* 02 — LinkedIn */}
-    <Link
-      to="/services/linkedin"
-      className="career-service-card dark-card"
-    >
-      <div className="career-card-top">
-        <span>02</span>
-        <span className="career-card-arrow">↗</span>
-      </div>
-
-      <div className="career-card-title">
-        <span>LinkedIn</span>
-      </div>
-
-      <div className="career-visual linkedin-visual">
-        <div className="linkedin-window">
-          <b></b>
-          <i></i>
-          <i></i>
-          <i></i>
-        </div>
-        <div className="linkedin-dot"></div>
-      </div>
-
-      <div className="career-card-bottom">
-        <span>Position your experience clearly</span>
-        <span>Learn more ↗</span>
-      </div>
-    </Link>
-
-
-    {/* 03 — GitHub */}
-    <Link
-      to="/services/github"
-      className="career-service-card dark-card"
-    >
-      <div className="career-card-top">
-        <span>03</span>
-        <span className="career-card-arrow">↗</span>
-      </div>
-
-      <div className="career-card-title">
-        <span>GitHub</span>
-      </div>
-
-      <div className="career-visual github-visual">
-        <div className="github-box">
-          <span>&lt;/&gt;</span>
-        </div>
-        <div className="github-lines">
-          <i></i>
-          <i></i>
-          <i></i>
-        </div>
-      </div>
-
-      <div className="career-card-bottom">
-        <span>Make your technical work clearer</span>
-        <span>Learn more ↗</span>
-      </div>
-    </Link>
-
-
-    {/* 04 — Portfolio */}
-    <Link
-      to="/services/portfolio"
-      className="career-service-card light-card"
-    >
-      <div className="career-card-top">
-        <span>04</span>
-        <span className="career-card-arrow">↗</span>
-      </div>
-
-      <div className="career-card-title">
-        <span>Portfolio</span>
-      </div>
-
-      <div className="career-visual portfolio-visual">
-        <div className="portfolio-window">
-          <b></b>
-          <i></i>
-          <i></i>
-        </div>
-        <div className="portfolio-orbit"></div>
-      </div>
-
-      <div className="career-card-bottom">
-        <span>Turn your work into a stronger story</span>
-        <span>Learn more ↗</span>
-      </div>
-    </Link>
-
-
-    {/* 05 — Cover Letter */}
-    <Link
-      to="/services/cover-letter"
-      className="career-service-card light-card"
-    >
-      <div className="career-card-top">
-        <span>05</span>
-        <span className="career-card-arrow">↗</span>
-      </div>
-
-      <div className="career-card-title">
-        <span>Cover Letter</span>
-      </div>
-
-      <div className="career-visual letter-visual">
-        <div className="letter-paper">
-          <i></i>
-          <i></i>
-          <i></i>
-        </div>
-        <div className="letter-star">✦</div>
-      </div>
-
-      <div className="career-card-bottom">
-        <span>Relevant, specific and role-focused</span>
-        <span>Learn more ↗</span>
-      </div>
-    </Link>
-
-
-    {/* 06 — Interview */}
-    <Link
-      to="/services/interview-preparation"
-      className="career-service-card dark-card"
-    >
-      <div className="career-card-top">
-        <span>06</span>
-        <span className="career-card-arrow">↗</span>
-      </div>
-
-      <div className="career-card-title">
-        <span>Interview Preparation</span>
-      </div>
-
-      <div className="career-visual interview-visual">
-        <div className="interview-person">
-          <b></b>
-          <i></i>
-        </div>
-        <div className="interview-bubble">
-          ?
-        </div>
-        <div className="interview-line"></div>
-      </div>
-
-      <div className="career-card-bottom">
-        <span>Prepare for the conversation</span>
-        <span>Learn more ↗</span>
-      </div>
-    </Link>
-
-  </div>
-
-
-  <div className="home-services-footer">
-    <Link to="/services">
-      Explore all services <span>→</span>
-    </Link>
-  </div>
-
-</section>
+        <FeaturedShowcase />
 
         {user && (
           <section className="client-home-context">
@@ -513,7 +400,7 @@ function PublicHome({ user = null }) {
 </section>
 
         {/* =========================
-            CURRENT AVAILABILITY
+            OUR APPROACH
         ========================== */}
         <section className="availability-section">
 
@@ -521,11 +408,11 @@ function PublicHome({ user = null }) {
 
     <div className="availability-top">
       <span className="availability-label">
-        CURRENT AVAILABILITY
+        OUR APPROACH
       </span>
 
       <span className="availability-status">
-        ● LIMITED CAPACITY
+        CAREER-FOCUSED SUPPORT
       </span>
     </div>
 
@@ -533,45 +420,34 @@ function PublicHome({ user = null }) {
 
       <div className="availability-heading">
         <h2>
-          Limited
+          A clear
           <br />
-          <span>by design.</span>
+          <span>next step.</span>
         </h2>
       </div>
 
       <div className="availability-content">
 
         <p className="availability-description">
-          We work on a small number of projects at a time.
-          When capacity is full, new orders join the queue —
-          so every project still gets the attention it deserves.
+          Explore the services and choose the support that fits the role or opportunity you are preparing for.
         </p>
 
-        <div className="availability-capacity">
-
-          <div>
-            <span className="capacity-label">
-              ACTIVE PROJECTS
-            </span>
-
-            <strong>2 / 2</strong>
-          </div>
-
-          <div className="capacity-line">
-            <span></span>
-          </div>
+        <div className="availability-note">
+          <span className="availability-note-label">
+            HOW TO BEGIN
+          </span>
 
           <p>
-            Currently at capacity. New projects can join the queue.
+            Each service explains what it includes, so you can decide which one fits your next career step.
           </p>
 
         </div>
 
         <Link
           className="availability-link"
-          to="/signup"
+          to="/services"
         >
-          <span>Join the queue</span>
+          <span>Explore services</span>
           <span>↗</span>
         </Link>
 
@@ -592,6 +468,7 @@ function PublicHome({ user = null }) {
 
 export default function Home() {
   const [session, setSession] = useState(null);
+  const [profileName, setProfileName] = useState('');
   const [checkingSession, setCheckingSession] = useState(Boolean(supabase));
 
   useEffect(() => {
@@ -636,6 +513,34 @@ export default function Home() {
     };
   }, []);
 
+  useEffect(() => {
+    let mounted = true;
+    const userId = session?.user?.id;
+    if (!supabase || !userId) {
+      setProfileName('');
+      return () => { mounted = false; };
+    }
+    setProfileName('');
+    const refreshName = () => supabase.from('profiles').select('name').eq('id', userId).maybeSingle()
+      .then(({ data, error }) => {
+        if (!mounted) return;
+        if (error) console.error('Home profile name load failed:', error);
+        setProfileName(data?.name || '');
+      });
+    const onProfileUpdated = (event) => {
+      if (!event.detail?.userId || event.detail.userId === userId) {
+        setProfileName(event.detail?.name || '');
+        void refreshName();
+      }
+    };
+    void refreshName();
+    window.addEventListener('careerlyst-profile-updated', onProfileUpdated);
+    return () => {
+      mounted = false;
+      window.removeEventListener('careerlyst-profile-updated', onProfileUpdated);
+    };
+  }, [session?.user?.id]);
+
   if (checkingSession) {
     return (
       <div className="home-auth-loading">
@@ -644,6 +549,5 @@ export default function Home() {
     );
   }
 
-  return <PublicHome user={session?.user || null} />;
+  return <PublicHome user={session?.user || null} profileName={profileName} />;
 }
-

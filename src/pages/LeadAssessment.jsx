@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Logo from '../components/Logo';
 import { supabase } from '../lib/supabase';
@@ -189,23 +189,141 @@ function getLeadStatus(score) {
   return 'exploring';
 }
 
+/* =========================================================
+   USER-SCOPED ASSESSMENT STORAGE HELPERS
+   ========================================================= */
+
+function getDraftStorageKey(uid) {
+  if (!uid) return null;
+  return `careerlyst_assessment_${uid}`;
+}
+
+function persistUserDraft(uid, currentAnswers) {
+  if (!uid) return;
+  try {
+    localStorage.setItem(
+      getDraftStorageKey(uid),
+      JSON.stringify({
+        answers: currentAnswers,
+        updatedAt: new Date().toISOString()
+      })
+    );
+  } catch (err) {
+    console.warn('Failed to save assessment draft to localStorage:', err);
+  }
+}
+
 export default function LeadAssessment() {
   const navigate = useNavigate();
 
-  const stored = load();
-
+  const [initializing, setInitializing] = useState(true);
+  const [userId, setUserId] = useState(null);
   const [step, setStep] = useState(0);
-
-  const [answers, setAnswers] = useState(
-    stored.leadAssessment?.answers || {}
-  );
-
+  const [answers, setAnswers] = useState({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const question = QUESTIONS[step];
+  /*
+    Identify the authenticated user and load only their specific draft.
+    Legacy global leadAssessment is ignored and cleaned up.
+  */
+  useEffect(() => {
+    let mounted = true;
 
-  const selected = answers[question.id];
+    async function initializeUserAssessment() {
+      try {
+        let activeUserId = null;
+        let loadedAnswers = {};
+
+        if (supabase) {
+          const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+          if (sessionError) {
+            console.error('LeadAssessment getSession error:', sessionError);
+          }
+
+          const user = session?.user;
+          if (!user) {
+            if (mounted) {
+              setInitializing(false);
+              navigate('/login', { replace: true });
+            }
+            return;
+          }
+
+          activeUserId = user.id;
+
+          // Check for user-scoped draft
+          const draftKey = getDraftStorageKey(activeUserId);
+          try {
+            const rawDraft = localStorage.getItem(draftKey);
+            if (rawDraft) {
+              const parsed = JSON.parse(rawDraft);
+              if (parsed && typeof parsed === 'object') {
+                loadedAnswers = parsed.answers || parsed;
+              }
+            }
+          } catch (storageErr) {
+            console.warn('Error reading user assessment draft:', storageErr);
+          }
+        } else {
+          // Fallback demo mode (when supabase is not configured)
+          const stored = load();
+          const demoId = stored.user?.id || stored.user?.email || 'demo_user';
+          activeUserId = demoId;
+
+          const draftKey = getDraftStorageKey(demoId);
+          try {
+            const rawDraft = localStorage.getItem(draftKey);
+            if (rawDraft) {
+              const parsed = JSON.parse(rawDraft);
+              if (parsed && typeof parsed === 'object') {
+                loadedAnswers = parsed.answers || parsed;
+              }
+            }
+          } catch (storageErr) {
+            console.warn('Error reading demo draft:', storageErr);
+          }
+        }
+
+        // Clean up legacy global leadAssessment from store.js if present
+        try {
+          const rawStore = localStorage.getItem('careerlyst_demo');
+          if (rawStore && rawStore.includes('"leadAssessment"')) {
+            patch((current) => {
+              const next = { ...current };
+              if ('leadAssessment' in next) {
+                delete next.leadAssessment;
+              }
+              return next;
+            });
+          }
+        } catch (e) {
+          // ignore cleanup errors
+        }
+
+        if (!mounted) return;
+
+        setUserId(activeUserId);
+        setAnswers(loadedAnswers && typeof loadedAnswers === 'object' ? loadedAnswers : {});
+        setInitializing(false);
+
+      } catch (err) {
+        console.error('LeadAssessment initialization error:', err);
+        if (mounted) {
+          setInitializing(false);
+        }
+      }
+    }
+
+    initializeUserAssessment();
+
+    return () => {
+      mounted = false;
+    };
+  }, [navigate]);
+
+  const question = QUESTIONS[step];
+  const selected = answers[question?.id];
 
   const progress = Math.round(
     ((step + 1) / QUESTIONS.length) * 100
@@ -226,7 +344,7 @@ export default function LeadAssessment() {
     selected = string
   */
   function isSelected(value) {
-    if (question.multiple) {
+    if (question?.multiple) {
       return (
         Array.isArray(selected) &&
         selected.includes(value)
@@ -238,16 +356,17 @@ export default function LeadAssessment() {
 
   /*
     Handle option selection.
+    Persists draft under authenticated user ID immediately.
   */
   function choose(value) {
     setAnswers((current) => {
+      let nextAnswers = { ...current };
+
       /*
         Question 1 allows multiple selections.
       */
-      if (question.multiple) {
-        const currentValues = Array.isArray(
-          current.service
-        )
+      if (question?.multiple) {
+        const currentValues = Array.isArray(current.service)
           ? current.service
           : [];
 
@@ -255,44 +374,36 @@ export default function LeadAssessment() {
           "Not sure yet" is exclusive.
         */
         if (value === 'unsure') {
-          return {
-            ...current,
-            service: ['unsure']
-          };
+          nextAnswers.service = ['unsure'];
+        } else {
+          /*
+            Selecting an actual service removes
+            "Not sure yet".
+          */
+          const withoutUnsure = currentValues.filter((item) => item !== 'unsure');
+
+          /*
+            Toggle selection.
+          */
+          const alreadySelected = withoutUnsure.includes(value);
+
+          nextAnswers.service = alreadySelected
+            ? withoutUnsure.filter((item) => item !== value)
+            : [...withoutUnsure, value];
         }
-
+      } else if (question) {
         /*
-          Selecting an actual service removes
-          "Not sure yet".
+          All other questions remain single-select.
         */
-        const withoutUnsure =
-          currentValues.filter(
-            (item) => item !== 'unsure'
-          );
-
-        /*
-          Toggle selection.
-        */
-        const alreadySelected =
-          withoutUnsure.includes(value);
-
-        return {
-          ...current,
-          service: alreadySelected
-            ? withoutUnsure.filter(
-                (item) => item !== value
-              )
-            : [...withoutUnsure, value]
-        };
+        nextAnswers[question.id] = value;
       }
 
-      /*
-        All other questions remain single-select.
-      */
-      return {
-        ...current,
-        [question.id]: value
-      };
+      // Persist draft for the current authenticated user
+      if (userId) {
+        persistUserDraft(userId, nextAnswers);
+      }
+
+      return nextAnswers;
     });
 
     setError('');
@@ -341,17 +452,41 @@ export default function LeadAssessment() {
       }
 
       /*
-        Save to local Formant store.
+        Save to user-scoped local storage.
+        Do NOT save to global store.leadAssessment.
       */
-      patch((current) => ({
-        ...current,
-        leadAssessment: assessment
-      }));
+      if (userId) {
+        try {
+          localStorage.setItem(
+            getDraftStorageKey(userId),
+            JSON.stringify({
+              answers,
+              completed: true,
+              completedAt: assessment.completedAt,
+              assessment
+            })
+          );
+        } catch (e) {
+          console.warn('Failed to save assessment to localStorage:', e);
+        }
+      }
 
       /*
-        Assessment complete.
+        Clean up legacy global leadAssessment from store.js if it exists,
+        so it never leaks to other accounts or sessions.
       */
-      navigate('/dashboard', {
+      patch((current) => {
+        const next = { ...current };
+        if ('leadAssessment' in next) {
+          delete next.leadAssessment;
+        }
+        return next;
+      });
+
+      /*
+        Assessment complete: navigate to dedicated service selection.
+      */
+      navigate('/service-selection', {
         replace: true
       });
 
@@ -377,7 +512,7 @@ export default function LeadAssessment() {
   function next() {
     let hasSelection = false;
 
-    if (question.multiple) {
+    if (question?.multiple) {
       hasSelection =
         Array.isArray(selected) &&
         selected.length > 0;
@@ -387,7 +522,7 @@ export default function LeadAssessment() {
 
     if (!hasSelection) {
       setError(
-        question.multiple
+        question?.multiple
           ? 'Choose at least one option to continue.'
           : 'Choose one option to continue.'
       );
@@ -417,6 +552,16 @@ export default function LeadAssessment() {
     setStep(
       (current) =>
         Math.max(0, current - 1)
+    );
+  }
+
+  if (initializing) {
+    return (
+      <main className="lead-assessment" style={{ display: 'grid', placeItems: 'center' }}>
+        <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--muted, #6d7069)' }}>
+          Loading assessment...
+        </div>
+      </main>
     );
   }
 

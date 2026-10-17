@@ -12,8 +12,11 @@ import './styles.css';
 import './pages/messages.css';
 
 import Preloader from './components/Preloader';
+import { PageNotFound, RouteErrorBoundary } from './components/ErrorExperience';
 
 import Home from './pages/Home';
+import Showcase from './pages/Showcase';
+import AdminShowcase from './pages/AdminShowcase';
 
 import {
   Services,
@@ -24,6 +27,8 @@ import {
   Legal
 } from './pages/PublicPages';
 
+import LegalPrivacy from './pages/LegalPrivacy';
+
 import Auth, {
   Forgot,
   ResetPassword,
@@ -32,6 +37,7 @@ import Auth, {
 
 import Protected from './components/Protected';
 import LeadAssessment from './pages/LeadAssessment';
+import ServiceSelection from './pages/ServiceSelection';
 import AdminLeads from './pages/AdminLeads';
 import AdminSettings from './pages/AdminSettings';
 
@@ -84,9 +90,10 @@ function ScrollManager() {
           (targetId === 'process' ? document.getElementById('how-it-works') : null);
 
         if (target) {
+          const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
           target.scrollIntoView({
             block: 'start',
-            behavior: 'smooth'
+            behavior: prefersReducedMotion ? 'auto' : 'smooth'
           });
           return;
         }
@@ -104,10 +111,12 @@ function ScrollManager() {
 const ROUTE_TITLES = {
   '/': 'Formant',
   '/services': 'Formant — Services',
+  '/showcase': 'Formant — Showcase',
   '/pricing': 'Formant — Pricing',
   '/about': 'Formant — About',
   '/contact': 'Formant — Contact',
-  '/privacy': 'Formant — Privacy',
+  '/privacy': 'Formant — Privacy Policy',
+  '/privacy-policy': 'Formant — Privacy Policy',
   '/terms': 'Formant — Terms',
   '/refund': 'Formant — Refund',
   '/login': 'Formant — Login',
@@ -116,6 +125,7 @@ const ROUTE_TITLES = {
   '/forgot-password': 'Formant — Forgot Password',
   '/reset-password': 'Formant — Reset Password',
   '/assessment': 'Formant — Assessment',
+  '/service-selection': 'Formant — Choose Your Service',
   '/dashboard': 'Formant — Dashboard',
   '/dashboard/profile': 'Formant — Profile',
   '/dashboard/orders': 'Formant — Orders',
@@ -131,6 +141,7 @@ const ROUTE_TITLES = {
   '/admin/orders': 'Formant — Orders',
   '/admin/projects': 'Formant — Projects',
   '/admin/services': 'Formant — Services',
+  '/admin/showcase': 'Formant — Showcase Management',
   '/admin/payments': 'Formant — Payments',
   '/admin/messages': 'Formant — Messages',
   '/admin/files': 'Formant — Files',
@@ -180,6 +191,11 @@ function App() {
       />
 
       <Route
+        path="/showcase"
+        element={<Showcase />}
+      />
+
+      <Route
         path="/services/:id"
         element={<ServiceDetail />}
       />
@@ -201,7 +217,12 @@ function App() {
 
       <Route
         path="/privacy"
-        element={<Legal type="privacy" />}
+        element={<LegalPrivacy />}
+      />
+
+      <Route
+        path="/privacy-policy"
+        element={<LegalPrivacy />}
       />
 
       <Route
@@ -254,6 +275,19 @@ function App() {
         element={
           <Protected>
             <LeadAssessment />
+          </Protected>
+        }
+      />
+
+      {/* =====================================================
+          SERVICE SELECTION (POST-ASSESSMENT DECISION)
+      ===================================================== */}
+
+      <Route
+        path="/service-selection"
+        element={
+          <Protected>
+            <ServiceSelection />
           </Protected>
         }
       />
@@ -431,6 +465,15 @@ function App() {
       />
 
       <Route
+        path="/admin/showcase"
+        element={
+          <Protected>
+            <AdminShowcase />
+          </Protected>
+        }
+      />
+
+      <Route
         path="/admin/reviews"
         element={
           <Protected>
@@ -466,6 +509,11 @@ function App() {
         }
       />
 
+      <Route
+        path="*"
+        element={<PageNotFound />}
+      />
+
     </Routes>
   );
 }
@@ -485,7 +533,7 @@ createRoot(
     <BrowserRouter>
       <ScrollManager />
       <TitleManager />
-      <App />
+      <RouteErrorBoundary><App /></RouteErrorBoundary>
     </BrowserRouter>
   </>
 );
