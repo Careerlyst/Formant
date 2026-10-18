@@ -1,0 +1,615 @@
+/* =========================================================
+   FORMANT — SERVICE DETAIL (MINIMAL MASTER LAYOUT)
+   Intentionally minimal master layout for all service routes:
+   01 — SERVICE HERO
+   02 — PACKAGES / PRICING
+   03 — FINAL CTA
+   ========================================================= */
+
+.service-detail-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--cream, #fbfaf3);
+  color: var(--ink, #11120f);
+  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  overflow-x: hidden;
+}
+
+.service-detail-main {
+  flex: 1;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: clamp(28px, 4vw, 56px) clamp(16px, 3.5vw, 40px) clamp(64px, 8vw, 110px);
+  box-sizing: border-box;
+}
+
+/* =========================================================
+   01 — SERVICE HERO
+   ========================================================= */
+
+.service-detail-hero {
+  display: grid;
+  grid-template-columns: 1.25fr 0.95fr;
+  gap: clamp(32px, 5vw, 64px);
+  align-items: center;
+  margin-bottom: clamp(64px, 8vw, 96px);
+  box-sizing: border-box;
+}
+
+.service-detail-hero-left {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.service-detail-eyebrow-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.service-detail-eyebrow {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--muted, #6d7069);
+}
+
+.service-detail-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--lime, #c7f72f);
+  color: #11120f;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.service-detail-hero-title {
+  margin: 0 0 18px;
+  font-family: 'Manrope', sans-serif;
+  font-size: clamp(38px, 5.5vw, 68px);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+  color: var(--ink, #11120f);
+}
+
+.service-detail-hero-desc {
+  margin: 0 0 28px;
+  font-size: clamp(16px, 1.8vw, 19px);
+  line-height: 1.55;
+  color: var(--muted, #6d7069);
+  max-width: 540px;
+}
+
+.service-detail-hero-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.service-detail-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 13px 28px;
+  border-radius: 999px;
+  background: var(--lime, #c7f72f);
+  color: #11120f;
+  font-size: 14.5px;
+  font-weight: 800;
+  text-decoration: none;
+  line-height: 1;
+  transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease;
+  border: 1px solid rgba(17, 18, 15, 0.12);
+  box-shadow: 0 4px 14px rgba(199, 247, 47, 0.25);
+  cursor: pointer;
+}
+
+.service-detail-btn-primary:hover {
+  transform: translateY(-2px);
+  background: #bceb29;
+  box-shadow: 0 8px 22px rgba(199, 247, 47, 0.35);
+}
+
+.service-detail-btn-primary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--lime, #c7f72f), 0 0 0 5px var(--ink, #11120f);
+}
+
+.service-detail-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 22px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink, #11120f);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+  border: 1px solid var(--line, #deded5);
+  transition: background 180ms ease, border-color 180ms ease, transform 180ms ease;
+}
+
+.service-detail-btn-secondary:hover {
+  background: var(--soft, #f2f1eb);
+  border-color: var(--ink, #11120f);
+  transform: translateY(-1px);
+}
+
+/* Hero Right: Brand Artifact Card */
+.service-detail-hero-card {
+  position: relative;
+  background: var(--ink, #11120f);
+  color: #fbfbf8;
+  border-radius: 24px;
+  padding: clamp(28px, 4vw, 38px);
+  box-shadow: 0 16px 40px rgba(17, 18, 15, 0.12);
+  border: 1px solid #232520;
+  overflow: hidden;
+}
+
+.service-detail-hero-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 140px;
+  height: 140px;
+  background: radial-gradient(circle, rgba(199, 247, 47, 0.18) 0%, rgba(199, 247, 47, 0) 70%);
+  border-top-right-radius: 24px;
+  pointer-events: none;
+}
+
+.service-detail-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.service-detail-icon-box {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: #1b1d19;
+  border: 1px solid #2a2c26;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--lime, #c7f72f);
+}
+
+.service-detail-card-badge {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--lime, #c7f72f);
+  background: rgba(199, 247, 47, 0.1);
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(199, 247, 47, 0.25);
+}
+
+.service-detail-card-highlights {
+  list-style: none;
+  margin: 0 0 28px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.service-detail-card-highlights li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: #d1d4cb;
+}
+
+.service-detail-check-bullet {
+  color: var(--lime, #c7f72f);
+  font-weight: 800;
+  font-size: 13px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.service-detail-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 20px;
+  border-top: 1px solid #232520;
+}
+
+.service-detail-pricing-pill {
+  display: flex;
+  flex-direction: column;
+}
+
+.service-detail-pricing-pill span {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: #84877e;
+  margin-bottom: 3px;
+}
+
+.service-detail-pricing-pill strong {
+  font-family: 'Manrope', sans-serif;
+  font-size: 24px;
+  font-weight: 800;
+  color: #ffffff;
+  line-height: 1.1;
+}
+
+.service-detail-turnaround-tag {
+  font-size: 12px;
+  font-weight: 600;
+  color: #9da096;
+}
+
+/* =========================================================
+   02 — PACKAGES / PRICING (MAIN DECISION SECTION)
+   ========================================================= */
+
+.service-detail-section {
+  margin-bottom: clamp(64px, 8vw, 96px);
+  padding-top: 8px;
+}
+
+.service-detail-section-head {
+  margin-bottom: clamp(28px, 4vw, 40px);
+}
+
+.service-detail-section-eyebrow {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--muted, #6d7069);
+  display: block;
+}
+
+.service-detail-section-title {
+  margin: 0;
+  font-family: 'Manrope', sans-serif;
+  font-size: clamp(24px, 3.2vw, 36px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--ink, #11120f);
+  line-height: 1.15;
+}
+
+.service-detail-section-sub {
+  margin: 10px 0 0;
+  font-size: 15px;
+  color: var(--muted, #6d7069);
+  max-width: 600px;
+  line-height: 1.5;
+}
+
+.service-detail-packages-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 22px;
+}
+
+.service-pkg-card {
+  position: relative;
+  background: var(--paper, #ffffff);
+  border: 1.5px solid var(--line, #deded5);
+  border-radius: 18px;
+  padding: 30px 26px 26px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+  box-shadow: 0 4px 14px rgba(17, 18, 15, 0.02);
+}
+
+.service-pkg-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--ink, #11120f);
+  box-shadow: 0 12px 32px rgba(17, 18, 15, 0.08);
+}
+
+.service-pkg-index {
+  font-family: 'Manrope', sans-serif;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--muted, #6d7069);
+  margin-bottom: 12px;
+  display: block;
+}
+
+.service-pkg-name {
+  margin: 0 0 10px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  color: var(--ink, #11120f);
+  line-height: 1.2;
+}
+
+.service-pkg-desc {
+  margin: 0 0 24px;
+  font-size: 14px;
+  color: var(--muted, #6d7069);
+  line-height: 1.55;
+  flex: 1;
+}
+
+.service-pkg-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 20px;
+  border-top: 1px solid var(--line, #deded5);
+  gap: 12px;
+}
+
+.service-pkg-price {
+  font-family: 'Manrope', sans-serif;
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--ink, #11120f);
+  line-height: 1;
+}
+
+.service-pkg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 11px 22px;
+  border-radius: 999px;
+  background: var(--ink, #11120f);
+  color: #ffffff;
+  font-size: 13.5px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  transition: transform 180ms ease, background 180ms ease;
+  line-height: 1;
+}
+
+.service-pkg-btn:hover:not(:disabled) {
+  background: #000000;
+  transform: translateY(-1px);
+}
+
+.service-pkg-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Standalone Pricing Box (when no packages table items exist) */
+.service-detail-pricing-box {
+  background: var(--soft, #f2f1eb);
+  border: 1px solid var(--line, #deded5);
+  border-radius: 20px;
+  padding: clamp(32px, 5vw, 44px) 28px;
+  text-align: center;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.service-detail-pricing-box-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+  color: var(--muted, #6d7069);
+  margin-bottom: 8px;
+  display: block;
+}
+
+.service-detail-pricing-box-val {
+  font-family: 'Manrope', sans-serif;
+  font-size: clamp(36px, 6vw, 52px);
+  font-weight: 800;
+  color: var(--ink, #11120f);
+  margin: 0 0 20px;
+  line-height: 1;
+}
+
+/* =========================================================
+   03 — FINAL CTA
+   ========================================================= */
+
+.service-detail-final-cta {
+  margin-top: clamp(48px, 6vw, 72px);
+  padding: clamp(48px, 6.5vw, 76px) clamp(20px, 4vw, 48px);
+  background: var(--ink, #11120f);
+  color: #ffffff;
+  border-radius: 24px;
+  text-align: center;
+  box-shadow: 0 16px 44px rgba(17, 18, 15, 0.1);
+}
+
+.service-detail-final-inner {
+  max-width: 620px;
+  margin: 0 auto;
+}
+
+.service-detail-final-kicker {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--lime, #c7f72f);
+  margin-bottom: 12px;
+  display: block;
+}
+
+.service-detail-final-title {
+  margin: 0 0 16px;
+  font-family: 'Manrope', sans-serif;
+  font-size: clamp(26px, 4vw, 40px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.18;
+  color: #ffffff;
+}
+
+.service-detail-final-desc {
+  margin: 0 0 30px;
+  font-size: clamp(15px, 1.8vw, 17px);
+  color: #9da096;
+  line-height: 1.55;
+}
+
+.service-detail-final-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.service-detail-final-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 13px 28px;
+  border-radius: 999px;
+  background: var(--lime, #c7f72f);
+  color: #11120f;
+  font-size: 14.5px;
+  font-weight: 800;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  transition: transform 180ms ease, background 180ms ease;
+  line-height: 1;
+}
+
+.service-detail-final-btn:hover {
+  background: #bceb29;
+  transform: translateY(-2px);
+}
+
+.service-detail-final-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 22px;
+  border-radius: 999px;
+  background: transparent;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: background 180ms ease, border-color 180ms ease;
+}
+
+.service-detail-final-back:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: #ffffff;
+}
+
+/* =========================================================
+   RESPONSIVE BREAKPOINTS
+   ========================================================= */
+
+@media (max-width: 960px) {
+  .service-detail-hero {
+    grid-template-columns: 1fr;
+    gap: 36px;
+    margin-bottom: 48px;
+  }
+
+  .service-detail-hero-card {
+    max-width: 540px;
+  }
+}
+
+@media (max-width: 600px) {
+  .service-detail-main {
+    padding: 20px 14px 56px;
+  }
+
+  .service-detail-hero {
+    margin-bottom: 40px;
+    gap: 28px;
+  }
+
+  .service-detail-hero-title {
+    font-size: clamp(30px, 8.5vw, 40px);
+  }
+
+  .service-detail-hero-desc {
+    font-size: 15px;
+    margin-bottom: 20px;
+  }
+
+  .service-detail-hero-card {
+    padding: 22px 18px;
+    border-radius: 18px;
+  }
+
+  .service-detail-section {
+    margin-bottom: 44px;
+  }
+
+  .service-detail-section-title {
+    font-size: clamp(22px, 6vw, 28px);
+  }
+
+  .service-detail-packages-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .service-pkg-card {
+    padding: 22px 18px;
+    border-radius: 16px;
+  }
+
+  .service-detail-final-cta {
+    padding: 36px 18px;
+    border-radius: 18px;
+    margin-top: 36px;
+  }
+
+  .service-detail-final-title {
+    font-size: clamp(22px, 6vw, 30px);
+  }
+
+  .service-detail-final-actions {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .service-detail-final-btn,
+  .service-detail-final-back {
+    width: 100%;
+    box-sizing: border-box;
+    justify-content: center;
+  }
+}

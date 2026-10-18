@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   Link,
-  useNavigate
+  useNavigate,
+  useLocation
 } from 'react-router-dom';
 import AdminNotificationsPage from './AdminNotifications';
 import AdminProjectsPage from './AdminProjects';
@@ -12,6 +13,9 @@ import DashboardShell from '../components/DashboardShell';
 import Logo from '../components/Logo';
 import { supabase } from '../lib/supabase';
 import { load } from '../lib/store';
+import MessageActions from '../components/MessageActions';
+import { useMessageViewport } from '../lib/messageViewport';
+import AdminProfileContext from '../components/AdminProfileContext';
 
   /* =========================================================
     STAFF ROLES
@@ -143,13 +147,9 @@ import { load } from '../lib/store';
             const {
               data: messageData,
               error: messageError
-            } = await supabase
-              .from('messages')
-              .select(
-                'id, order_id, sender_id, body, created_at, read_at'
-              )
-              .in('order_id', orderIds)
-              .order('created_at', { ascending: false });
+            } = await supabase.rpc('list_message_summaries_v1', {
+              p_order_ids: orderIds
+            });
 
             if (messageError) throw messageError;
 
@@ -161,24 +161,18 @@ import { load } from '../lib/store';
             );
 
             nextUnreadMessages = (messageData || [])
-              .filter((message) => {
-                const order =
-                  orderById[String(message.order_id)];
-
-                return (
-                  order &&
-                  String(message.sender_id) ===
-                    String(order.user_id) &&
-                  !message.read_at
-                );
-              })
-              .map((message) => ({
-                ...message,
+              .filter((summary) => Number(summary.unread_count || 0) > 0 && summary.latest_unread_message_id)
+              .map((summary) => ({
+                id: summary.latest_unread_message_id,
+                order_id: summary.order_id,
+                body: summary.latest_unread_body,
+                created_at: summary.latest_unread_created_at,
+                unread_count: summary.unread_count,
                 clientName:
-                  nextProfiles[orderById[String(message.order_id)]?.user_id]
+                  nextProfiles[orderById[String(summary.order_id)]?.user_id]
                     ?.name || 'Client',
                 order:
-                  orderById[String(message.order_id)]
+                  orderById[String(summary.order_id)]
               }))
               .sort(
                 (a, b) =>
@@ -1161,7 +1155,7 @@ import { load } from '../lib/store';
         if (userIds.length) {
           const { data: profileRows, error: profileError } = await supabase
             .from('profiles')
-            .select('id, name, email')
+            .select('id, name, email, phone, location, target_role, experience, education, skills, certifications, linkedin, github, portfolio, bio, preferences, lead_assessment, lead_score, lead_status, lead_assessment_completed_at')
             .in('id', userIds);
           if (profileError) throw profileError;
           profileMap = Object.fromEntries((profileRows || []).map((row) => [row.id, row]));
@@ -1364,6 +1358,7 @@ import { load } from '../lib/store';
                 <div><span>Updated</span><strong>{selectedOrder.updated_at ? new Date(selectedOrder.updated_at).toLocaleString() : '—'}</strong></div>
               </div>
               <div className="admin-order-drawer-notes"><span>Order notes</span><p>{selectedOrder.client_notes || 'No client notes are available.'}</p></div>
+              <AdminProfileContext profile={profiles[selectedOrder.user_id]} />
               <div className="admin-order-drawer-actions"><Link className="btn dark" to={`/admin/workspace?order=${encodeURIComponent(selectedOrder.id)}`}>Open workspace →</Link><Link className="btn light" to={`/admin/messages?order=${encodeURIComponent(selectedOrder.id)}`}>Open conversation →</Link></div>
             </aside>
           </div>
@@ -1616,6 +1611,12 @@ import { load } from '../lib/store';
               <div className="admin-users-list">
                 {userRows.map((user) => {
                   const latestOrder = user.orders[0];
+                  const workspaceOrder = user.orders.find((order) =>
+                    !['completed', 'cancelled', 'canceled'].includes(
+                      String(order.status || '').toLowerCase()
+                    )
+                  ) || latestOrder;
+                  const workspacePath = `/admin/workspace?client=${encodeURIComponent(user.id)}${workspaceOrder ? `&order=${encodeURIComponent(workspaceOrder.id)}` : ''}`;
                   const parsedJoinDate = user.created_at ? new Date(user.created_at) : null;
                   const joinedDate = parsedJoinDate && !Number.isNaN(parsedJoinDate.getTime())
                     ? parsedJoinDate.toLocaleDateString(undefined, {
@@ -1649,7 +1650,7 @@ import { load } from '../lib/store';
                         <span><b>{user.activeCount}</b> active</span>
                         <span><b>{user.paidCount}</b> paid</span>
                       </div>
-                      <Link className="text-button" to="/admin/workspace">
+                      <Link className="text-button" to={workspacePath}>
                         Open workspace →
                       </Link>
                     </article>
@@ -1766,15 +1767,22 @@ export function AdminReviews() {
   }
 
   function AdminMessagesPage() {
+    const location = useLocation();
     const [staffUserId, setStaffUserId] = useState('');
     const [staffRole, setStaffRole] = useState('');
     const [orders, setOrders] = useState([]);
     const [profiles, setProfiles] = useState({});
     const [messageMap, setMessageMap] = useState({});
+    const [messageSummaries, setMessageSummaries] = useState({});
+    const [threadError, setThreadError] = useState('');
+    const [loadingThread, setLoadingThread] = useState(false);
+    const [hasOlderMessages, setHasOlderMessages] = useState(false);
     const [selectedOrderId, setSelectedOrderId] = useState(null);
-    const [expandedClientId, setExpandedClientId] = useState(null);
+    const [expandedClientIds, setExpandedClientIds] = useState(() => new Set());
+    const [filterMode, setFilterMode] = useState('all'); // 'all' | 'unread' | 'needs_reply'
     const [mobileView, setMobileView] = useState('list');
     const [text, setText] = useState('');
+    const [drafts, setDrafts] = useState({});
     const [search, setSearch] = useState('');
     const [loading, setLoading] = useState(true);
     const [sending, setSending] = useState(false);
@@ -1782,8 +1790,28 @@ export function AdminReviews() {
     const [error, setError] = useState('');
     const [notificationsOpen, setNotificationsOpen] = useState(false);
     const [messageToast, setMessageToast] = useState(null);
+    const [attachment, setAttachment] = useState(null);
+    const [attachmentError, setAttachmentError] = useState('');
+    const [liveAnnouncement, setLiveAnnouncement] = useState('');
+    const [replyTo, setReplyTo] = useState(null);
+    const [editingMessage, setEditingMessage] = useState(null);
+    const [highlightedMessageId, setHighlightedMessageId] = useState(null);
+    const [activeActionMessageId, setActiveActionMessageId] = useState(null);
     const seenRealtimeMessageIdsRef = useRef(new Set());
     const chatBodyRef = useRef(null);
+    const messagesRootRef = useRef(null);
+    const handleMessageComposerFocus = useMessageViewport(messagesRootRef, mobileView === 'chat');
+    const selectedOrderIdRef = useRef(selectedOrderId);
+    const mobileViewRef = useRef(mobileView);
+    const staffUserIdRef = useRef(staffUserId);
+    const messageMapRef = useRef(messageMap);
+    const ordersRef = useRef(orders);
+    const profilesRef = useRef(profiles);
+    const markAdminConversationReadRef = useRef(null);
+    const threadRequestRef = useRef(0);
+    const actionScrollProgrammaticRef = useRef(false);
+    const actionScrollTimerRef = useRef(0);
+
 
     const selectedOrder = orders.find(
       (order) => String(order.id) === String(selectedOrderId)
@@ -1792,6 +1820,47 @@ export function AdminReviews() {
     const selectedMessages = selectedOrder
       ? (messageMap[selectedOrder.id] || [])
       : [];
+
+    useEffect(() => {
+      setActiveActionMessageId(null);
+    }, [selectedOrderId]);
+
+    useEffect(() => {
+      if (activeActionMessageId == null) return undefined;
+      const onOutsidePointer = (event) => {
+        if (event.target.closest?.('.messages-row, .message-actions-menu-portal')) return;
+        setActiveActionMessageId(null);
+      };
+      document.addEventListener('pointerdown', onOutsidePointer);
+      return () => document.removeEventListener('pointerdown', onOutsidePointer);
+    }, [activeActionMessageId]);
+
+    useEffect(() => {
+      const body = chatBodyRef.current;
+      if (!body || activeActionMessageId == null) return undefined;
+      let previousTop = body.scrollTop;
+      let userScrollIntent = false;
+      const onScroll = () => {
+        const actionHasFocus = document.activeElement?.closest?.('.message-actions, .message-actions-menu-portal');
+        const moved = Math.abs(body.scrollTop - previousTop) > 18;
+        if (moved && (userScrollIntent || (!actionScrollProgrammaticRef.current && !actionHasFocus))) setActiveActionMessageId(null);
+        previousTop = body.scrollTop;
+        userScrollIntent = false;
+      };
+      const onUserScrollIntent = () => {
+        userScrollIntent = true;
+        actionScrollProgrammaticRef.current = false;
+        window.clearTimeout(actionScrollTimerRef.current);
+      };
+      body.addEventListener('scroll', onScroll, { passive: true });
+      body.addEventListener('wheel', onUserScrollIntent, { passive: true });
+      body.addEventListener('touchmove', onUserScrollIntent, { passive: true });
+      return () => {
+        body.removeEventListener('scroll', onScroll);
+        body.removeEventListener('wheel', onUserScrollIntent);
+        body.removeEventListener('touchmove', onUserScrollIntent);
+      };
+    }, [activeActionMessageId, selectedOrderId]);
 
     const groupedClients = (() => {
       const query = search.trim().toLowerCase();
@@ -1802,12 +1871,30 @@ export function AdminReviews() {
         const service = String(order.service_name || 'Formant service');
         const packageName = String(order.package_name || '');
         const thread = messageMap[String(order.id)] || [];
-        const last = thread[thread.length - 1];
-        const unread = thread.filter(
+        const summary = messageSummaries[String(order.id)];
+        const last = thread[thread.length - 1] || (summary?.latest_message_id ? {
+          id: summary.latest_message_id,
+          sender_id: summary.latest_sender_id,
+          body: summary.latest_body,
+          created_at: summary.latest_created_at
+        } : null);
+        const unread = Number(summary?.unread_count ?? thread.filter(
           (message) =>
             String(message.sender_id) === String(order.user_id) &&
             !message.read_at
-        ).length;
+        ).length);
+        const isNeedsReply = Boolean(
+          last && String(last.sender_id) === String(order.user_id)
+        );
+
+        let matchesFilter = true;
+        if (filterMode === 'unread') {
+          matchesFilter = unread > 0;
+        } else if (filterMode === 'needs_reply') {
+          matchesFilter = isNeedsReply;
+        }
+
+        if (!matchesFilter) return;
 
         const searchable = [
           clientName,
@@ -1876,22 +1963,31 @@ export function AdminReviews() {
       0
     );
 
+    const totalUnreadOrders = orders.filter((o) => {
+      return Number(messageSummaries[String(o.id)]?.unread_count || 0) > 0;
+    }).length;
+
+    const totalNeedsReplyOrders = orders.filter((o) => {
+      const summary = messageSummaries[String(o.id)];
+      return Boolean(summary?.latest_message_id && String(summary.latest_sender_id) === String(o.user_id));
+    }).length;
+
     const notifications = orders
       .map((order) => {
-        const thread = messageMap[String(order.id)] || [];
-        const unreadMessages = thread.filter(
-          (message) =>
-            String(message.sender_id) === String(order.user_id) &&
-            !message.read_at
-        );
-        const latest = unreadMessages[unreadMessages.length - 1];
+        const summary = messageSummaries[String(order.id)];
+        const unreadCount = Number(summary?.unread_count || 0);
+        const latest = summary?.latest_unread_message_id ? {
+          id: summary.latest_unread_message_id,
+          body: summary.latest_unread_body,
+          created_at: summary.latest_unread_created_at
+        } : null;
 
-        return latest
+        return latest && unreadCount
           ? {
               order,
               clientName: profiles[order.user_id]?.name || 'Client',
               latest,
-              unread: unreadMessages.length
+              unread: unreadCount
             }
           : null;
       })
@@ -1907,9 +2003,90 @@ export function AdminReviews() {
       0
     );
 
+    async function loadAdminThread(orderId, before = null, appendOlder = false) {
+      if (!supabase || !orderId) return;
+      const requestId = ++threadRequestRef.current;
+      setThreadError('');
+      if (!appendOlder) setLoadingThread(true);
+      try {
+        const { data, error: pageError } = await supabase.rpc(
+          'list_message_thread_actions_v1',
+          {
+            p_order_id: Number(orderId),
+            p_before_created_at: before?.created_at || null,
+            p_before_id: before?.id || null,
+            p_limit: 50
+          }
+        );
+        if (pageError) throw pageError;
+        if (requestId !== threadRequestRef.current) return;
+        const page = [...(data || [])].reverse();
+        const clientId = ordersRef.current.find((order) => String(order.id) === String(orderId))?.user_id;
+        const senderIds = [...new Set(page
+          .map((message) => message.sender_id)
+          .filter((senderId) => senderId && String(senderId) !== String(clientId)))];
+        if (senderIds.length) {
+          const { data: senderProfiles, error: senderProfileError } = await supabase
+            .from('profiles')
+            .select('id, name')
+            .in('id', senderIds);
+          if (senderProfileError) throw senderProfileError;
+          setProfiles((current) => ({
+            ...current,
+            ...Object.fromEntries((senderProfiles || []).map((profile) => [profile.id, profile]))
+          }));
+        }
+        setHasOlderMessages((data || []).length === 50);
+        setMessageMap((current) => {
+          const key = String(orderId);
+          if (!appendOlder) return { ...current, [key]: page };
+          const old = current[key] || [];
+          const ids = new Set(old.map((message) => String(message.id)));
+          return { ...current, [key]: [...page.filter((message) => !ids.has(String(message.id))), ...old] };
+        });
+      } catch (pageError) {
+        if (requestId === threadRequestRef.current) {
+          setThreadError(pageError?.message || 'Could not load this conversation.');
+        }
+      } finally {
+        if (requestId === threadRequestRef.current) setLoadingThread(false);
+      }
+    }
+
+    async function refreshAdminSummaries(orderIds = null) {
+      if (!supabase) return;
+      const { data, error: summaryError } = await supabase.rpc(
+        'list_message_summaries_v1',
+        { p_order_ids: orderIds }
+      );
+      if (summaryError) throw summaryError;
+      const nextSummaries = {};
+      const previews = {};
+      (data || []).forEach((summary) => {
+        const key = String(summary.order_id);
+        nextSummaries[key] = summary;
+        previews[key] = summary.latest_message_id ? [{
+          id: summary.latest_message_id,
+          order_id: summary.order_id,
+          sender_id: summary.latest_sender_id,
+          body: summary.latest_body,
+          created_at: summary.latest_created_at,
+          read_at: null
+        }] : [];
+      });
+      setMessageSummaries(nextSummaries);
+      setMessageMap((current) => {
+        const next = { ...previews };
+        const activeKey = String(selectedOrderIdRef.current || '');
+        if (activeKey && (current[activeKey]?.length || 0) > 1) next[activeKey] = current[activeKey];
+        return next;
+      });
+    }
+
     useEffect(() => {
       let mounted = true;
       let channel = null;
+      let removeRecoveryListeners = null;
 
       async function loadInbox() {
         if (!supabase) {
@@ -2007,50 +2184,44 @@ export function AdminReviews() {
             setProfiles({});
           }
 
-          const orderIds = nextOrders
-            .map((order) => order.id)
-            .filter(Boolean);
-
+          const orderIds = nextOrders.map((order) => order.id).filter(Boolean);
           if (orderIds.length) {
-            const {
-              data: messageData,
-              error: messageError
-            } = await supabase
-              .from('messages')
-              .select(
-                'id, order_id, sender_id, body, created_at, read_at'
-              )
-              .in('order_id', orderIds)
-              .order('created_at', { ascending: true });
-
-            if (messageError) throw messageError;
-
-            const grouped = {};
-
-            (messageData || []).forEach((message) => {
-              const key = String(message.order_id);
-              if (!grouped[key]) grouped[key] = [];
-              grouped[key].push(message);
-            });
-
-            (messageData || []).forEach((message) => {
-              if (message?.id != null) {
-                seenRealtimeMessageIdsRef.current.add(String(message.id));
-              }
-            });
-
-            if (!mounted) return;
-            setMessageMap(grouped);
-
-            const firstThread = nextOrders.find(
-              (order) => grouped[String(order.id)]?.length
-            ) || nextOrders[0];
-
-            setSelectedOrderId(
-              (current) => current || firstThread?.id || null
+            const { data: summaryData, error: summaryError } = await supabase.rpc(
+              'list_message_summaries_v1',
+              { p_order_ids: orderIds }
             );
+            if (summaryError) throw summaryError;
+            const summaries = {};
+            const previews = {};
+            (summaryData || []).forEach((summary) => {
+              const key = String(summary.order_id);
+              summaries[key] = summary;
+              previews[key] = summary.latest_message_id ? [{
+                id: summary.latest_message_id,
+                order_id: summary.order_id,
+                sender_id: summary.latest_sender_id,
+                body: summary.latest_body,
+                created_at: summary.latest_created_at,
+                read_at: null
+              }] : [];
+            });
+            if (!mounted) return;
+            setMessageSummaries(summaries);
+            setMessageMap(previews);
+            const requestedId = new URLSearchParams(location.search).get('order');
+            const latestActiveSummary = (summaryData || []).find((summary) => summary.latest_message_id);
+            const firstThread = nextOrders.find((order) => String(order.id) === String(requestedId))
+              || nextOrders.find((order) => String(order.id) === String(latestActiveSummary?.order_id))
+              || nextOrders[0];
+            selectedOrderIdRef.current = firstThread?.id || null;
+            setSelectedOrderId(firstThread?.id || null);
+            if (firstThread?.user_id) {
+              setExpandedClientIds((prev) => new Set([...prev, String(firstThread.user_id)]));
+              void loadAdminThread(firstThread.id);
+            }
           } else {
             setMessageMap({});
+            setMessageSummaries({});
             setSelectedOrderId(null);
           }
 
@@ -2058,6 +2229,52 @@ export function AdminReviews() {
 
           channel = supabase
             .channel(`careerlyst-admin-messages-${user.id}`)
+            .on(
+              'postgres_changes',
+              {
+                event: '*',
+                schema: 'public',
+                table: 'orders'
+              },
+              async (payload) => {
+                if (!mounted || (!payload?.new && !payload?.old)) return;
+
+                if (payload.eventType === 'INSERT') {
+                  const newOrder = payload.new;
+                  if (!newOrder?.id) return;
+
+                  if (newOrder.user_id && !profilesRef.current[newOrder.user_id]) {
+                    try {
+                      const { data: prof } = await supabase
+                        .from('profiles')
+                        .select('id, name')
+                        .eq('id', newOrder.user_id)
+                        .maybeSingle();
+                      if (prof && mounted) {
+                        setProfiles((prev) => ({ ...prev, [prof.id]: prof }));
+                      }
+                    } catch (_) {}
+                  }
+
+                  setOrders((prev) => {
+                    if (prev.some((o) => String(o.id) === String(newOrder.id))) {
+                      return prev;
+                    }
+                    return [newOrder, ...prev].sort(
+                      (a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)
+                    );
+                  });
+                } else if (payload.eventType === 'UPDATE') {
+                  setOrders((prev) =>
+                    prev.map((o) => (String(o.id) === String(payload.new.id) ? { ...o, ...payload.new } : o))
+                  );
+                } else if (payload.eventType === 'DELETE') {
+                  setOrders((prev) =>
+                    prev.filter((o) => String(o.id) !== String(payload.old.id))
+                  );
+                }
+              }
+            )
             .on(
               'postgres_changes',
               {
@@ -2074,6 +2291,12 @@ export function AdminReviews() {
                 const orderId = next?.order_id;
                 if (!orderId) return;
 
+                const order = ordersRef.current.find(
+                  (item) => String(item.id) === String(orderId)
+                );
+                // Scoped check: discard any message event not belonging to orders visible to this staff session
+                if (!order) return;
+
                 if (payload.eventType === 'INSERT') {
                   const inserted = payload.new;
                   const messageId = inserted?.id != null ? String(inserted.id) : '';
@@ -2088,21 +2311,37 @@ export function AdminReviews() {
                     seenRealtimeMessageIdsRef.current.add(messageId);
                   }
 
-                  const order = nextOrders.find(
-                    (item) => String(item.id) === String(inserted?.order_id)
-                  );
                   const isClientMessage =
-                    Boolean(order) &&
                     String(inserted?.sender_id) === String(order.user_id);
 
+                  const isCurrentOrderOpen =
+                    String(inserted?.order_id) === String(selectedOrderIdRef.current) &&
+                    (mobileViewRef.current === 'chat' || (typeof window !== 'undefined' && window.innerWidth > 768));
+
                   if (isClientMessage) {
-                    setMessageToast({
-                      id: inserted.id,
-                      orderId: order.id,
-                      clientName: nextProfiles[order.user_id]?.name || 'Client',
-                      preview: String(inserted.body || '').trim() || 'Sent a new message.'
-                    });
+                    if (isCurrentOrderOpen) {
+                      markAdminConversationReadRef.current?.(inserted.order_id);
+                  const parsedText = parseMessageBody(inserted.body).text || (parseMessageBody(inserted.body).attachment ? `Attachment: ${parseMessageBody(inserted.body).attachment.name}` : 'New message');
+                      setLiveAnnouncement(`New message from ${profilesRef.current[order.user_id]?.name || 'Client'}: ${parsedText}`);
+                    } else {
+                      const parsedInsert = parseMessageBody(inserted.body);
+                      const toastPreview =
+                        parsedInsert.text ||
+                        (parsedInsert.attachment
+                          ? `📎 ${parsedInsert.attachment.name}`
+                          : 'Sent a new message.');
+                      setMessageToast({
+                        id: inserted.id,
+                        orderId: order.id,
+                        clientName: profilesRef.current[order.user_id]?.name || 'Client',
+                        preview: toastPreview
+                      });
+                    }
                   }
+                  void refreshAdminSummaries(orderIds).catch((refreshError) => {
+                    setThreadError(refreshError?.message || 'Could not refresh unread counts.');
+                  });
+                  if (isCurrentOrderOpen) void loadAdminThread(orderId);
                 }
 
                 setMessageMap((current) => {
@@ -2162,6 +2401,9 @@ export function AdminReviews() {
 
               if (status === 'SUBSCRIBED') {
                 setConnection('online');
+                void refreshAdminSummaries(orderIds).then(() => {
+                  if (selectedOrderIdRef.current) return loadAdminThread(selectedOrderIdRef.current);
+                }).catch((refreshError) => setThreadError(refreshError?.message || 'Could not refresh conversations.'));
               } else if (
                 status === 'CHANNEL_ERROR' ||
                 status === 'TIMED_OUT' ||
@@ -2170,6 +2412,29 @@ export function AdminReviews() {
                 setConnection('offline');
               }
             });
+          const reconcileAdminInbox = () => {
+            void refreshAdminSummaries(orderIds).then(() => {
+              if (selectedOrderIdRef.current) return loadAdminThread(selectedOrderIdRef.current);
+            }).catch((refreshError) => {
+              setThreadError(refreshError?.message || 'Could not refresh conversations.');
+            });
+          };
+          const handleVisibility = () => {
+            if (document.visibilityState === 'visible') reconcileAdminInbox();
+          };
+          const handleOnline = () => {
+            setConnection('connecting');
+            reconcileAdminInbox();
+          };
+          const handleOffline = () => setConnection('offline');
+          document.addEventListener('visibilitychange', handleVisibility);
+          window.addEventListener('online', handleOnline);
+          window.addEventListener('offline', handleOffline);
+          removeRecoveryListeners = () => {
+            document.removeEventListener('visibilitychange', handleVisibility);
+            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('offline', handleOffline);
+          };
         } catch (loadError) {
           console.error(
             'Admin messages load error:',
@@ -2192,9 +2457,10 @@ export function AdminReviews() {
 
       return () => {
         mounted = false;
+        removeRecoveryListeners?.();
         if (channel) supabase?.removeChannel(channel);
       };
-    }, []);
+    }, [location.search]);
 
     useEffect(() => {
       if (!messageToast) return undefined;
@@ -2213,7 +2479,7 @@ export function AdminReviews() {
     }, [selectedOrderId, selectedMessages.length]);
 
     useEffect(() => {
-      if (!selectedOrderId || !expandedClientId) return;
+      if (!selectedOrderId) return;
       const timer = window.setTimeout(() => {
         const activeBtn = document.querySelector('.messages-admin-project-item.is-active');
         if (activeBtn) {
@@ -2221,13 +2487,37 @@ export function AdminReviews() {
         }
       }, 50);
       return () => window.clearTimeout(timer);
-    }, [selectedOrderId, expandedClientId]);
+    }, [selectedOrderId]);
 
     useEffect(() => {
       if (search.trim() && groupedClients.length === 1) {
-        setExpandedClientId(groupedClients[0].userId);
+        setExpandedClientIds((prev) => new Set([...prev, String(groupedClients[0].userId)]));
       }
     }, [search, groupedClients]);
+
+    useEffect(() => {
+      selectedOrderIdRef.current = selectedOrderId;
+    }, [selectedOrderId]);
+
+    useEffect(() => {
+      mobileViewRef.current = mobileView;
+    }, [mobileView]);
+
+    useEffect(() => {
+      staffUserIdRef.current = staffUserId;
+    }, [staffUserId]);
+
+    useEffect(() => {
+      messageMapRef.current = messageMap;
+    }, [messageMap]);
+
+    useEffect(() => {
+      if (!selectedOrderId || !staffUserId) return;
+      const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
+      if (isMobile && mobileView !== 'chat') return;
+
+      markAdminConversationRead(selectedOrderId);
+    }, [selectedOrderId, mobileView, staffUserId]);
 
     function formatMessageTime(value) {
       if (!value) return '';
@@ -2253,7 +2543,70 @@ export function AdminReviews() {
       }).format(date);
     }
 
+    useEffect(() => {
+      ordersRef.current = orders;
+    }, [orders]);
+
+    useEffect(() => {
+      profilesRef.current = profiles;
+    }, [profiles]);
+
+    const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
+    const ATTACHMENT_BUCKET = 'message-attachments';
+
+    function handleAttachmentChange(event) {
+      const file = event.target.files?.[0] || null;
+      event.target.value = '';
+      setAttachmentError('');
+
+      if (!file) {
+        setAttachment(null);
+        return;
+      }
+
+      if (file.size > MAX_ATTACHMENT_SIZE) {
+        setAttachment(null);
+        setAttachmentError('File is too large. Maximum size is 10 MB.');
+        return;
+      }
+
+      const allowedTypes = [
+        'application/pdf',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.ms-powerpoint',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'text/plain',
+        'text/csv',
+        'application/zip',
+        'image/jpeg',
+        'image/png',
+        'image/webp'
+      ];
+
+      if (file.type && !allowedTypes.includes(file.type)) {
+        setAttachment(null);
+        setAttachmentError('This file type is not supported.');
+        return;
+      }
+
+      setAttachment(file);
+    }
+
+    function removeAttachment() {
+      setAttachment(null);
+      setAttachmentError('');
+    }
+
     function handleComposerKeyDown(event) {
+      if (event.key === 'Escape' && (editingMessage || replyTo)) {
+        event.preventDefault();
+        if (editingMessage) cancelEdit();
+        else setReplyTo(null);
+        return;
+      }
       if (
         event.nativeEvent?.isComposing ||
         event.isComposing
@@ -2263,15 +2616,114 @@ export function AdminReviews() {
 
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
-        sendMessage();
+        if (!sending && (text.trim() || attachment)) {
+          sendMessage();
+        }
       }
     }
 
+    function updateMessageEverywhere(updated) {
+      setMessageMap((current) => {
+        const key = String(updated.order_id);
+        return { ...current, [key]: (current[key] || []).map((row) => String(row.id) === String(updated.id) ? { ...row, ...updated } : row) };
+      });
+      if (updated.order_id) void refreshAdminSummaries([updated.order_id]).catch((summaryError) => setError(summaryError?.message || 'Could not refresh conversation summary.'));
+    }
+
+    function beginReply(message) {
+      if (staffRole === 'finance') return;
+      setEditingMessage(null);
+      setReplyTo(message);
+      requestAnimationFrame(() => document.querySelector('.messages-unified-container.mobile-chat-active .messages-composer-textarea')?.focus());
+    }
+
+    function beginEdit(message) {
+      if (message.deleted_at) return;
+      const originalText = parseMessageBody(message.body).text;
+      setEditingMessage({ id: message.id, orderId: String(message.order_id), originalText, draft: text, draftAttachment: attachment });
+      setReplyTo(null);
+      setAttachment(null);
+      setText(originalText);
+      requestAnimationFrame(() => document.querySelector('.messages-unified-container.mobile-chat-active .messages-composer-textarea')?.focus());
+    }
+
+    function cancelEdit() {
+      if (!editingMessage) return;
+      setText(editingMessage.draft);
+      setAttachment(editingMessage.draftAttachment || null);
+      setEditingMessage(null);
+    }
+
+    async function saveEditedMessage() {
+      if (!editingMessage || editingMessage.orderId !== String(selectedOrderId)) return;
+      const nextBody = text.trim();
+      if (!nextBody || nextBody === editingMessage.originalText) {
+        if (nextBody === editingMessage.originalText) cancelEdit();
+        return;
+      }
+      setSending(true);
+      setError('');
+      try {
+        const { data, error: editError } = await supabase.rpc('edit_message_v1', { p_message_id: Number(editingMessage.id), p_body: nextBody });
+        if (editError) throw editError;
+        const updated = Array.isArray(data) ? data[0] : data;
+        if (!updated) throw new Error('The edited message was not returned.');
+        updateMessageEverywhere(updated);
+        setText(editingMessage.draft);
+        setAttachment(editingMessage.draftAttachment || null);
+        setEditingMessage(null);
+        setLiveAnnouncement('Message edited');
+      } catch (editError) {
+        setError(editError?.message || 'Could not edit this message.');
+      } finally { setSending(false); }
+    }
+
+    async function deleteOwnMessage(message) {
+      if (String(message.sender_id) !== String(staffUserId) || staffRole === 'finance' || !window.confirm('Delete this message? Its text will no longer be visible.')) return;
+      setError('');
+      try {
+        const { data, error: deleteError } = await supabase.rpc('delete_message_v1', { p_message_id: Number(message.id) });
+        if (deleteError) throw deleteError;
+        const deleted = Array.isArray(data) ? data[0] : data;
+        if (!deleted) throw new Error('The deleted message was not returned.');
+        updateMessageEverywhere(deleted);
+        if (deleted.storage_path) {
+          const { error: storageError } = await supabase.storage.from(ATTACHMENT_BUCKET).remove([deleted.storage_path]);
+          if (storageError) setError('Message deleted, but its attachment could not be removed. Contact support to clean up the stored file.');
+        }
+        setLiveAnnouncement('Message deleted');
+      } catch (deleteError) {
+        setError(deleteError?.message || 'Could not delete this message.');
+      }
+    }
+
+    async function scrollToReferencedMessage(messageId) {
+      let target = selectedMessages.find((item) => String(item.id) === String(messageId));
+      if (!target) {
+        const { data, error: contextError } = await supabase.rpc('get_message_reply_context_v1', { p_message_id: Number(messageId) });
+        if (contextError) { setError(contextError.message || 'Could not load the referenced message.'); return; }
+        target = Array.isArray(data) ? data[0] : data;
+        if (target && String(target.order_id) === String(selectedOrderId)) {
+          setMessageMap((current) => {
+            const key = String(target.order_id); const rows = current[key] || [];
+            return { ...current, [key]: rows.some((item) => String(item.id) === String(target.id)) ? rows : [...rows, target].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)) };
+          });
+        }
+      }
+      if (!target) return;
+      setHighlightedMessageId(String(messageId));
+      requestAnimationFrame(() => {
+        document.getElementById(`message-${messageId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        window.setTimeout(() => setHighlightedMessageId(null), 1600);
+      });
+    }
+
     async function sendMessage() {
+      if (editingMessage) { await saveEditedMessage(); return; }
       const body = text.trim();
 
       if (
-        !body ||
+        (!body && !attachment) ||
         !selectedOrder ||
         !staffUserId ||
         staffRole === 'finance' ||
@@ -2281,10 +2733,51 @@ export function AdminReviews() {
         return;
       }
 
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        setError('You appear to be offline. Please check your internet connection and try again.');
+        return;
+      }
+
       setSending(true);
       setError('');
+      setAttachmentError('');
+      let uploadedPath = '';
 
       try {
+        let attachmentData = null;
+
+        if (attachment) {
+          const safeName = attachment.name.replace(/[^a-zA-Z0-9._-]/g, '-');
+          const path = `${staffUserId}/${selectedOrder.id}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+          uploadedPath = path;
+
+          const { error: uploadError } = await supabase.storage
+            .from(ATTACHMENT_BUCKET)
+            .upload(path, attachment, {
+              cacheControl: '3600',
+              upsert: false,
+              contentType: attachment.type || 'application/octet-stream'
+            });
+
+          if (uploadError) {
+            throw new Error(
+              uploadError.message ||
+              `Could not upload attachment to '${ATTACHMENT_BUCKET}'.`
+            );
+          }
+
+          attachmentData = {
+            name: attachment.name,
+            size: attachment.size,
+            type: attachment.type || 'application/octet-stream',
+            path
+          };
+        }
+
+        const storedBody = attachmentData
+          ? `__CAREERLYST_ATTACHMENT__:${JSON.stringify({ text: body, attachment: attachmentData })}`
+          : body;
+
         const {
           data,
           error: sendError
@@ -2293,10 +2786,11 @@ export function AdminReviews() {
           .insert({
             order_id: selectedOrder.id,
             sender_id: staffUserId,
-            body
+            body: storedBody,
+            reply_to_message_id: replyTo?.id || null
           })
           .select(
-            'id, order_id, sender_id, body, created_at, read_at'
+            'id, order_id, sender_id, body, created_at, read_at, reply_to_message_id, edited_at, deleted_at'
           )
           .single();
 
@@ -2325,37 +2819,126 @@ export function AdminReviews() {
         }
 
         setText('');
+        setReplyTo(null);
+        setAttachment(null);
+        setDrafts((current) => ({ ...current, [String(selectedOrder.id)]: { text: '', attachment: null } }));
+        setLiveAnnouncement('Message sent');
       } catch (sendError) {
         console.error(
           'Admin message send error:',
           sendError
         );
 
-        setError(
-          sendError?.message ||
-          'Message could not be sent.'
-        );
+        if (uploadedPath && supabase) {
+          const { error: cleanupError } = await supabase.storage
+            .from(ATTACHMENT_BUCKET)
+            .remove([uploadedPath]);
+          if (cleanupError) {
+            sendError.message = `${sendError.message || 'Message could not be sent.'} The uploaded file could not be cleaned up; contact support with path ${uploadedPath}.`;
+          }
+        }
+
+        const errMsg =
+          sendError?.message && typeof sendError.message === 'string'
+            ? sendError.message
+            : 'Message could not be sent. Please check your network connection and try again.';
+
+        setError(errMsg);
+        if (attachment) {
+          setAttachmentError(errMsg);
+        }
       } finally {
         setSending(false);
       }
     }
 
+    async function markAdminConversationRead(orderId) {
+      if (!orderId) return;
+      if (!supabase || Number.isNaN(Number(orderId))) return;
+
+      try {
+        const { error: readError } = await supabase.rpc(
+          'mark_order_messages_read_v1',
+          { p_order_id: Number(orderId) }
+        );
+        if (readError) throw readError;
+        await refreshAdminSummaries(ordersRef.current.map((order) => order.id));
+        await loadAdminThread(orderId);
+      } catch (err) {
+        console.error('Admin markConversationRead error:', err);
+        setThreadError(err?.message || 'Could not mark this conversation as read.');
+      }
+    }
+    markAdminConversationReadRef.current = markAdminConversationRead;
+
     function selectOrder(orderId) {
+      if (sending) return;
+      if (selectedOrderId) {
+        setDrafts((current) => ({
+          ...current,
+          [String(selectedOrderId)]: { text: editingMessage?.draft ?? text, attachment: editingMessage?.draftAttachment ?? attachment }
+        }));
+      }
+      setEditingMessage(null);
+      setReplyTo(null);
+      const nextDraft = drafts[String(orderId)] || { text: '', attachment: null };
+      selectedOrderIdRef.current = orderId;
       setSelectedOrderId(orderId);
       setMobileView('chat');
-      setText('');
+      setText(nextDraft.text);
       setError('');
+      setAttachment(nextDraft.attachment);
+      setAttachmentError('');
+      void loadAdminThread(orderId);
 
       const targetOrder = orders.find(
         (order) => String(order.id) === String(orderId)
       );
       if (targetOrder?.user_id) {
-        setExpandedClientId(targetOrder.user_id);
+        setExpandedClientIds((prev) => new Set([...prev, String(targetOrder.user_id)]));
       }
+
+      markAdminConversationRead(orderId);
+    }
+
+    function selectMessageForActions(messageId) {
+      const key = String(messageId);
+      if (activeActionMessageId === key) {
+        setActiveActionMessageId(null);
+        return;
+      }
+      setActiveActionMessageId(key);
+      requestAnimationFrame(() => {
+        const body = chatBodyRef.current;
+        const actions = document.getElementById(`message-${key}`)?.querySelector('.message-actions.is-contextual');
+        if (!body || !actions) return;
+        const bodyRect = body.getBoundingClientRect();
+        const actionsRect = actions.getBoundingClientRect();
+        const delta = actionsRect.bottom > bodyRect.bottom - 8
+          ? actionsRect.bottom - bodyRect.bottom + 8
+          : actionsRect.top < bodyRect.top + 8
+            ? actionsRect.top - bodyRect.top - 8
+            : 0;
+        if (delta) {
+          actionScrollProgrammaticRef.current = true;
+          body.scrollBy({ top: delta, behavior: 'smooth' });
+          window.clearTimeout(actionScrollTimerRef.current);
+          actionScrollTimerRef.current = window.setTimeout(() => { actionScrollProgrammaticRef.current = false; }, 450);
+        }
+      });
     }
 
     function toggleClient(userId) {
-      setExpandedClientId((prev) => (String(prev) === String(userId) ? null : userId));
+      setExpandedClientIds((prev) => {
+        const next = new Set(prev);
+        const key = String(userId);
+        if (next.has(key)) {
+          next.delete(key);
+        } else {
+          next.add(key);
+        }
+        return next;
+      });
     }
 
     function getOrderLabel(order) {
@@ -2369,7 +2952,7 @@ export function AdminReviews() {
 
     return (
       <DashboardShell admin>
-        <div className="messages-unified-container">
+        <div ref={messagesRootRef} className={`messages-unified-container admin-messages-view ${mobileView === 'chat' ? 'mobile-chat-active' : ''}`}>
           <header className="messages-unified-head">
             <div>
               <p className="eyebrow">ADMIN</p>
@@ -2488,8 +3071,42 @@ export function AdminReviews() {
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
                     placeholder="Search clients or projects…"
+                    aria-label="Search clients or projects"
                   />
                 </div>
+              </div>
+
+              <div className="messages-filter-tabs" aria-label="Conversation filters">
+                <button
+                  type="button"
+                  aria-pressed={filterMode === 'all'}
+                  className={`messages-filter-btn ${filterMode === 'all' ? 'is-active' : ''}`}
+                  onClick={() => setFilterMode('all')}
+                >
+                  All
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={filterMode === 'unread'}
+                  className={`messages-filter-btn ${filterMode === 'unread' ? 'is-active' : ''}`}
+                  onClick={() => setFilterMode('unread')}
+                >
+                  Unread
+                  {totalUnreadOrders > 0 && (
+                    <span className="messages-filter-count">{totalUnreadOrders}</span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={filterMode === 'needs_reply'}
+                  className={`messages-filter-btn ${filterMode === 'needs_reply' ? 'is-active' : ''}`}
+                  onClick={() => setFilterMode('needs_reply')}
+                >
+                  Needs Reply
+                  {totalNeedsReplyOrders > 0 && (
+                    <span className="messages-filter-count">{totalNeedsReplyOrders}</span>
+                  )}
+                </button>
               </div>
 
               <div className="messages-inbox-list">
@@ -2499,13 +3116,27 @@ export function AdminReviews() {
                   </div>
                 ) : !groupedClients.length ? (
                   <div className="messages-empty-state">
-                    <div className="messages-empty-state-icon">⌕</div>
-                    <h3>No matching clients</h3>
-                    <p>Try searching for a different client name or order ID.</p>
+                    <div className="messages-empty-state-icon">
+                      {filterMode === 'unread' ? '✓' : filterMode === 'needs_reply' ? '✉️' : '⌕'}
+                    </div>
+                    <h3>
+                      {filterMode === 'unread'
+                        ? 'No unread messages'
+                        : filterMode === 'needs_reply'
+                        ? 'No replies needed'
+                        : 'No matching clients'}
+                    </h3>
+                    <p>
+                      {filterMode === 'unread'
+                        ? 'All client messages have been read.'
+                        : filterMode === 'needs_reply'
+                        ? 'The latest message in each conversation has been answered.'
+                        : 'Try searching for a different client name or order ID.'}
+                    </p>
                   </div>
                 ) : (
                   groupedClients.map((group) => {
-                    const isExpanded = String(expandedClientId) === String(group.userId);
+                    const isExpanded = expandedClientIds.has(String(group.userId));
                     const hasActiveProject = group.orders.some(
                       ({ order }) => String(order.id) === String(selectedOrderId)
                     );
@@ -2592,6 +3223,7 @@ export function AdminReviews() {
                                   className={`messages-admin-project-item admin-client-project ${active ? 'is-active' : ''}`}
                                   type="button"
                                   key={order.id}
+                                  disabled={sending}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     selectOrder(order.id);
@@ -2679,52 +3311,117 @@ export function AdminReviews() {
                   <div
                     className="messages-chat-body"
                     ref={chatBodyRef}
+                    role="log"
+                    aria-label="Conversation messages"
                   >
-                    <div className="messages-system-notice">
-                      This conversation is shared with the client in their Formant dashboard.
-                    </div>
-
-                    {!selectedMessages.length ? (
+                    {threadError ? (
+                      <div className="messages-empty-state messages-empty-state-error" role="alert">
+                        <div className="messages-empty-state-icon">⚠️</div>
+                        <h3>Could not load conversation</h3>
+                        <p>{threadError}</p>
+                        <button type="button" className="btn dark" onClick={() => void loadAdminThread(selectedOrder.id)}>Retry</button>
+                      </div>
+                    ) : loadingThread ? (
+                      <div className="messages-empty-state"><p>Loading messages…</p></div>
+                    ) : !selectedMessages.length ? (
                       <div className="messages-empty-state">
                         <div className="messages-empty-state-icon">✉️</div>
                         <h3>Start the project conversation</h3>
                         <p>Send the first update, question or next-step instruction to the client.</p>
                       </div>
                     ) : (
-                      selectedMessages.map((message) => {
-                        const isTeam = String(message.sender_id) === String(staffUserId);
-                        const parsed = parseMessageBody(message.body);
-
-                        return (
-                          <div
-                            className={`messages-row ${isTeam ? 'is-sent' : 'is-received'}`}
-                            key={message.id}
+                      <>
+                        {hasOlderMessages && (
+                          <button
+                            type="button"
+                            className="messages-load-older"
+                            disabled={loadingThread}
+                            onClick={() => void loadAdminThread(selectedOrder.id, selectedMessages[0], true)}
                           >
-                            <span className="messages-sender-tag">
-                              {isTeam ? 'Formant Team' : profiles[selectedOrder.user_id]?.name || 'Client'}
-                            </span>
+                            {loadingThread ? 'Loading…' : 'Load older messages'}
+                          </button>
+                        )}
+                        <div className="messages-system-notice">
+                          This conversation is shared with the client in their Formant dashboard.
+                        </div>
 
-                            <div className="messages-bubble">
-                              {parsed.text && (
-                                <div className="messages-bubble-text">
-                                  {parsed.text}
+                        {selectedMessages.map((message) => {
+                          const isClientMessage = String(message.sender_id) === String(selectedOrder.user_id);
+                          const isTeam = !isClientMessage;
+                          const staffSenderName = profiles[message.sender_id]?.name;
+                          const parsed = parseMessageBody(message.body);
+
+                          return (
+                            <div
+                              id={`message-${message.id}`}
+                              tabIndex={0}
+                              role="group"
+                              aria-label={`Message from ${isTeam ? 'Formant Team' : profiles[selectedOrder.user_id]?.name || 'Client'}. Press Enter or Space to show actions.`}
+                              onClick={(event) => {
+                                if (event.target.closest?.('button, a, input, textarea, .message-actions')) return;
+                                selectMessageForActions(message.id);
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
+                                event.preventDefault();
+                                selectMessageForActions(message.id);
+                              }}
+                              className={`messages-row ${isTeam ? 'is-sent' : 'is-received'} ${String(activeActionMessageId) === String(message.id) ? 'has-context-actions' : ''} ${String(highlightedMessageId) === String(message.id) ? 'is-highlighted' : ''}`}
+                              key={message.id}
+                            >
+                              <span className="messages-sender-tag">
+                                {isTeam
+                                  ? (String(message.sender_id) === String(staffUserId)
+                                      ? 'You · Formant Team'
+                                      : staffSenderName || 'Formant Team')
+                                  : profiles[selectedOrder.user_id]?.name || 'Client'}
+                              </span>
+
+                              <div className="messages-bubble">
+                                {message.reply_to_message_id && (() => {
+                                  const original = selectedMessages.find((item) => String(item.id) === String(message.reply_to_message_id));
+                                  const originalText = original?.deleted_at ? 'Original message was deleted' : original ? parseMessageBody(original.body).text || 'Attachment' : 'Referenced message';
+                                  return <button type="button" className="messages-reply-reference" onClick={() => void scrollToReferencedMessage(message.reply_to_message_id)}><strong>Reply to {original ? (String(original.sender_id) === String(selectedOrder.user_id) ? (profiles[selectedOrder.user_id]?.name || 'Client') : 'Formant Team') : 'message'}</strong><span>{originalText.slice(0, 120)}</span></button>;
+                                })()}
+                                {message.deleted_at ? (
+                                  <div className="messages-deleted-copy" role="note">This message was deleted.</div>
+                                ) : parsed.text && (
+                                  <div className="messages-bubble-text">
+                                    {parsed.text}
+                                  </div>
+                                )}
+
+                                {!message.deleted_at && parsed.attachment && (
+                                  <AdminMessageAttachmentLink
+                                    attachment={parsed.attachment}
+                                    isTeam={isTeam}
+                                  />
+                                )}
+
+                                <div className="messages-bubble-footer">
+                                  <span>{formatMessageTime(message.created_at)}</span>
+                                  {message.edited_at && !message.deleted_at && <span className="messages-edited-label"> · Edited</span>}
+                                  {isTeam && (
+                                    <span className="messages-read-status" title={Boolean(message.read_at) ? 'Seen by client' : 'Sent'}>
+                                      {Boolean(message.read_at) ? ' · Seen ✓' : ' · Sent'}
+                                    </span>
+                                  )}
                                 </div>
-                              )}
-
-                              {parsed.attachment && (
-                                <AdminMessageAttachmentLink
-                                  attachment={parsed.attachment}
-                                  isTeam={isTeam}
-                                />
-                              )}
-
-                              <div className="messages-bubble-footer">
-                                <span>{formatMessageTime(message.created_at)}</span>
                               </div>
+                              <MessageActions
+                                active={String(activeActionMessageId) === String(message.id)}
+                                contextual
+                                canReply={staffRole !== 'finance'}
+                                canEdit={String(message.sender_id) === String(staffUserId) && !message.deleted_at && !parsed.attachment && staffRole !== 'finance'}
+                                canDelete={String(message.sender_id) === String(staffUserId) && !message.deleted_at && staffRole !== 'finance'}
+                                onReply={() => { setActiveActionMessageId(null); beginReply(message); }}
+                                onEdit={() => { setActiveActionMessageId(null); beginEdit(message); }}
+                                onDelete={() => { setActiveActionMessageId(null); void deleteOwnMessage(message); }}
+                              />
                             </div>
-                          </div>
-                        );
-                      })
+                          );
+                        })}
+                      </>
                     )}
                   </div>
 
@@ -2734,7 +3431,16 @@ export function AdminReviews() {
                     </div>
                   )}
 
-                  <div className="messages-composer-area">
+                    <div className="messages-composer-area">
+                    <div
+                      className="sr-only"
+                      aria-live="polite"
+                      aria-atomic="true"
+                      role="status"
+                    >
+                      {liveAnnouncement}
+                    </div>
+
                     <form
                       onSubmit={(event) => {
                         event.preventDefault();
@@ -2742,9 +3448,52 @@ export function AdminReviews() {
                       }}
                     >
                       <div className="messages-composer-box">
+                        {(replyTo || editingMessage) && (
+                          <div className={`messages-composer-context ${editingMessage ? 'is-editing' : ''}`} role="status">
+                            <div><strong>{editingMessage ? 'Editing message' : 'Replying to'}</strong><span>{editingMessage ? editingMessage.originalText : (replyTo.deleted_at ? 'Original message was deleted' : parseMessageBody(replyTo.body).text || 'Attachment').slice(0, 120)}</span></div>
+                            <button type="button" onClick={() => editingMessage ? cancelEdit() : setReplyTo(null)} aria-label={editingMessage ? 'Cancel edit' : 'Cancel reply'}>×</button>
+                          </div>
+                        )}
+                        {attachment && (
+                          <div className="messages-attachment-preview">
+                            <span>📎</span>
+                            <strong>{attachment.name}</strong>
+                            <small>({formatFileSize(attachment.size)})</small>
+                            <button
+                              type="button"
+                              onClick={removeAttachment}
+                              disabled={sending}
+                              aria-label="Remove attachment"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        )}
+
+                        {attachmentError && (
+                          <div className="messages-attachment-error" role="alert">
+                            {attachmentError}
+                          </div>
+                        )}
+
                         <div className="messages-composer-row">
+                          <label
+                            className="messages-attach-btn"
+                            title="Attach file (PDF, Word, images up to 10 MB)"
+                          >
+                            <input
+                              type="file"
+                              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.jpg,.jpeg,.png,.webp"
+                              onChange={handleAttachmentChange}
+                              disabled={!selectedOrderId || sending || staffRole === 'finance' || Boolean(editingMessage)}
+                              aria-label="Attach file"
+                            />
+                            <span>+</span>
+                          </label>
+
                           <textarea
                             className="messages-composer-textarea"
+                            onFocus={handleMessageComposerFocus}
                             value={text}
                             onChange={(event) => setText(event.target.value)}
                             onKeyDown={handleComposerKeyDown}
@@ -2752,17 +3501,18 @@ export function AdminReviews() {
                             maxLength={2000}
                             rows={1}
                             disabled={sending || staffRole === 'finance'}
-                            aria-label="Write a message"
+                            aria-label={editingMessage ? 'Edit message text' : 'Write a message'}
                           />
 
                           <button
                             className="messages-send-btn"
                             type="submit"
                             disabled={
-                              sending || staffRole === 'finance' || !text.trim()
+                              sending || staffRole === 'finance' || (!text.trim() && !attachment)
                             }
+                            aria-label={editingMessage ? 'Save edited message' : replyTo ? 'Send reply' : 'Send message'}
                           >
-                            {sending ? 'Sending…' : 'Send ↗'}
+                            {sending ? (editingMessage ? 'Saving…' : 'Sending…') : editingMessage ? 'Save edit' : 'Send ↗'}
                           </button>
                         </div>
 
@@ -2770,7 +3520,10 @@ export function AdminReviews() {
                           <span className="messages-composer-hint">
                             Enter to send · Shift + Enter for new line
                           </span>
-                          <span>
+                          <span
+                            className="messages-composer-counter"
+                            aria-label={`${text.length} of 2000 characters`}
+                          >
                             {text.length}/2000
                           </span>
                         </div>
@@ -3296,6 +4049,8 @@ function UploadPanel({
 
 function AdminFilesManager() {
   const [files, setFiles] = useState([]);
+  const [hasMoreFiles, setHasMoreFiles] = useState(false);
+  const [attachmentRowsLoaded, setAttachmentRowsLoaded] = useState(0);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -3316,7 +4071,7 @@ function AdminFilesManager() {
   const [actionBusy, setActionBusy] = useState('');
   const [notice, setNotice] = useState('');
 
-  async function loadFiles() {
+  async function loadFiles({ append = false } = {}) {
     if (!supabase) {
       setFiles([]);
       setOrders([]);
@@ -3351,14 +4106,15 @@ function AdminFilesManager() {
       if (!orderIds.length) {
         setOrders([]);
         setFiles([]);
+        setHasMoreFiles(false);
+        setAttachmentRowsLoaded(0);
         return;
       }
 
-      const { data: messageData, error: messageError } = await supabase
-        .from('messages')
-        .select('id, order_id, sender_id, body, created_at')
-        .in('order_id', orderIds)
-        .order('created_at', { ascending: false });
+      const { data: messageData, error: messageError } = await supabase.rpc(
+        'admin_list_message_attachments_v1',
+        { p_limit: 100, p_offset: append ? attachmentRowsLoaded : 0 }
+      );
 
       if (messageError) throw messageError;
 
@@ -3453,7 +4209,11 @@ function AdminFilesManager() {
       });
 
       setOrders(normalizedOrders);
-      setFiles(extracted);
+      setFiles((current) => append
+        ? [...current, ...extracted.filter((file) => !current.some((item) => item.id === file.id))]
+        : extracted);
+      setAttachmentRowsLoaded((current) => append ? current + (messageData || []).length : (messageData || []).length);
+      setHasMoreFiles((messageData || []).length === 100);
 
     } catch (loadError) {
       console.error('Admin files load error:', loadError);
@@ -3703,43 +4463,14 @@ function AdminFilesManager() {
     setNotice('');
 
     try {
-      const parsedBody = await supabase
-        .from('messages')
-        .select('id, body')
-        .eq('id', file.messageId)
-        .maybeSingle();
-
-      if (parsedBody.error) throw parsedBody.error;
-
-      const currentBody = parsedBody.data?.body;
-      const parsed = parseAttachmentMessage(currentBody);
-
+      const { error: unlinkError } = await supabase.rpc(
+        'admin_remove_message_attachment_v1',
+        { p_message_id: Number(file.messageId), p_storage_path: file.path }
+      );
+      if (unlinkError) throw unlinkError;
       const { error: storageError } = await supabase.storage
         .from(ATTACHMENT_BUCKET)
         .remove([file.path]);
-
-      if (storageError) throw storageError;
-
-      /*
-       * Preserve normal message text when an attachment was sent together
-       * with text. If the message only contained the attachment, remove the
-       * message row so the client does not see a dead file message.
-       */
-      if (parsed?.text) {
-        const { error: updateError } = await supabase
-          .from('messages')
-          .update({ body: parsed.text })
-          .eq('id', file.messageId);
-
-        if (updateError) throw updateError;
-      } else {
-        const { error: deleteError } = await supabase
-          .from('messages')
-          .delete()
-          .eq('id', file.messageId);
-
-        if (deleteError) throw deleteError;
-      }
 
       setFiles((current) =>
         current.filter((item) => item.id !== file.id)
@@ -3749,7 +4480,9 @@ function AdminFilesManager() {
         current.filter((id) => id !== file.id)
       );
 
-      setNotice('File removed.');
+      setNotice(storageError
+        ? `The conversation no longer links this file, but storage cleanup failed for "${file.path}". Remove that object from the private message-attachments bucket.`
+        : 'File removed.');
 
     } catch (deleteError) {
       console.error('Admin file delete error:', deleteError);
@@ -3781,37 +4514,15 @@ function AdminFilesManager() {
     try {
       for (const file of selectedFiles) {
         try {
-          const parsedBody = await supabase
-            .from('messages')
-            .select('id, body')
-            .eq('id', file.messageId)
-            .maybeSingle();
-
-          if (parsedBody.error) throw parsedBody.error;
-
-          const parsed = parseAttachmentMessage(parsedBody.data?.body);
-
+          const { error: unlinkError } = await supabase.rpc(
+            'admin_remove_message_attachment_v1',
+            { p_message_id: Number(file.messageId), p_storage_path: file.path }
+          );
+          if (unlinkError) throw unlinkError;
           const { error: storageError } = await supabase.storage
             .from(ATTACHMENT_BUCKET)
             .remove([file.path]);
-
           if (storageError) throw storageError;
-
-          if (parsed?.text) {
-            const { error: updateError } = await supabase
-              .from('messages')
-              .update({ body: parsed.text })
-              .eq('id', file.messageId);
-
-            if (updateError) throw updateError;
-          } else {
-            const { error: deleteError } = await supabase
-              .from('messages')
-              .delete()
-              .eq('id', file.messageId);
-
-            if (deleteError) throw deleteError;
-          }
 
           removed += 1;
         } catch (itemError) {
@@ -4188,6 +4899,13 @@ function AdminFilesManager() {
                     </div>
                   </section>
                 ))}
+              </div>
+            )}
+            {!loading && hasMoreFiles && (
+              <div className="admin-files-load-more">
+                <button type="button" className="admin-files-btn" onClick={() => void loadFiles({ append: true })}>
+                  Load more files
+                </button>
               </div>
             )}
           </>

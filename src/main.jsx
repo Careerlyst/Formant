@@ -8,12 +8,16 @@ import {
 } from 'react-router-dom';
 
 import { applyStoredTheme } from './lib/theme';
+import { applySeoMetadata, normalizePath } from './lib/seo';
 import './styles.css';
 import './pages/messages.css';
 
 import Preloader from './components/Preloader';
+import { PageNotFound, RouteErrorBoundary } from './components/ErrorExperience';
 
 import Home from './pages/Home';
+import Showcase from './pages/Showcase';
+import AdminShowcase from './pages/AdminShowcase';
 
 import {
   Services,
@@ -24,6 +28,8 @@ import {
   Legal
 } from './pages/PublicPages';
 
+import LegalPrivacy from './pages/LegalPrivacy';
+
 import Auth, {
   Forgot,
   ResetPassword,
@@ -32,9 +38,9 @@ import Auth, {
 
 import Protected from './components/Protected';
 import LeadAssessment from './pages/LeadAssessment';
+import ServiceSelection from './pages/ServiceSelection';
 import AdminLeads from './pages/AdminLeads';
 import AdminSettings from './pages/AdminSettings';
-import { applySeoMetadata } from './lib/seo';
 
 import {
   Dashboard,
@@ -85,9 +91,10 @@ function ScrollManager() {
           (targetId === 'process' ? document.getElementById('how-it-works') : null);
 
         if (target) {
+          const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
           target.scrollIntoView({
             block: 'start',
-            behavior: 'smooth'
+            behavior: prefersReducedMotion ? 'auto' : 'smooth'
           });
           return;
         }
@@ -106,45 +113,7 @@ function TitleManager() {
   const { pathname } = useLocation();
 
   useEffect(() => {
-    const normalizedPath = pathname.length > 1 && pathname.endsWith('/')
-      ? pathname.slice(0, -1)
-      : pathname;
-    const routeTitles = {
-      '/login': 'Formant — Login',
-      '/signup': 'Formant — Sign Up',
-      '/auth/callback': 'Formant — Verifying...',
-      '/forgot-password': 'Formant — Forgot Password',
-      '/reset-password': 'Formant — Reset Password',
-      '/privacy': 'Formant — Privacy',
-      '/terms': 'Formant — Terms',
-      '/refund': 'Formant — Refund',
-      '/assessment': 'Formant — Assessment',
-      '/dashboard': 'Formant — Dashboard',
-      '/dashboard/profile': 'Formant — Profile',
-      '/dashboard/orders': 'Formant — Orders',
-      '/dashboard/messages': 'Formant — Messages',
-      '/dashboard/files': 'Formant — Files',
-      '/dashboard/payments': 'Formant — Payments',
-      '/dashboard/notifications': 'Formant — Notifications',
-      '/dashboard/settings': 'Formant — Settings',
-      '/admin': 'Formant — Admin',
-      '/admin/workspace': 'Formant — Workspace',
-      '/admin/users': 'Formant — Users',
-      '/admin/leads': 'Formant — Leads',
-      '/admin/orders': 'Formant — Orders',
-      '/admin/projects': 'Formant — Projects',
-      '/admin/services': 'Formant — Services',
-      '/admin/payments': 'Formant — Payments',
-      '/admin/messages': 'Formant — Messages',
-      '/admin/files': 'Formant — Files',
-      '/admin/reviews': 'Formant — Reviews',
-      '/admin/coupons': 'Formant — Coupons',
-      '/admin/notifications': 'Formant — Notifications',
-      '/admin/settings': 'Formant — Settings'
-    };
-    const title = routeTitles[normalizedPath] ||
-      (normalizedPath.startsWith('/services/') ? 'Formant — Services' : undefined);
-    applySeoMetadata(pathname, title ? { title } : {});
+    applySeoMetadata(normalizePath(pathname));
   }, [pathname]);
 
   return null;
@@ -169,6 +138,11 @@ function App() {
       />
 
       <Route
+        path="/showcase"
+        element={<Showcase />}
+      />
+
+      <Route
         path="/services/:id"
         element={<ServiceDetail />}
       />
@@ -190,7 +164,12 @@ function App() {
 
       <Route
         path="/privacy"
-        element={<Legal type="privacy" />}
+        element={<LegalPrivacy />}
+      />
+
+      <Route
+        path="/privacy-policy"
+        element={<LegalPrivacy />}
       />
 
       <Route
@@ -243,6 +222,19 @@ function App() {
         element={
           <Protected>
             <LeadAssessment />
+          </Protected>
+        }
+      />
+
+      {/* =====================================================
+          SERVICE SELECTION (POST-ASSESSMENT DECISION)
+      ===================================================== */}
+
+      <Route
+        path="/service-selection"
+        element={
+          <Protected>
+            <ServiceSelection />
           </Protected>
         }
       />
@@ -420,6 +412,15 @@ function App() {
       />
 
       <Route
+        path="/admin/showcase"
+        element={
+          <Protected>
+            <AdminShowcase />
+          </Protected>
+        }
+      />
+
+      <Route
         path="/admin/reviews"
         element={
           <Protected>
@@ -455,6 +456,11 @@ function App() {
         }
       />
 
+      <Route
+        path="*"
+        element={<PageNotFound />}
+      />
+
     </Routes>
   );
 }
@@ -474,7 +480,7 @@ createRoot(
     <BrowserRouter>
       <ScrollManager />
       <TitleManager />
-      <App />
+      <RouteErrorBoundary><App /></RouteErrorBoundary>
     </BrowserRouter>
   </>
 );

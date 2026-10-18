@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { load, patch } from '../lib/store';
+import { activateUser, load } from '../lib/store';
 
 export default function Protected({ children }) {
 
@@ -12,29 +12,39 @@ export default function Protected({ children }) {
 
     let mounted = true;
     let authResolved = false;
+    let latestUserId = null;
 
-    function syncDashboardStore(nextSession) {
+    async function syncDashboardStore(nextSession) {
       if (!nextSession?.user) return;
 
       const user = nextSession.user;
-      const name =
+      const fallbackName =
         user.user_metadata?.full_name ||
         user.user_metadata?.name ||
         user.email?.split('@')[0] ||
         'Client';
-
-      patch((current) => ({
-        ...current,
+      let profile = null;
+      if (supabase) {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, name, email, phone, location, target_role, experience, education, skills, certifications, linkedin, github, portfolio, bio, preferences')
+          .eq('id', user.id)
+          .maybeSingle();
+        if (error) console.error('Profile hydration failed:', error);
+        profile = data;
+      }
+      if (!mounted || latestUserId !== user.id) return;
+      const name = profile?.name || fallbackName;
+      activateUser(user.id, {
+        replaceProfile: true,
         user: {
+          id: user.id,
           email: user.email,
-          name
+          name,
+          assessmentCompleted: Boolean(user.user_metadata?.careerlyst_assessment_completed)
         },
-        profile: {
-          ...(current.profile || {}),
-          email: user.email,
-          name
-        }
-      }));
+        profile: { ...(profile || {}), email: user.email, name }
+      });
     }
 
     /*
@@ -46,7 +56,7 @@ export default function Protected({ children }) {
     if (supabase) {
 
       const { data } = supabase.auth.onAuthStateChange(
-        (event, nextSession) => {
+        (_event, nextSession) => {
 
           if (!mounted) return;
 
@@ -68,8 +78,18 @@ export default function Protected({ children }) {
             SIGNED_IN / TOKEN_REFRESHED keep the existing user in place;
             SIGNED_OUT clears the session and allows the login redirect.
           */
+          const nextUserId = nextSession?.user?.id || null;
+          const identityChanged = nextUserId !== latestUserId;
           setSession(nextSession);
-          syncDashboardStore(nextSession);
+          latestUserId = nextUserId;
+          if (!nextSession?.user) {
+            setLoading(false);
+            return;
+          }
+          if (identityChanged) setLoading(true);
+          void syncDashboardStore(nextSession).finally(() => {
+            if (mounted && latestUserId === nextUserId) setLoading(false);
+          });
         }
       );
 
@@ -79,7 +99,7 @@ export default function Protected({ children }) {
         the auth listener finishes initializing.
       */
       supabase.auth.getSession()
-        .then(({ data: sessionData, error }) => {
+        .then(async ({ data: sessionData, error }) => {
           if (!mounted) return;
 
           if (error) {
@@ -94,8 +114,10 @@ export default function Protected({ children }) {
             completed; the app never redirects while it is still pending.
           */
           authResolved = true;
+          latestUserId = nextSession?.user?.id || null;
           setSession(nextSession);
-          syncDashboardStore(nextSession);
+          await syncDashboardStore(nextSession);
+          if (!mounted || latestUserId !== (nextSession?.user?.id || null)) return;
           setLoading(false);
         })
         .catch((error) => {
@@ -164,5 +186,11 @@ export default function Protected({ children }) {
   }
 
 
-  return children;
+  // Remount protected page state when the authenticated identity changes so
+  // an open conversation or draft from the previous user cannot carry over.
+  return (
+    <React.Fragment key={session?.user?.id || session?.user?.email || 'protected-session'}>
+      {children}
+    </React.Fragment>
+  );
 }
