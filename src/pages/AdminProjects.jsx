@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import DashboardShell from '../components/DashboardShell';
+import MessageActions from '../components/MessageActions';
 import { supabase } from '../lib/supabase';
+import AdminProfileContext from '../components/AdminProfileContext';
 
 const STAFF_ROLES = ['admin', 'expert', 'support', 'finance'];
 const ACTIVE_STATUSES = ['pending', 'information_required', 'queued', 'in_progress', 'internal_review', 'client_review', 'revision'];
@@ -33,6 +35,17 @@ function formatDate(value, withTime = false) {
   ).format(date);
 }
 
+function messagePreview(message) {
+  if (!message) return 'Referenced message';
+  if (message.deleted_at) return 'Original message deleted';
+  const body = String(message.body || '');
+  if (!body.startsWith('__CAREERLYST_ATTACHMENT__:')) return body;
+  try {
+    const payload = JSON.parse(body.slice('__CAREERLYST_ATTACHMENT__:'.length));
+    return payload.text || (payload.attachment?.name ? `Attachment: ${payload.attachment.name}` : 'Attachment');
+  } catch { return 'Attachment'; }
+}
+
 function money(order) {
   const currency = order?.currency || 'USD';
   try {
@@ -62,7 +75,7 @@ function Field({ label, value, full = false, link = false }) {
   );
 }
 
-function BriefPanel({ order, brief, clientName, clientEmail, onClose }) {
+function BriefPanel({ order, brief, clientName, clientEmail, profile, onClose }) {
   if (!order) return null;
   return (
     <div className="team-drawer-overlay" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -93,6 +106,8 @@ function BriefPanel({ order, brief, clientName, clientEmail, onClose }) {
               <Field label="Client notes" value={order.client_notes} full />
             </div>
           </section>
+
+          <AdminProfileContext profile={profile} />
 
           {!brief ? (
             <div className="team-empty team-empty-compact">
@@ -196,12 +211,23 @@ function TeamConversationDrawer({
   text,
   connection,
   error,
+  hasOlder,
+  loadingOlder,
+  onLoadOlder,
   onTextChange,
   onKeyDown,
   onSend,
   onClose,
   bodyRef,
-  textareaRef
+  textareaRef,
+  replyTo,
+  editingMessage,
+  onReply,
+  onEdit,
+  onDelete,
+  onCancelAction,
+  onJump,
+  highlightedMessageId
 }) {
   if (!order) return null;
 
@@ -254,6 +280,11 @@ function TeamConversationDrawer({
           </div>
 
           <div className="team-chat-messages" ref={bodyRef}>
+            {hasOlder && (
+              <button type="button" className="team-chat-load-older" onClick={onLoadOlder} disabled={loadingOlder}>
+                {loadingOlder ? 'Loading…' : 'Load older messages'}
+              </button>
+            )}
             <div className="team-chat-system-note">
               This thread is shared with the client in their Formant dashboard.
             </div>
@@ -272,17 +303,22 @@ function TeamConversationDrawer({
                 const isTeam = message.sender_id !== order.user_id;
                 return (
                   <div
-                    className={`team-chat-row ${isTeam ? 'is-team' : 'is-client'}`}
+                    className={`team-chat-row ${isTeam ? 'is-team' : 'is-client'} ${String(highlightedMessageId) === String(message.id) ? 'is-highlighted' : ''}`}
+                    id={`message-${message.id}`}
                     key={message.id}
                   >
                     <div className="team-chat-bubble">
-                      <p>{message.body}</p>
+                      {message.reply_to_message_id && (() => { const original = messages.find((item) => String(item.id) === String(message.reply_to_message_id)); return <button type="button" className="messages-reply-reference" onClick={() => onJump(message.reply_to_message_id)}><strong>Reply to {original ? (String(original.sender_id) === String(order.user_id) ? clientName : 'Formant Team') : 'message'}</strong><span>{messagePreview(original).slice(0, 120)}</span></button>; })()}
+                      {message.deleted_at ? <p className="messages-deleted-copy">This message was deleted.</p> : <p>{message.body}</p>}
                       <small>
                         {isTeam ? 'Formant Team' : clientName}
                         {' · '}
                         {formatDate(message.created_at, true)}
+                        {isTeam ? (message.read_at ? ' · Seen' : ' · Sent') : ''}
+                        {message.edited_at && !message.deleted_at ? ' · Edited' : ''}
                       </small>
                     </div>
+                    <MessageActions canReply={role !== 'finance' && !message.deleted_at} canEdit={isTeam && String(message.sender_id) === String(staffUserId) && !message.deleted_at && !message.body?.startsWith('__CAREERLYST_ATTACHMENT__:') && role !== 'finance'} canDelete={isTeam && String(message.sender_id) === String(staffUserId) && !message.deleted_at && role !== 'finance'} onReply={() => onReply(message)} onEdit={() => onEdit(message)} onDelete={() => onDelete(message)} />
                   </div>
                 );
               })
@@ -290,6 +326,7 @@ function TeamConversationDrawer({
           </div>
 
           <form className="team-chat-composer" onSubmit={onSend}>
+            {(replyTo || editingMessage) && <div className="messages-composer-context" role="status"><div><strong>{editingMessage ? 'Editing message' : 'Replying to'}</strong><span>{editingMessage ? editingMessage.originalText : messagePreview(replyTo).slice(0, 120)}</span></div><button type="button" onClick={onCancelAction} aria-label="Cancel reply or edit">×</button></div>}
             {role === 'finance' && (
               <div className="team-permission-note">Finance access is read-only for client conversations.</div>
             )}
@@ -350,11 +387,16 @@ export default function AdminProjects() {
   const [staffUserId, setStaffUserId] = useState('');
   const [conversationOrder, setConversationOrder] = useState(null);
   const [conversationMessages, setConversationMessages] = useState([]);
+  const [conversationHasOlder, setConversationHasOlder] = useState(false);
+  const [conversationLoadingOlder, setConversationLoadingOlder] = useState(false);
   const [conversationText, setConversationText] = useState('');
   const [conversationLoading, setConversationLoading] = useState(false);
   const [conversationSending, setConversationSending] = useState(false);
   const [conversationConnection, setConversationConnection] = useState('offline');
   const [conversationError, setConversationError] = useState('');
+  const [conversationReplyTo, setConversationReplyTo] = useState(null);
+  const [conversationEditing, setConversationEditing] = useState(null);
+  const [conversationHighlightedMessageId, setConversationHighlightedMessageId] = useState(null);
   const conversationBodyRef = useRef(null);
   const conversationTextareaRef = useRef(null);
 
@@ -397,7 +439,7 @@ export default function AdminProjects() {
 
       const userIds = [...new Set(nextOrders.map((o) => o.user_id).filter(Boolean))];
       if (userIds.length) {
-        const { data: profileData, error: profileError } = await supabase.from('profiles').select('id, name, email').in('id', userIds);
+        const { data: profileData, error: profileError } = await supabase.from('profiles').select('id, name, email, phone, location, target_role, experience, education, skills, certifications, linkedin, github, portfolio, bio, preferences, lead_assessment, lead_score, lead_status, lead_assessment_completed_at').in('id', userIds);
         if (profileError) throw profileError;
         setProfiles(Object.fromEntries((profileData || []).map((p) => [p.id, p])));
       } else setProfiles({});
@@ -464,20 +506,24 @@ export default function AdminProjects() {
   async function markConversationRead(orderId) {
     if (!supabase || !staffUserId || !orderId) return;
 
-    const { data, error: readError } = await supabase
-      .from('messages')
-      .update({ read_at: new Date().toISOString() })
-      .eq('order_id', Number(orderId))
-      .neq('sender_id', staffUserId)
-      .is('read_at', null)
-      .select('id, order_id, sender_id, body, created_at, read_at');
+    const { error: readError } = await supabase.rpc(
+      'mark_order_messages_read_v1',
+      { p_order_id: Number(orderId) }
+    );
 
     if (readError) {
       console.error('Admin conversation read update error:', readError);
       return;
     }
 
-    (data || []).forEach(appendConversationMessage);
+    const { data, error: pageError } = await supabase.rpc('list_message_thread_actions_v1', {
+      p_order_id: Number(orderId), p_before_created_at: null, p_before_id: null, p_limit: 50
+    });
+    if (pageError) {
+      console.error('Admin conversation refresh error:', pageError);
+      return;
+    }
+    setConversationMessages([...(data || [])].reverse());
   }
 
   useEffect(() => {
@@ -489,26 +535,27 @@ export default function AdminProjects() {
 
     let active = true;
     let channel;
+    let snapshotRequest = 0;
     const orderId = String(conversationOrder.id);
 
     async function loadConversation() {
+      const requestId = ++snapshotRequest;
       setConversationLoading(true);
       setConversationError('');
       setConversationConnection('connecting');
       setConversationMessages([]);
 
       try {
-        const { data, error: messageError } = await supabase
-          .from('messages')
-          .select('id, order_id, sender_id, body, created_at, read_at')
-          .eq('order_id', Number(orderId))
-          .order('created_at', { ascending: true });
+        const { data, error: messageError } = await supabase.rpc('list_message_thread_actions_v1', {
+          p_order_id: Number(orderId), p_before_created_at: null, p_before_id: null, p_limit: 50
+        });
 
-        if (!active) return;
+        if (!active || requestId !== snapshotRequest) return;
         if (messageError) throw messageError;
+        setConversationHasOlder((data || []).length === 50);
 
         setConversationMessages((current) => {
-          const merged = new Map((data || []).map((message) => [String(message.id), message]));
+          const merged = new Map([...(data || [])].reverse().map((message) => [String(message.id), message]));
           current.forEach((message) => merged.set(String(message.id), message));
           return [...merged.values()].sort(
             (a, b) =>
@@ -520,14 +567,14 @@ export default function AdminProjects() {
         requestAnimationFrame(() => scrollConversationToBottom('auto'));
       } catch (messageError) {
         console.error('Admin conversation load error:', messageError);
-        if (active) {
+        if (active && requestId === snapshotRequest) {
           setConversationMessages([]);
           setConversationError(
             messageError?.message || 'Could not load this client conversation.'
           );
         }
       } finally {
-        if (active) setConversationLoading(false);
+        if (active && requestId === snapshotRequest) setConversationLoading(false);
       }
     }
 
@@ -588,6 +635,7 @@ export default function AdminProjects() {
         if (!active) return;
         if (status === 'SUBSCRIBED') {
           setConversationConnection('online');
+          void loadConversation();
         } else if (
           status === 'CHANNEL_ERROR' ||
           status === 'TIMED_OUT' ||
@@ -597,8 +645,24 @@ export default function AdminProjects() {
         }
       });
 
+    const handleVisibility = () => {
+      if (active && document.visibilityState === 'visible') void loadConversation();
+    };
+    const handleOnline = () => {
+      if (!active) return;
+      setConversationConnection('connecting');
+      void loadConversation();
+    };
+    const handleOffline = () => setConversationConnection('offline');
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
     return () => {
       active = false;
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
       if (channel) supabase.removeChannel(channel);
     };
   }, [conversationOrder, staffUserId]);
@@ -615,6 +679,11 @@ export default function AdminProjects() {
   }, [conversationOrder, conversationText]);
 
   function handleConversationKeyDown(event) {
+    if (event.key === 'Escape' && (conversationEditing || conversationReplyTo)) {
+      event.preventDefault();
+      cancelConversationAction();
+      return;
+    }
     if (event.key !== 'Enter' || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) {
       return;
     }
@@ -627,6 +696,7 @@ export default function AdminProjects() {
 
   function closeConversation() {
     if (conversationSending) return;
+    cancelConversationAction();
     setConversationOrder(null);
     setConversationMessages([]);
     setConversationText('');
@@ -636,6 +706,27 @@ export default function AdminProjects() {
 
   async function sendConversationMessage(event) {
     event.preventDefault();
+    if (conversationEditing) {
+      const cleanEdit = conversationText.trim();
+      if (!cleanEdit || cleanEdit === conversationEditing.originalText) {
+        setConversationText(conversationEditing.draft);
+        setConversationEditing(null);
+        return;
+      }
+      setConversationSending(true);
+      setConversationError('');
+      try {
+        const { data, error: editError } = await supabase.rpc('edit_message_v1', { p_message_id: Number(conversationEditing.id), p_body: cleanEdit });
+        if (editError) throw editError;
+        const updated = Array.isArray(data) ? data[0] : data;
+        if (updated) appendConversationMessage(updated);
+        setConversationText(conversationEditing.draft);
+        setConversationEditing(null);
+      } catch (editError) {
+        setConversationError(editError?.message || 'Could not edit this message.');
+      } finally { setConversationSending(false); }
+      return;
+    }
     const cleanText = conversationText.trim();
     if (!cleanText || !conversationOrder || !staffUserId || conversationSending || role === 'finance') return;
 
@@ -648,14 +739,16 @@ export default function AdminProjects() {
         .insert({
           order_id: Number(conversationOrder.id),
           sender_id: staffUserId,
-          body: cleanText
+          body: cleanText,
+          reply_to_message_id: conversationReplyTo?.id || null
         })
-        .select('id, order_id, sender_id, body, created_at, read_at')
+        .select('id, order_id, sender_id, body, created_at, read_at, reply_to_message_id, edited_at, deleted_at')
         .single();
 
       if (insertError) throw insertError;
       if (data) appendConversationMessage(data);
       setConversationText('');
+      setConversationReplyTo(null);
       requestAnimationFrame(() => {
         resizeConversationComposer();
         scrollConversationToBottom('smooth');
@@ -667,6 +760,79 @@ export default function AdminProjects() {
       );
     } finally {
       setConversationSending(false);
+    }
+  }
+
+  function beginConversationReply(message) {
+    if (message.deleted_at || role === 'finance') return;
+    setConversationEditing(null);
+    setConversationReplyTo(message);
+    requestAnimationFrame(() => conversationTextareaRef.current?.focus());
+  }
+
+  function beginConversationEdit(message) {
+    if (message.deleted_at || message.body?.startsWith('__CAREERLYST_ATTACHMENT__:')) return;
+    setConversationReplyTo(null);
+    setConversationEditing({ id: message.id, originalText: message.body, draft: conversationText });
+    setConversationText(message.body);
+    requestAnimationFrame(() => conversationTextareaRef.current?.focus());
+  }
+
+  function cancelConversationAction() {
+    if (conversationEditing) setConversationText(conversationEditing.draft);
+    setConversationEditing(null);
+    setConversationReplyTo(null);
+  }
+
+  async function deleteConversationMessage(message) {
+    if (String(message.sender_id) !== String(staffUserId) || role === 'finance' || !window.confirm('Delete this message? Its text will no longer be visible.')) return;
+    setConversationError('');
+    try {
+      const { data, error: deleteError } = await supabase.rpc('delete_message_v1', { p_message_id: Number(message.id) });
+      if (deleteError) throw deleteError;
+      const deleted = Array.isArray(data) ? data[0] : data;
+      if (deleted) appendConversationMessage(deleted);
+      if (deleted?.storage_path) {
+        const { error: storageError } = await supabase.storage.from('message-attachments').remove([deleted.storage_path]);
+        if (storageError) setConversationError('Message deleted, but its attachment could not be removed. Contact support to clean up the stored file.');
+      }
+    } catch (deleteError) { setConversationError(deleteError?.message || 'Could not delete this message.'); }
+  }
+
+  async function jumpToConversationMessage(messageId) {
+    let target = conversationMessages.find((message) => String(message.id) === String(messageId));
+    if (!target) {
+      const { data, error: contextError } = await supabase.rpc('get_message_reply_context_v1', { p_message_id: Number(messageId) });
+      if (contextError) { setConversationError(contextError.message || 'Could not load the referenced message.'); return; }
+      target = Array.isArray(data) ? data[0] : data;
+      if (target && String(target.order_id) === String(conversationOrder?.id)) appendConversationMessage(target);
+    }
+    if (target) {
+      setConversationHighlightedMessageId(String(messageId));
+      requestAnimationFrame(() => document.getElementById(`message-${messageId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+      window.setTimeout(() => setConversationHighlightedMessageId(null), 1600);
+    }
+  }
+
+  async function loadOlderConversationMessages() {
+    if (!conversationOrder || !conversationHasOlder || conversationLoadingOlder || !conversationMessages.length) return;
+    const oldest = conversationMessages[0];
+    setConversationLoadingOlder(true);
+    try {
+      const { data, error: pageError } = await supabase.rpc('list_message_thread_actions_v1', {
+        p_order_id: Number(conversationOrder.id),
+        p_before_created_at: oldest.created_at,
+        p_before_id: Number(oldest.id),
+        p_limit: 50
+      });
+      if (pageError) throw pageError;
+      const older = [...(data || [])].reverse();
+      setConversationMessages((current) => [...older, ...current]);
+      setConversationHasOlder((data || []).length === 50);
+    } catch (pageError) {
+      setConversationError(pageError?.message || 'Older messages could not be loaded.');
+    } finally {
+      setConversationLoadingOlder(false);
     }
   }
 
@@ -909,7 +1075,7 @@ export default function AdminProjects() {
         )}
         <div className="team-back-row"><Link to="/admin">← Back to control panel</Link></div>
       </main>
-      {selectedOrder && <BriefPanel order={selectedOrder} brief={briefs[selectedOrder.id]} clientName={profiles[selectedOrder.user_id]?.name || 'Client'} clientEmail={profiles[selectedOrder.user_id]?.email || ''} onClose={() => setSelectedOrder(null)} />}
+      {selectedOrder && <BriefPanel order={selectedOrder} brief={briefs[selectedOrder.id]} clientName={profiles[selectedOrder.user_id]?.name || 'Client'} clientEmail={profiles[selectedOrder.user_id]?.email || ''} profile={profiles[selectedOrder.user_id]} onClose={() => setSelectedOrder(null)} />}
       {editingOrder && <EditDrawer order={editingOrder} brief={briefs[editingOrder.id]} clientName={profiles[editingOrder.user_id]?.name || 'Client'} role={role} saving={savingId === editingOrder.id} onClose={() => setEditingOrder(null)} onSave={(changes) => saveOrderChanges(editingOrder, changes)} />}
       {conversationOrder && (
         <TeamConversationDrawer
@@ -923,12 +1089,23 @@ export default function AdminProjects() {
           text={conversationText}
           connection={conversationConnection}
           error={conversationError}
+          hasOlder={conversationHasOlder}
+          loadingOlder={conversationLoadingOlder}
+          onLoadOlder={loadOlderConversationMessages}
           onTextChange={(event) => setConversationText(event.target.value)}
           onKeyDown={handleConversationKeyDown}
           onSend={sendConversationMessage}
           onClose={closeConversation}
           bodyRef={conversationBodyRef}
           textareaRef={conversationTextareaRef}
+          replyTo={conversationReplyTo}
+          editingMessage={conversationEditing}
+          onReply={beginConversationReply}
+          onEdit={beginConversationEdit}
+          onDelete={deleteConversationMessage}
+          onCancelAction={cancelConversationAction}
+          onJump={jumpToConversationMessage}
+          highlightedMessageId={conversationHighlightedMessageId}
         />
       )}
     </DashboardShell>

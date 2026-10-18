@@ -39,6 +39,8 @@ export default function PublicNav() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [session, setSession] = useState(null);
+  const [profileName, setProfileName] = useState('');
+  const [avatarBroken, setAvatarBroken] = useState(false);
   const [authReady, setAuthReady] = useState(!supabase);
   const [isProcessInView, setIsProcessInView] = useState(() => {
     if (typeof window !== 'undefined' && location.pathname === '/') {
@@ -138,6 +140,34 @@ export default function PublicNav() {
   }, []);
 
   useEffect(() => {
+    let mounted = true;
+    const userId = session?.user?.id;
+    if (!supabase || !userId) {
+      setProfileName('');
+      return () => { mounted = false; };
+    }
+    setProfileName('');
+    const refreshProfileName = () => supabase.from('profiles').select('name').eq('id', userId).maybeSingle()
+      .then(({ data, error }) => {
+        if (!mounted) return;
+        if (error) console.error('Public navigation profile name load failed:', error);
+        setProfileName(data?.name || '');
+      });
+    const handleProfileUpdate = (event) => {
+      if (!event.detail?.userId || event.detail.userId === userId) {
+        setProfileName(event.detail?.name || '');
+        void refreshProfileName();
+      }
+    };
+    void refreshProfileName();
+    window.addEventListener('careerlyst-profile-updated', handleProfileUpdate);
+    return () => {
+      mounted = false;
+      window.removeEventListener('careerlyst-profile-updated', handleProfileUpdate);
+    };
+  }, [session?.user?.id]);
+
+  useEffect(() => {
     function handlePointerDown(event) {
       if (!navRef.current?.contains(event.target)) {
         setAccountOpen(false);
@@ -163,9 +193,15 @@ export default function PublicNav() {
   const closeAccount = () => setAccountOpen(false);
   const isAuthenticated = authReady && Boolean(session?.user);
   const user = session?.user;
-  const userName = getUserName(user);
-  const avatarUrl = getAvatarUrl(user);
-  const initials = getInitials(user);
+  const userName = profileName || getUserName(user);
+  const avatarSource = getAvatarUrl(user);
+  const avatarUrl = avatarBroken ? '' : avatarSource;
+  const initials = (() => {
+    const parts = userName.trim().split(/\s+/).filter(Boolean);
+    return parts.length > 1 ? `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase() : (userName.slice(0, 2).toUpperCase() || getInitials(user));
+  })();
+
+  useEffect(() => setAvatarBroken(false), [avatarSource]);
 
   async function handleLogout() {
     closeAccount();
@@ -193,8 +229,9 @@ export default function PublicNav() {
         document.getElementById('process');
 
       if (target) {
+        const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
         target.scrollIntoView({
-          behavior: 'smooth',
+          behavior: prefersReducedMotion ? 'auto' : 'smooth',
           block: 'start'
         });
       }
@@ -202,10 +239,10 @@ export default function PublicNav() {
 
     if (location.pathname === '/') {
       setIsProcessInView(true);
-      scrollToProcess();
       if (window.location.hash !== '#process') {
         window.history.pushState(null, '', '#process');
       }
+      window.requestAnimationFrame(scrollToProcess);
     } else {
       navigate('/#process');
     }
@@ -214,6 +251,8 @@ export default function PublicNav() {
   const isServicesActive =
     location.pathname === '/services' ||
     location.pathname.startsWith('/services/');
+
+  const isShowcaseActive = location.pathname === '/showcase';
 
   const isPricingActive =
     location.pathname === '/pricing' ||
@@ -238,6 +277,13 @@ export default function PublicNav() {
             aria-current={isServicesActive ? 'page' : undefined}
           >
             Services
+          </Link>
+          <Link
+            to="/showcase"
+            className={isShowcaseActive ? 'active' : ''}
+            aria-current={isShowcaseActive ? 'page' : undefined}
+          >
+            Showcase
           </Link>
           <a
             className={isHowItWorksActive ? 'active' : ''}
@@ -293,7 +339,7 @@ export default function PublicNav() {
                 onClick={() => setAccountOpen((open) => !open)}
               >
                 {avatarUrl ? (
-                  <img src={avatarUrl} alt="" className="account-avatar-image" />
+                  <img src={avatarUrl} alt="" className="account-avatar-image" onError={() => setAvatarBroken(true)} />
                 ) : (
                   <span className="account-avatar-initials">{initials}</span>
                 )}
@@ -304,7 +350,7 @@ export default function PublicNav() {
                   <div className="account-dropdown-head">
                     <span className="account-dropdown-avatar">
                       {avatarUrl ? (
-                        <img src={avatarUrl} alt="" className="account-avatar-image" />
+                        <img src={avatarUrl} alt="" className="account-avatar-image" onError={() => setAvatarBroken(true)} />
                       ) : (
                         initials
                       )}
@@ -369,6 +415,15 @@ export default function PublicNav() {
             <span>Services</span>
             <span>↗</span>
           </Link>
+          <Link
+            to="/showcase"
+            className={isShowcaseActive ? 'active' : ''}
+            aria-current={isShowcaseActive ? 'page' : undefined}
+            onClick={closeMenu}
+          >
+            <span>Showcase</span>
+            <span>↗</span>
+          </Link>
           <a
             href="/#process"
             className={isHowItWorksActive ? 'active' : ''}
@@ -417,7 +472,7 @@ export default function PublicNav() {
               <div className="mobile-account-summary">
                 <span className="account-dropdown-avatar">
                   {avatarUrl ? (
-                    <img src={avatarUrl} alt="" className="account-avatar-image" />
+                    <img src={avatarUrl} alt="" className="account-avatar-image" onError={() => setAvatarBroken(true)} />
                   ) : (
                     initials
                   )}

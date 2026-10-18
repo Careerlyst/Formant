@@ -12,6 +12,7 @@ import {
   logout
 } from '../lib/store';
 import { supabase } from '../lib/supabase';
+import { subscribeToClientMessages } from '../lib/messageRealtime';
 
 /* =========================================================
    NAVIGATION
@@ -98,6 +99,11 @@ const adminNav = [
     to: '/admin/services',
     label: 'Services',
     icon: 'layers'
+  },
+  {
+    to: '/admin/showcase',
+    label: 'Showcase',
+    icon: 'file'
   },
   {
     to: '/admin/payments',
@@ -284,6 +290,7 @@ export default function DashboardShell({
 
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [storeSnapshot, setStoreSnapshot] = useState(() => load());
   const mobileMenuButtonRef = React.useRef(null);
   const sidebarRef = React.useRef(null);
 
@@ -292,7 +299,7 @@ export default function DashboardShell({
     notifications: 0
   });
 
-  const s = load();
+  const s = storeSnapshot;
 
   const items = admin
     ? adminNav
@@ -304,6 +311,12 @@ export default function DashboardShell({
   useEffect(() => {
     setMobileNavOpen(false);
   }, [location.pathname, location.search, location.hash]);
+
+  useEffect(() => {
+    const refreshStoreSnapshot = () => setStoreSnapshot(load());
+    window.addEventListener('careerlyst-store', refreshStoreSnapshot);
+    return () => window.removeEventListener('careerlyst-store', refreshStoreSnapshot);
+  }, []);
 
   useEffect(() => {
     const desktopQuery = window.matchMedia('(min-width: 901px)');
@@ -381,9 +394,26 @@ export default function DashboardShell({
   useEffect(() => {
     let mounted = true;
     let notificationChannel = null;
-    let messageChannel = null;
+    let unsubscribeMessageChannel = null;
+    let unreadRefreshPromise = null;
+    let refreshRequested = false;
 
-    async function loadUnreadCounts() {
+    function loadUnreadCounts() {
+      if (unreadRefreshPromise) {
+        refreshRequested = true;
+        return unreadRefreshPromise;
+      }
+      unreadRefreshPromise = refreshUnreadCounts().finally(() => {
+        unreadRefreshPromise = null;
+        if (refreshRequested && mounted) {
+          refreshRequested = false;
+          void loadUnreadCounts();
+        }
+      });
+      return unreadRefreshPromise;
+    }
+
+    async function refreshUnreadCounts() {
       if (!supabase) {
         if (!mounted) return;
 
@@ -434,6 +464,23 @@ export default function DashboardShell({
           return;
         }
 
+        // Register each realtime handler once, synchronously before the first
+        // count-query await. Concurrent focus/visibility refreshes can then
+        // never race into registering a callback on an already-subscribed channel.
+        if (!notificationChannel) {
+          notificationChannel = supabase
+            .channel(`sidebar-notifications-${user.id}`)
+            .on('postgres_changes', {
+              event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}`
+            }, () => { void loadUnreadCounts(); })
+            .subscribe();
+        }
+        if (!location.pathname.startsWith('/dashboard/messages') && !unsubscribeMessageChannel) {
+          unsubscribeMessageChannel = subscribeToClientMessages(user.id, {
+            onMessage: () => { void loadUnreadCounts(); }
+          });
+        }
+
         const [
           notificationResult,
           ordersResult
@@ -471,26 +518,17 @@ export default function DashboardShell({
         let messageCount = 0;
 
         if (orderIds.length) {
-          const {
-            count,
-            error: messageError
-          } = await supabase
-            .from('messages')
-            .select('id', {
-              count: 'exact',
-              head: true
-            })
-            .in('order_id', orderIds)
-            .neq('sender_id', user.id)
-            .is('read_at', null);
-
+          const { data: summaries, error: messageError } = await supabase.rpc(
+            'list_message_summaries_v1',
+            { p_order_ids: orderIds }
+          );
           if (messageError) {
-            console.error(
-              'Sidebar message count error:',
-              messageError
-            );
+            console.error('Sidebar message count error:', messageError);
           } else {
-            messageCount = count || 0;
+            messageCount = (summaries || []).reduce(
+              (count, summary) => count + Number(summary.unread_count || 0),
+              0
+            );
           }
         }
 
@@ -501,36 +539,6 @@ export default function DashboardShell({
           notifications: notificationResult.count || 0
         });
 
-        notificationChannel = supabase
-          .channel(`sidebar-notifications-${user.id}`)
-          .on(
-            'postgres_changes',
-            {
-              event: '*',
-              schema: 'public',
-              table: 'notifications',
-              filter: `user_id=eq.${user.id}`
-            },
-            () => {
-              loadUnreadCounts();
-            }
-          )
-          .subscribe();
-
-        messageChannel = supabase
-          .channel(`sidebar-messages-${user.id}`)
-          .on(
-            'postgres_changes',
-            {
-              event: '*',
-              schema: 'public',
-              table: 'messages'
-            },
-            () => {
-              loadUnreadCounts();
-            }
-          )
-          .subscribe();
       } catch (error) {
         console.error(
           'Sidebar unread count error:',
@@ -590,11 +598,9 @@ export default function DashboardShell({
         supabase.removeChannel(notificationChannel);
       }
 
-      if (messageChannel) {
-        supabase.removeChannel(messageChannel);
-      }
+      unsubscribeMessageChannel?.();
     };
-  }, [admin]);
+  }, [admin, location.pathname]);
 
   const handleSignOut = async () => {
     setIsLoggingOut(true);
@@ -834,7 +840,9 @@ export default function DashboardShell({
           </button>
         </div>
 
-        {children}
+        <div className="app-main-content">
+          {children}
+        </div>
 
       </main>
 

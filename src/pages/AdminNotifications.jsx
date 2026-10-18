@@ -4,6 +4,7 @@ import React, {
   useMemo,
   useState
 } from 'react';
+import { Navigate } from 'react-router-dom';
 
 import DashboardShell from '../components/DashboardShell';
 import { supabase } from '../lib/supabase';
@@ -149,7 +150,80 @@ function StatCard({
 }
 
 
+const STAFF_ROLES = new Set(['admin', 'expert', 'support', 'finance']);
+
 export default function AdminNotifications() {
+  const [access, setAccess] = useState({ status: 'checking', error: '' });
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function checkStaffAccess() {
+      setAccess({ status: 'checking', error: '' });
+
+      if (!supabase) {
+        if (mounted) setAccess({ status: 'error', error: 'Admin access could not be checked because Supabase is unavailable.' });
+        return;
+      }
+
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError) {
+        if (mounted) setAccess({ status: 'error', error: userError.message });
+        return;
+      }
+      if (!user) {
+        if (mounted) setAccess({ status: 'denied', error: '' });
+        return;
+      }
+
+      const { data: roleRow, error: roleError } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (roleError) {
+        if (mounted) setAccess({ status: 'error', error: roleError.message });
+        return;
+      }
+
+      if (mounted) {
+        setAccess({ status: STAFF_ROLES.has(String(roleRow?.role || '').toLowerCase()) ? 'allowed' : 'denied', error: '' });
+      }
+    }
+
+    checkStaffAccess().catch((error) => {
+      if (mounted) setAccess({ status: 'error', error: error?.message || 'Unexpected error while checking staff access.' });
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, [attempt]);
+
+  if (access.status === 'checking') {
+    return <div role="status" style={{ minHeight: '50vh', display: 'grid', placeItems: 'center' }}>Checking staff access…</div>;
+  }
+
+  if (access.status === 'denied') {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  if (access.status === 'error') {
+    return (
+      <div role="alert" style={{ maxWidth: 640, margin: '48px auto', padding: 24 }}>
+        <p>Admin notifications could not verify staff access.</p>
+        <p>{access.error}</p>
+        <button type="button" onClick={() => setAttempt((current) => current + 1)}>Try again</button>
+      </div>
+    );
+  }
+
+  return <AdminNotificationsPage />;
+}
+
+function AdminNotificationsPage() {
   const [notifications, setNotifications] = useState([]);
   const [users, setUsers] = useState([]);
 

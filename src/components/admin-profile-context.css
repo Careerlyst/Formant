@@ -1,0 +1,47 @@
+.admin-profile-context {
+  border: 1px solid var(--line, #deded5);
+  border-radius: 14px;
+  background: var(--paper, #fff);
+  padding: 18px;
+  color: var(--ink, #11120f);
+}
+.admin-profile-context-head,
+.admin-profile-assessment-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.admin-profile-context-head > div:first-child > span {
+  color: var(--muted, #6d7069);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .1em;
+}
+.admin-profile-context-head h3 { margin: 5px 0 0; font-size: 17px; }
+.admin-profile-readiness { display: flex; align-items: baseline; gap: 7px; color: var(--muted, #6d7069); font-size: 11px; }
+.admin-profile-readiness strong { color: var(--ink, #11120f); font-size: 16px; }
+.admin-profile-context-grid,
+.admin-profile-assessment-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 18px;
+  margin-top: 16px;
+}
+.admin-profile-context-field { min-width: 0; }
+.admin-profile-context-field > span,
+.admin-profile-assessment-grid > div > span { display: block; color: var(--muted, #6d7069); font-size: 11px; font-weight: 700; }
+.admin-profile-context-field p,
+.admin-profile-context-field a,
+.admin-profile-assessment-grid p { display: block; margin: 4px 0 0; overflow-wrap: anywhere; font-size: 13px; line-height: 1.5; }
+.admin-profile-context-field a { color: var(--ink, #11120f); text-decoration: underline; }
+.admin-profile-assessment { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line, #deded5); }
+.admin-profile-assessment-title { align-items: center; font-size: 13px; }
+.admin-profile-assessment-title span,.admin-profile-assessment-empty { color: var(--muted, #6d7069); font-size: 12px; }
+.admin-profile-assessment-empty { margin: 10px 0 0; }
+.admin-profile-assessment-grid { margin-top: 12px; }
+@media (max-width: 520px) {
+  .admin-profile-context { padding: 14px; }
+  .admin-profile-context-head { flex-direction: column; }
+  .admin-profile-context-grid,.admin-profile-assessment-grid { grid-template-columns: minmax(0, 1fr); }
+}
