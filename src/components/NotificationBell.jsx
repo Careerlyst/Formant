@@ -6,8 +6,10 @@ import React, {
   useState
 } from 'react';
 
+import SkeletonState from './SkeletonState';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { formatFormantBrandText } from '../lib/brand-copy';
 
 import './notification-bell.css';
 
@@ -184,95 +186,124 @@ export default function NotificationBell() {
 
   const wrapperRef = useRef(null);
   const channelRef = useRef(null);
+  const userCheckRequestRef = useRef(0);
+  const notificationLoadRequestRef = useRef(0);
+  const hasLoadedNotificationsRef = useRef(false);
+  const notificationUserRef = useRef(null);
 
   const [userId, setUserId] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [accessCheckFailed, setAccessCheckFailed] = useState(false);
   const [busyId, setBusyId] = useState(null);
 
   /* =======================================================
      LOAD CURRENT USER
   ======================================================= */
 
-  useEffect(() => {
-    let mounted = true;
+  const loadCurrentUser = useCallback(async () => {
+    const requestId = ++userCheckRequestRef.current;
+    setAccessCheckFailed(false);
+    setLoadError('');
+    setLoading(true);
 
-    async function getCurrentUser() {
+    try {
       const {
         data: { user },
         error
       } = await supabase.auth.getUser();
 
-      if (!mounted) return;
-
-      if (error || !user) {
-        setUserId(null);
-        setLoading(false);
-        return;
-      }
-
-      setUserId(user.id);
+      if (error) throw error;
+      if (requestId !== userCheckRequestRef.current) return;
+      setUserId(user?.id || null);
+      if (!user) setLoading(false);
+    } catch (error) {
+      if (requestId !== userCheckRequestRef.current) return;
+      console.error('Could not verify notification access:', error);
+      setUserId(null);
+      setAccessCheckFailed(true);
+      setLoadError('Notification access could not be checked. Try again.');
+      setLoading(false);
     }
-
-    getCurrentUser();
-
-    return () => {
-      mounted = false;
-    };
   }, []);
+
+  useEffect(() => {
+    void loadCurrentUser();
+    return () => {
+      userCheckRequestRef.current += 1;
+    };
+  }, [loadCurrentUser]);
 
   /* =======================================================
      LOAD NOTIFICATIONS
   ======================================================= */
 
   const loadNotifications = useCallback(async () => {
+    const requestId = ++notificationLoadRequestRef.current;
+    setAccessCheckFailed(false);
     if (!userId) {
       setNotifications([]);
+      setLoadError('');
       setLoading(false);
+      setRefreshing(false);
       return;
     }
 
-    setLoading(true);
-
-    const { data, error } = await supabase
-      .from('notifications')
-      .select(`
-        id,
-        user_id,
-        order_id,
-        type,
-        title,
-        body,
-        read_at,
-        metadata,
-        created_at,
-        is_read,
-        link
-      `)
-      .eq('user_id', userId)
-      .order('created_at', {
-        ascending: false
-      })
-      .limit(30);
-
-    if (error) {
-      console.error(
-        'Failed to load notifications:',
-        error
-      );
-
+    if (notificationUserRef.current !== userId) {
+      notificationUserRef.current = userId;
+      hasLoadedNotificationsRef.current = false;
       setNotifications([]);
-      setLoading(false);
-      return;
+      setLoadError('');
     }
 
-    setNotifications(data || []);
-    setLoading(false);
+    if (hasLoadedNotificationsRef.current) setRefreshing(true);
+    else setLoading(true);
+    setLoadError('');
+
+    try {
+      const { data, error } = await supabase
+        .from('notifications')
+        .select(`
+          id,
+          user_id,
+          order_id,
+          type,
+          title,
+          body,
+          read_at,
+          metadata,
+          created_at,
+          is_read,
+          link
+        `)
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(30);
+
+      if (error) throw error;
+      if (requestId === notificationLoadRequestRef.current) {
+        setNotifications(data || []);
+        hasLoadedNotificationsRef.current = true;
+      }
+    } catch (error) {
+      if (requestId === notificationLoadRequestRef.current) {
+        console.error('Failed to load notifications:', error);
+        setLoadError('Notifications could not be loaded. Try again.');
+      }
+    } finally {
+      if (requestId === notificationLoadRequestRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    }
   }, [userId]);
 
   useEffect(() => {
-    loadNotifications();
+    void loadNotifications();
+    return () => { notificationLoadRequestRef.current += 1; };
   }, [loadNotifications]);
 
   /* =======================================================
@@ -651,10 +682,24 @@ export default function NotificationBell() {
 
           <div className="notification-panel-list">
 
-            {loading ? (
-              <div className="notification-loading">
-                <span className="notification-spinner" />
-                Loading notifications...
+            {loadError && notifications.length > 0 && (
+              <div className="notification-load-error" role="alert">
+                Could not refresh notifications. The last loaded list remains visible.
+                <button type="button" onClick={() => void loadNotifications()} disabled={refreshing}>
+                  {refreshing ? 'Retrying…' : 'Retry'}
+                </button>
+              </div>
+            )}
+
+            {loading && notifications.length === 0 ? (
+              <SkeletonState label="Loading notifications" variant="rows" count={3} />
+            ) : loadError && notifications.length === 0 ? (
+              <div className="notification-empty" role="alert">
+                <strong>Notifications unavailable</strong>
+                <span>{loadError}</span>
+                <button type="button" className="btn light" onClick={() => void (accessCheckFailed ? loadCurrentUser() : loadNotifications())} disabled={loading || refreshing}>
+                  Retry
+                </button>
               </div>
             ) : notifications.length === 0 ? (
               <div className="notification-empty">
@@ -704,7 +749,7 @@ export default function NotificationBell() {
                     <span className="notification-item-copy">
 
                       <strong>
-                        {notification.title}
+                        {formatFormantBrandText(notification.title)}
                       </strong>
 
                       <span className="notification-item-body">

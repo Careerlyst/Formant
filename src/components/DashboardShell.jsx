@@ -283,7 +283,8 @@ function Icon({ name }) {
 
 export default function DashboardShell({
   children,
-  admin = false
+  admin = false,
+  className = ''
 }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -619,7 +620,7 @@ export default function DashboardShell({
   };
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${admin ? '' : ' client-dashboard-shell'}${className ? ` ${className}` : ''}`}>
 
       {/* =====================================================
           SIDEBAR

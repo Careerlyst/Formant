@@ -142,7 +142,7 @@ export default function Footer() {
             <Logo />
 
             <p>
-              Career preparation built around the role you want.
+              CV, profile and interview support for your next role.
             </p>
 
             {renderSocials()}
@@ -162,17 +162,14 @@ export default function Footer() {
               <Link to="/services">Career services</Link>
               <Link to="/services">CV &amp; Resume</Link>
               <Link to="/services">Career development</Link>
-              <span>Career tips</span>
             </div>
 
             <div className="footer-column footer-column-desktop">
               <b>Support</b>
-              <span>FAQ — coming soon</span>
               <Link to="/contact">Contact</Link>
               <a href="mailto:hello@careerlyst.com">
                 Email
               </a>
-              <span>WhatsApp — coming soon</span>
             </div>
           </div>
 
@@ -195,7 +192,6 @@ export default function Footer() {
                 <Link to="/services">Career services</Link>
                 <Link to="/services">CV &amp; Resume</Link>
                 <Link to="/services">Career development</Link>
-                <span>Career tips</span>
               </>
             )}
 
@@ -203,12 +199,10 @@ export default function Footer() {
               'Support',
               'support',
               <>
-                <span>FAQ — coming soon</span>
                 <Link to="/contact">Contact</Link>
                 <a href="mailto:hello@careerlyst.com">
                   Email
                 </a>
-                <span>WhatsApp — coming soon</span>
               </>
             )}
           </div>

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import Logo from '../components/Logo'
+import SkeletonState from '../components/SkeletonState'
 import { demoLogin, patch } from '../lib/store'
 import { supabase } from '../lib/supabase'
 
@@ -637,8 +638,8 @@ export default function Auth({ signup = false }) {
               </span>
               <p className="auth-editorial-text">
                 {signup
-                  ? 'Formant unifies your resume, LinkedIn, portfolio, and career story into one authoritative professional profile — built to help your work stand out with clarity.'
-                  : 'Sign in to manage your active career projects, review your documents, and stay aligned with your career goals.'}
+                  ? 'Use your account to manage the career services and project work you choose.'
+                  : 'View your projects, shared files, conversations and professional profile.'}
               </p>
             </div>
           </div>
@@ -684,7 +685,7 @@ export default function Auth({ signup = false }) {
                 </div>
 
                 <p className="auth-verification-sub">
-                  Please click the link in your email to verify your account and get started. If you don't see it, check your spam or junk folder.
+                  Open the link to verify your account. If it is not in your inbox, check your spam or junk folder.
                 </p>
 
                 <ResendLink email={unverifiedEmail} />
@@ -705,11 +706,11 @@ export default function Auth({ signup = false }) {
             ) : authMethod === 'select' ? (
               <div className="auth-methods-container">
                 <div className="auth-method-header">
-                  <h2>{signup ? 'Get started your way' : 'Sign in to your account'}</h2>
+                  <h2>{signup ? 'Choose a sign-up method' : 'Sign in to your account'}</h2>
                   <p>
                     {signup
-                      ? 'Choose your preferred signup method to begin building your profile.'
-                      : 'Select your preferred method to access your Formant workspace.'}
+                      ? 'Create an account with email or Google.'
+                      : 'Choose how you want to sign in.'}
                   </p>
                 </div>
 
@@ -770,7 +771,7 @@ export default function Auth({ signup = false }) {
                       {googleLoading ? 'Connecting to Google...' : 'Continue with Google'}
                     </span>
                     <span className="auth-method-sub">
-                      Quick, secure access with your Google account
+                      Sign in with your Google account
                     </span>
                   </div>
 
@@ -1789,8 +1790,7 @@ export function ResetPassword() {
               </h1>
 
               <p className="login-description">
-                Please wait while we securely verify
-                your password reset request.
+                Please wait while we check your password reset link.
               </p>
 
             </div>
@@ -1798,15 +1798,7 @@ export function ResetPassword() {
 
             <div className="login-form-wrap">
 
-              <div className="reset-loading">
-
-                <span className="reset-spinner" />
-
-                <span>
-                  Verifying reset link...
-                </span>
-
-              </div>
+              <SkeletonState label="Verifying your password reset link" variant="form" count={1} />
 
             </div>
 
@@ -1873,9 +1865,7 @@ export function ResetPassword() {
               </h1>
 
               <p className="login-description">
-                Your Formant password has been
-                updated successfully. Sign in with
-                your new password to continue.
+                Your password has been updated. Sign in with the new password.
               </p>
 
             </div>
@@ -1897,11 +1887,7 @@ export function ResetPassword() {
                   Your account is ready.
                 </h2>
 
-                <p>
-                  Your password has been updated
-                  successfully. You can now sign in
-                  with your new password.
-                </p>
+                <p>Sign in with your new password.</p>
 
                 <Link
                   to="/login"

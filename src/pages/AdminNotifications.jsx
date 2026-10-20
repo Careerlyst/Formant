@@ -2,12 +2,15 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState
 } from 'react';
 import { Navigate } from 'react-router-dom';
+import SkeletonState from '../components/SkeletonState';
 
 import DashboardShell from '../components/DashboardShell';
 import { supabase } from '../lib/supabase';
+import { formatFormantBrandText } from '../lib/brand-copy';
 
 import './admin-notifications.css';
 
@@ -228,10 +231,14 @@ function AdminNotificationsPage() {
   const [users, setUsers] = useState([]);
 
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [usersLoading, setUsersLoading] = useState(true);
   const [usersError, setUsersError] = useState('');
 
   const [error, setError] = useState('');
+  const notificationsLoadRequestRef = useRef(0);
+  const hasLoadedNotificationsRef = useRef(false);
   const [successMessage, setSuccessMessage] = useState('');
 
   const [search, setSearch] = useState('');
@@ -283,28 +290,34 @@ function AdminNotificationsPage() {
 
 
   const loadNotifications = useCallback(async () => {
-    setLoading(true);
-    setError('');
+    const requestId = ++notificationsLoadRequestRef.current;
+    if (hasLoadedNotificationsRef.current) setRefreshing(true);
+    else setLoading(true);
+    setLoadError('');
 
-    const {
-      data,
-      error: queryError
-    } = await supabase
-      .from('notifications')
-      .select('*')
-      .order('created_at', {
-        ascending: false
-      })
-      .limit(500);
+    try {
+      const { data, error: queryError } = await supabase
+        .from('notifications')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(500);
 
-    if (queryError) {
-      setError(queryError.message);
-      setNotifications([]);
-    } else {
-      setNotifications(data || []);
+      if (queryError) throw queryError;
+      if (requestId === notificationsLoadRequestRef.current) {
+        setNotifications(data || []);
+        hasLoadedNotificationsRef.current = true;
+      }
+    } catch (loadError) {
+      if (requestId === notificationsLoadRequestRef.current) {
+        console.error('Admin notifications load error:', loadError);
+        setLoadError(loadError?.message || 'Notifications could not be loaded.');
+      }
+    } finally {
+      if (requestId === notificationsLoadRequestRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-
-    setLoading(false);
   }, []);
 
 
@@ -388,6 +401,7 @@ function AdminNotificationsPage() {
   useEffect(() => {
     loadNotifications();
     loadUsers();
+    return () => { notificationsLoadRequestRef.current += 1; };
   }, [
     loadNotifications,
     loadUsers
@@ -752,6 +766,8 @@ function AdminNotificationsPage() {
     setSending(true);
     setError('');
 
+    const notificationTitle = formatFormantBrandText(form.title.trim());
+
     const {
       data: { user }
     } = await supabase.auth.getUser();
@@ -767,7 +783,7 @@ function AdminNotificationsPage() {
         recipient_id: recipientId,
         type: form.type,
         priority: form.priority,
-        title: form.title.trim(),
+        title: notificationTitle,
         body: form.body.trim() || null,
         action_url: form.link.trim() || null,
         link: form.link.trim() || null,
@@ -799,7 +815,7 @@ function AdminNotificationsPage() {
           'send-push-notification',
           {
             body: {
-              title: form.title.trim(),
+              title: notificationTitle,
               body: form.body.trim(),
               action_url: form.link.trim() || '/dashboard',
               recipientMode: form.recipientMode,
@@ -1322,7 +1338,7 @@ function AdminNotificationsPage() {
                     </span>
                   </div>
                   <div className="admin-notification-preview-card-body">
-                    <strong>{form.title.trim() || 'Notification title preview'}</strong>
+                    <strong>{formatFormantBrandText(form.title.trim()) || 'Notification title preview'}</strong>
                     <p>{form.body.trim() || 'Notification message will appear here for the recipient.'}</p>
                     {form.link && (
                       <div className="admin-notification-preview-card-link">
@@ -1478,9 +1494,24 @@ function AdminNotificationsPage() {
 
         <section className="admin-notifications-list">
 
+          {loadError && notifications.length > 0 && (
+            <div className="admin-notifications-notice error" role="alert">
+              Could not refresh notifications. The last loaded list is still shown.{' '}
+              <button type="button" onClick={() => void loadNotifications()} disabled={loading || refreshing}>
+                {refreshing ? 'Retrying…' : 'Retry'}
+              </button>
+            </div>
+          )}
+
           {loading ? (
-            <div className="admin-notifications-loading">
-              Loading notifications...
+            <SkeletonState label="Loading notifications" variant="rows" count={5} />
+          ) : loadError && notifications.length === 0 ? (
+            <div className="admin-notifications-empty" role="alert">
+              <h2>Notifications could not be loaded</h2>
+              <p>{loadError}</p>
+              <button type="button" className="admin-notifications-btn" onClick={() => void loadNotifications()}>
+                Retry
+              </button>
             </div>
           ) : filteredNotifications.length === 0 ? (
             <div className="admin-notifications-empty">
@@ -1533,7 +1564,7 @@ function AdminNotificationsPage() {
 
                         <div>
                           <h3 className="admin-notification-title">
-                            {notification.title}
+                            {formatFormantBrandText(notification.title)}
                           </h3>
 
                           <div className="admin-notification-meta">

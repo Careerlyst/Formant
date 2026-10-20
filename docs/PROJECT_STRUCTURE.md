@@ -1,8 +1,8 @@
 # Formant — Project Structure & Architecture Guide
 
-> **Document Status:** Active Baseline  
-> **Architecture:** Single-Page Application (SPA) with Dual-State Architecture (Cloud Supabase + Local Demo Store)  
-> **Framework:** React 19 (`react: ^19.1.1`), Vite 7 (`vite: ^7.1.3`), React Router 7 (`react-router-dom: ^7.8.2`)  
+> **Document Status:** Active Baseline
+> **Architecture:** Single-Page Application (SPA) with Dual-State Architecture (Cloud Supabase + Local Demo Store)
+> **Framework:** React 19 (`react: ^19.1.1`), Vite 7 (`vite: ^7.1.3`), React Router 7 (`react-router-dom: ^7.8.2`)
 > **Styling:** Native CSS custom properties, DM Sans & Manrope typography, strict light theme
 
 ---

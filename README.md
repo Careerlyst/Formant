@@ -1,13 +1,13 @@
 # Formant — Career Development & Profile Platform
 
-> **Live Deployment:** [https://careerlyst-three.vercel.app](https://careerlyst-three.vercel.app)  
+> **Live Deployment:** [https://careerlyst-three.vercel.app](https://careerlyst-three.vercel.app)
 > **Brand Direction:** Warm editorial cream (`#fbfaf3`), black ink (`#11120f`), lime accent (`#c7f72f`), hairline borders (`#deded5`), DM Sans interface copy, Manrope display typography, and a strict light-only aesthetic.
 
 ---
 
 ## 1. Project Overview
 
-**Formant** is a production React 19 single-page web application offering tailored career services for ambitious professionals:
+**Formant** (formerly *Careerlyst*) is a production React 19 single-page web application offering tailored career services for ambitious professionals:
 - **Resume & CV Revamp:** ATS-optimized, role-targeted resume development.
 - **LinkedIn Profile Optimization:** Narrative storytelling, headline strategy, and recruiter positioning.
 - **GitHub Developer Profile Curation:** Pinned repository curation, README architecture, and code visibility.

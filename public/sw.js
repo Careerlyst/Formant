@@ -24,7 +24,11 @@ self.addEventListener('push', (event) => {
     }
   }
 
-  const title = payload.title || 'Formant';
+  const title = typeof payload.title === 'string'
+    ? payload.title
+      .replace(/\bCareerlyst\s+Team\b/gi, 'Formant team')
+      .replace(/\bCareerlyst\b/gi, 'Formant')
+    : 'Formant';
   const body = payload.body || '';
   const icon = payload.icon || '/assets/formant-symbol-192.png';
   const badge = payload.badge || '/assets/formant-symbol-192.png';

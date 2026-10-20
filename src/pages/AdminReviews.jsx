@@ -6,6 +6,8 @@ import React, {
 } from 'react';
 
 import DashboardShell from '../components/DashboardShell';
+import { useToast } from '../components/ToastProvider';
+import SkeletonState from '../components/SkeletonState';
 import { supabase } from '../lib/supabase';
 
 import './admin-reviews.css';
@@ -442,6 +444,7 @@ function ReviewDrawer({
 }
 
 function AdminReviewsPage() {
+  const { showToast } = useToast();
   const [reviews, setReviews] =
     useState([]);
 
@@ -452,9 +455,6 @@ function AdminReviewsPage() {
     useState(false);
 
   const [error, setError] =
-    useState('');
-
-  const [notice, setNotice] =
     useState('');
 
   const [search, setSearch] =
@@ -1054,7 +1054,6 @@ function AdminReviewsPage() {
       reviewId
     );
     setError('');
-    setNotice('');
 
     try {
       await verifyStaff();
@@ -1132,10 +1131,7 @@ function AdminReviewsPage() {
             : current
       );
 
-      setNotice(
-        successMessage ||
-          'Review updated.'
-      );
+      showToast(successMessage || 'Review updated.', { type: 'success' });
     } catch (updateError) {
       console.error(
         'Admin review update error:',
@@ -1217,7 +1213,6 @@ function AdminReviewsPage() {
       review.id
     );
     setError('');
-    setNotice('');
 
     try {
       await verifyStaff();
@@ -1254,9 +1249,7 @@ function AdminReviewsPage() {
         null
       );
 
-      setNotice(
-        'Review deleted.'
-      );
+      showToast('Review deleted.', { type: 'success' });
     } catch (deleteError) {
       console.error(
         'Admin review delete error:',
@@ -1288,15 +1281,10 @@ function AdminReviewsPage() {
               ADMIN · REVIEWS
             </p>
 
-            <h1>
-              Client reviews.
-            </h1>
+            <h1>Client reviews</h1>
 
             <p>
-              Review customer feedback,
-              control visibility, feature
-              standout feedback and reply
-              from the team.
+              Review customer feedback, set its visibility and reply on behalf of the team.
             </p>
           </div>
 
@@ -1350,25 +1338,6 @@ function AdminReviewsPage() {
               }
             >
               Try again
-            </button>
-          </div>
-        )}
-
-        {notice && (
-          <div
-            className="admin-review-notice success"
-            role="status"
-          >
-            <span>{notice}</span>
-
-            <button
-              type="button"
-              onClick={() =>
-                setNotice('')
-              }
-              aria-label="Dismiss"
-            >
-              ×
             </button>
           </div>
         )}
@@ -1561,20 +1530,7 @@ function AdminReviewsPage() {
           </div>
 
           {loading ? (
-            <div className="admin-review-empty">
-              <div className="admin-review-loading-icon">
-                …
-              </div>
-
-              <h3>
-                Loading customer feedback…
-              </h3>
-
-              <p>
-                Fetching reviews from
-                Supabase.
-              </p>
-            </div>
+            <div className="admin-review-empty"><SkeletonState label="Loading customer feedback" variant="rows" count={4} /></div>
           ) : !filteredReviews.length ? (
             <div className="admin-review-empty">
               <div className="admin-review-empty-icon">

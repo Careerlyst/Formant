@@ -1,6 +1,7 @@
   import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-  import DashboardShell from '../components/DashboardShell';
+import DashboardShell from '../components/DashboardShell';
+import { useToast } from '../components/ToastProvider';
 import { load, patch, services } from '../lib/store';
 import { supabase } from '../lib/supabase';
 import { showcaseTabForService } from '../lib/showcase';
@@ -8,6 +9,8 @@ import { fetchProfile, saveProfile } from '../lib/profileRepository';
 import { subscribeToClientMessages } from '../lib/messageRealtime';
 import { useMessageViewport } from '../lib/messageViewport';
 import MessageActions from '../components/MessageActions';
+import { formatFormantBrandText } from '../lib/brand-copy';
+import SkeletonState from '../components/SkeletonState';
   import { getProfileCompletion, getProfileProgress } from '../lib/profileCompletion';
   import './my-profile.css';
   import './workspace-client.css';
@@ -83,7 +86,7 @@ import MessageActions from '../components/MessageActions';
     <div className="overview-stat">
       <div className="overview-stat-top">
         <span>{label}</span>
-        <span className="overview-stat-mark">↗</span>
+        <span className="overview-stat-mark"><ClientDashboardIcon name="arrow" /></span>
       </div>
 
       <strong>{value}</strong>
@@ -96,14 +99,14 @@ import MessageActions from '../components/MessageActions';
     return (
       <div className={`overview-check ${done ? 'is-done' : ''}`}>
         <span className="overview-check-icon">
-          {done ? '✓' : ''}
+          {done && <ClientDashboardIcon name="check" />}
         </span>
 
         <span>{children}</span>
 
         {!done && (
           <span className="overview-check-arrow">
-            →
+            <ClientDashboardIcon name="right" />
           </span>
         )}
       </div>
@@ -213,7 +216,7 @@ import MessageActions from '../components/MessageActions';
                   key={stage.stage_key}
                   className={isCompleted ? 'is-completed' : isCurrent ? 'is-current' : 'is-upcoming'}
                 >
-                  <span className="overview-roadmap-marker" aria-hidden="true">{isCompleted ? '✓' : isCurrent ? '●' : '○'}</span>
+                  <span className="overview-roadmap-marker" aria-hidden="true"><ClientDashboardIcon name={isCompleted ? 'check' : isCurrent ? 'current' : 'circle'} size={14} /></span>
                   <strong>{stage.title}</strong>
                 </li>
               );
@@ -229,7 +232,7 @@ import MessageActions from '../components/MessageActions';
         )}
 
         <Link className="overview-roadmap-link" to={`/dashboard/orders?order=${encodeURIComponent(order.id)}`}>
-          View full roadmap <span aria-hidden="true">↗</span>
+          View full roadmap <ClientDashboardIcon name="arrow" />
         </Link>
       </article>
     );
@@ -415,7 +418,7 @@ import MessageActions from '../components/MessageActions';
                 to="/services"
               >
                 Start a new service
-                <span>↗</span>
+                <ClientDashboardIcon name="arrow" />
               </Link>
 
             </div>
@@ -533,7 +536,7 @@ import MessageActions from '../components/MessageActions';
                 to="/dashboard/profile"
               >
                 Complete your profile
-                <span>↗</span>
+                <ClientDashboardIcon name="arrow" />
               </Link>
 
             </div>
@@ -562,25 +565,14 @@ import MessageActions from '../components/MessageActions';
                   to="/dashboard/orders"
                 >
                   View all
-                  <span>↗</span>
+                  <ClientDashboardIcon name="arrow" />
                 </Link>
 
               </div>
 
 
               {ordersLoading ? (
-
-                <div className="overview-empty">
-                  <div className="overview-empty-number">
-                    —
-                  </div>
-                  <h3>
-                    Checking your projects.
-                  </h3>
-                  <p>
-                    We're loading the latest order status.
-                  </p>
-                </div>
+                <div className="overview-empty overview-orders-loading"><SkeletonState label="Loading your projects" variant="rows" count={2} /></div>
 
               ) : currentOrder ? (
 
@@ -610,7 +602,7 @@ import MessageActions from '../components/MessageActions';
                     to="/services"
                   >
                     Explore services
-                    <span>↗</span>
+                    <ClientDashboardIcon name="arrow" />
                   </Link>
 
                 </div>
@@ -625,22 +617,22 @@ import MessageActions from '../components/MessageActions';
             <div className="overview-roadmap-heading">
               <div>
                 <span className="overview-roadmap-label">SERVICE ROADMAP</span>
-                <h2 id="overview-roadmap-title">Your progress.</h2>
-                <p>See where your services stand and what comes next.</p>
+                <h2 id="overview-roadmap-title">Service progress</h2>
+                <p>See the current stage and next step for your services.</p>
               </div>
               {hasAdditionalOrders && (
                 <Link className="overview-roadmap-link overview-roadmap-all" to="/dashboard/orders">
-                  View all services <span aria-hidden="true">↗</span>
+                  View all services <ClientDashboardIcon name="arrow" />
                 </Link>
               )}
             </div>
 
             {ordersLoading || roadmapsLoading ? (
-              <div className="overview-roadmap-state" role="status">Loading your service progress…</div>
+              <div className="overview-roadmap-state"><SkeletonState label="Loading service progress" variant="cards" count={2} /></div>
             ) : roadmapsError ? (
               <div className="overview-roadmap-state" role="alert">
                 <p>Service progress is temporarily unavailable.</p>
-                <Link className="overview-roadmap-link" to="/dashboard/orders">View all services <span aria-hidden="true">↗</span></Link>
+                <Link className="overview-roadmap-link" to="/dashboard/orders">View all services <ClientDashboardIcon name="arrow" /></Link>
               </div>
             ) : roadmapCandidates.length ? (
               <div className="overview-roadmap-grid">
@@ -651,9 +643,9 @@ import MessageActions from '../components/MessageActions';
             ) : (
               <div className="overview-roadmap-state">
                 <p>{hasEligibleOrders ? 'No service roadmap is available yet.' : 'Your service roadmap will appear here after you start a service.'}</p>
-                {hasEligibleOrders && <Link className="overview-roadmap-link" to="/dashboard/orders">View all services <span aria-hidden="true">↗</span></Link>}
-                {!hasEligibleOrders && <Link className="overview-roadmap-link" to="/services">Explore services <span aria-hidden="true">↗</span></Link>}
-                {!hasEligibleOrders && orders.length > 0 && <Link className="overview-roadmap-link" to="/dashboard/orders">View all services <span aria-hidden="true">↗</span></Link>}
+                {hasEligibleOrders && <Link className="overview-roadmap-link" to="/dashboard/orders">View all services <ClientDashboardIcon name="arrow" /></Link>}
+                {!hasEligibleOrders && <Link className="overview-roadmap-link" to="/services">Explore services <ClientDashboardIcon name="arrow" /></Link>}
+                {!hasEligibleOrders && orders.length > 0 && <Link className="overview-roadmap-link" to="/dashboard/orders">View all services <ClientDashboardIcon name="arrow" /></Link>}
               </div>
             )}
           </section>
@@ -688,7 +680,7 @@ import MessageActions from '../components/MessageActions';
                   to="/dashboard/messages"
                 >
                   Open inbox
-                  <span>↗</span>
+                  <ClientDashboardIcon name="arrow" />
                 </Link>
 
               </div>
@@ -801,9 +793,7 @@ import MessageActions from '../components/MessageActions';
                 Explore services
               </span>
 
-              <span>
-                ↗
-              </span>
+              <ClientDashboardIcon name="arrow" />
             </Link>
 
           </section>
@@ -819,10 +809,52 @@ import MessageActions from '../components/MessageActions';
     PROFILE
   ========================================================= */
 
+  function ProfileIcon({ name, size = 16 }) {
+    const common = {
+      className: 'profile-icon',
+      width: size,
+      height: size,
+      viewBox: '0 0 24 24',
+      fill: 'none',
+      stroke: 'currentColor',
+      strokeWidth: 1.8,
+      strokeLinecap: 'round',
+      strokeLinejoin: 'round',
+      'aria-hidden': true,
+      focusable: false
+    };
+
+    switch (name) {
+      case 'pin':
+        return <svg {...common}><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></svg>;
+      case 'mail':
+        return <svg {...common}><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m4 7 8 6 8-6" /></svg>;
+      case 'phone':
+        return <svg {...common}><path d="M7 3h3l1.5 4-2 1.5a14 14 0 0 0 6 6l1.5-2 4 1.5v3c0 1.1-.9 2-2 2A16 16 0 0 1 5 5c0-1.1.9-2 2-2Z" /></svg>;
+      case 'clipboard':
+        return <svg {...common}><rect x="5" y="5" width="14" height="16" rx="2" /><path d="M9 5.5V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1.5M9 11h6M9 15h6" /></svg>;
+      case 'edit':
+        return <svg {...common}><path d="M12 20h9" /><path d="m16.5 3.5 4 4L9 19l-5 1 1-5L16.5 3.5Z" /></svg>;
+      case 'close':
+        return <svg {...common}><path d="m6 6 12 12M18 6 6 18" /></svg>;
+      case 'globe':
+        return <svg {...common}><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" /></svg>;
+      case 'lock':
+        return <svg {...common}><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3" /></svg>;
+      case 'shield':
+        return <svg {...common}><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z" /><path d="m9 12 2 2 4-4" /></svg>;
+      case 'check':
+        return <svg {...common}><path d="m5 12 4 4L19 6" /></svg>;
+      default:
+        return null;
+    }
+  }
+
   export function Profile() {
     const initial = load().profile || {};
     const initialUser = load().user || {};
     const rolePickerRef = useRef(null);
+    const { showToast } = useToast();
 
     const emptyForm = {
       name: initial.name || initialUser.name || '',
@@ -856,7 +888,6 @@ import MessageActions from '../components/MessageActions';
     const [userId, setUserId] = useState(null);
     const [loading, setLoading] = useState(Boolean(supabase));
     const [saving, setSaving] = useState(false);
-    const [message, setMessage] = useState('');
     const [error, setError] = useState('');
     const [editingSection, setEditingSection] = useState(null); // 'all' | 'personal' | 'career' | 'education' | 'links' | 'preferences' | null
     const [rolePickerOpen, setRolePickerOpen] = useState(false);
@@ -866,6 +897,7 @@ import MessageActions from '../components/MessageActions';
     const [emailVerified, setEmailVerified] = useState(false);
     const [fieldErrors, setFieldErrors] = useState({});
     const [profileLoadFailed, setProfileLoadFailed] = useState(false);
+    const [profileLoadAttempt, setProfileLoadAttempt] = useState(0);
     const [assessmentSummary, setAssessmentSummary] = useState(null);
 
     // Initial Profile Load from Supabase or Fallback
@@ -878,6 +910,8 @@ import MessageActions from '../components/MessageActions';
           return;
         }
 
+        setLoading(true);
+        setError('');
         try {
           const {
             data: { session },
@@ -887,7 +921,10 @@ import MessageActions from '../components/MessageActions';
           if (!mounted) return;
 
           if (sessionError || !session?.user) {
-            setError('Your session could not be verified. Please sign in again.');
+            setProfileLoadFailed(true);
+            setError(sessionError
+              ? 'Your session could not be verified. Sign in again, then retry loading your profile.'
+              : 'No signed-in session was found. Sign in, then retry loading your profile.');
             setLoading(false);
             return;
           }
@@ -904,6 +941,12 @@ import MessageActions from '../components/MessageActions';
           const data = await fetchProfile(user.id);
 
           if (!mounted) return;
+
+          if (!data) {
+            setProfileLoadFailed(true);
+            setError('No saved profile record was found for this account. No profile data was changed. Retry or contact Formant support.');
+            return;
+          }
 
           const loaded = {
             name: data?.name || authName,
@@ -934,6 +977,7 @@ import MessageActions from '../components/MessageActions';
           };
 
           setProfileLoadFailed(false);
+          setError('');
           setAssessmentSummary(data.lead_assessment || user.user_metadata?.careerlyst_lead_assessment || null);
           setEmailVerified(Boolean(user.email_confirmed_at));
 
@@ -956,9 +1000,7 @@ import MessageActions from '../components/MessageActions';
           console.error('Unexpected profile load exception:', loadErr);
           if (mounted) {
             setProfileLoadFailed(true);
-            setForm(emptyForm);
-            setSavedForm(emptyForm);
-            setError('We could not load your saved profile from the server. Refresh to try again; local cache is not being treated as current.');
+            setError('We could not load your saved profile from the server. Your saved details have not been confirmed; retry or contact Formant support if this continues.');
           }
         } finally {
           if (mounted) setLoading(false);
@@ -970,7 +1012,14 @@ import MessageActions from '../components/MessageActions';
       return () => {
         mounted = false;
       };
-    }, []);
+    }, [profileLoadAttempt]);
+
+    function retryProfileLoad() {
+      setProfileLoadFailed(false);
+      setError('');
+      setLoading(true);
+      setProfileLoadAttempt((attempt) => attempt + 1);
+    }
 
     // Outside click listener for target role picker
     useEffect(() => {
@@ -1115,7 +1164,6 @@ import MessageActions from '../components/MessageActions';
         ...current,
         [key]: value
       }));
-      setMessage('');
       setError('');
       setFieldErrors((current) => ({ ...current, [key]: '' }));
     }
@@ -1128,13 +1176,11 @@ import MessageActions from '../components/MessageActions';
           [key]: value
         }
       }));
-      setMessage('');
       setError('');
     }
 
     function startEditing(section) {
       setEditingSection(section);
-      setMessage('');
       setError('');
     }
 
@@ -1143,7 +1189,6 @@ import MessageActions from '../components/MessageActions';
       setEditingSection(null);
       setFieldErrors({});
       setError('');
-      setMessage('');
     }
 
     function copyProfileSummary() {
@@ -1192,7 +1237,6 @@ import MessageActions from '../components/MessageActions';
 
       setSaving(true);
       setError('');
-      setMessage('');
 
       const profileValues = {
         name: cleanName,
@@ -1243,9 +1287,9 @@ import MessageActions from '../components/MessageActions';
           setEditingSection(null);
           if (nameSyncError) {
             console.error('Profile saved but Auth display-name compatibility sync failed:', nameSyncError);
-            setError('Your profile was saved, but the account display-name mirror could not be updated. The saved profile name remains authoritative; please retry or refresh.');
+            showToast('Your profile was saved, but the account display name could not be synced. The saved profile remains authoritative.', { type: 'warning', title: 'Profile saved with a sync issue', placement: 'bottom-right' });
           } else {
-            setMessage('Your profile has been saved successfully.');
+            showToast('Your profile has been saved successfully.', { type: 'success', title: 'Profile saved', placement: 'bottom-right' });
           }
           return;
         }
@@ -1272,10 +1316,10 @@ import MessageActions from '../components/MessageActions';
         setForm(nextState);
         setSavedForm(nextState);
         setEditingSection(null);
-        setMessage('Your profile has been saved successfully.');
+        showToast('Your profile has been saved successfully.', { type: 'success', title: 'Profile saved', placement: 'bottom-right' });
       } catch (err) {
         console.error('Save profile error:', err);
-        setError(err.message || 'We could not save your profile changes. Please try again.');
+        showToast(err.message || 'We could not save your profile changes. Please try again.', { type: 'error', title: 'Profile not saved' });
       } finally {
         setSaving(false);
       }
@@ -1316,10 +1360,20 @@ import MessageActions from '../components/MessageActions';
     if (loading) {
       return (
         <DashboardShell>
-          <div className="profile-loading">
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
-              <div style={{ width: 36, height: 36, borderRadius: '50%', border: '3px solid #deded5', borderTopColor: '#11120f', animation: 'spin 0.8s linear infinite' }} />
-              <p style={{ margin: 0, fontWeight: 600, color: 'var(--ink, #11120f)' }}>Loading your professional profile…</p>
+          <div className="profile-loading"><SkeletonState label="Loading profile details" variant="profile" /></div>
+        </DashboardShell>
+      );
+    }
+
+    if (profileLoadFailed) {
+      return (
+        <DashboardShell>
+          <div className="profile-redesign-root">
+            <div className="profile-alert-banner error" role="alert">
+              <span>{error || 'The saved profile could not be confirmed.'}</span>
+              <button type="button" className="profile-btn-save" onClick={retryProfileLoad}>
+                Retry profile load
+              </button>
             </div>
           </div>
         </DashboardShell>
@@ -1336,14 +1390,7 @@ import MessageActions from '../components/MessageActions';
           {error && (
             <div className="profile-alert-banner error" role="alert">
               <span>{error}</span>
-              <button type="button" className="profile-alert-close" onClick={() => setError('')} aria-label="Dismiss error">×</button>
-            </div>
-          )}
-
-          {message && (
-            <div className="profile-alert-banner success" role="status">
-              <span>✓ {message}</span>
-              <button type="button" className="profile-alert-close" onClick={() => setMessage('')} aria-label="Dismiss message">×</button>
+              <button type="button" className="profile-alert-close" onClick={() => setError('')} aria-label="Dismiss error"><ProfileIcon name="close" /></button>
             </div>
           )}
 
@@ -1361,13 +1408,11 @@ import MessageActions from '../components/MessageActions';
 
               <div className="profile-hero-details">
                 <div className="profile-hero-eyebrow-row">
-                  <span className="profile-hero-badge">Professional Identity</span>
                   {completion === 100 && (
-                    <span className="profile-hero-badge" style={{ background: '#eafbe3', color: '#2d6810', borderColor: '#b1e59c' }}>
-                      ✓ 100% Complete
+                    <span className="profile-hero-badge completion-badge">
+                      <ProfileIcon name="check" size={13} /> 100% Complete
                     </span>
                   )}
-                  <span className="profile-hero-badge account-badge">Client Workspace</span>
                 </div>
 
                 <h1 className="profile-hero-name">
@@ -1384,23 +1429,23 @@ import MessageActions from '../components/MessageActions';
                 <div className="profile-hero-meta-row">
                   {form.location ? (
                     <span className="profile-hero-meta-item">
-                      <span aria-hidden="true">📍</span> {form.location}
+                      <ProfileIcon name="pin" /> {form.location}
                     </span>
                   ) : (
-                    <span className="profile-hero-meta-item" style={{ color: '#9da096', fontStyle: 'italic' }}>
-                      <span aria-hidden="true">📍</span> Location not specified
+                    <span className="profile-hero-meta-item is-missing">
+                      <ProfileIcon name="pin" /> Location not specified
                     </span>
                   )}
 
                   {form.email && (
                     <span className="profile-hero-meta-item">
-                      <span aria-hidden="true">✉</span> {form.email}
+                      <ProfileIcon name="mail" /> {form.email}
                     </span>
                   )}
 
                   {form.phone && (
                     <span className="profile-hero-meta-item">
-                      <span aria-hidden="true">📞</span> {form.phone}
+                      <ProfileIcon name="phone" /> {form.phone}
                     </span>
                   )}
                 </div>
@@ -1414,7 +1459,10 @@ import MessageActions from '../components/MessageActions';
                 onClick={copyProfileSummary}
                 title="Copy profile details summary"
               >
-                <span>{copiedLink ? '✓ Copied' : '📋 Copy Summary'}</span>
+                <span className="profile-action-content">
+                  <ProfileIcon name={copiedLink ? 'check' : 'clipboard'} />
+                  {copiedLink ? 'Copied' : 'Copy Summary'}
+                </span>
               </button>
 
               <button
@@ -1428,7 +1476,10 @@ import MessageActions from '../components/MessageActions';
                   }
                 }}
               >
-                <span>{editingSection === 'all' ? '✕ Done Editing' : '✎ Edit Profile'}</span>
+                <span className="profile-action-content">
+                  <ProfileIcon name={editingSection === 'all' ? 'close' : 'edit'} />
+                  {editingSection === 'all' ? 'Done Editing' : 'Edit Profile'}
+                </span>
               </button>
             </div>
           </section>
@@ -1461,7 +1512,7 @@ import MessageActions from '../components/MessageActions';
                       onClick={() => startEditing('personal')}
                       aria-label="Edit Personal Information"
                     >
-                      <span>✎ Edit</span>
+                      <span className="profile-card-edit-content"><ProfileIcon name="edit" size={14} />Edit</span>
                     </button>
                   )}
                 </div>
@@ -1493,7 +1544,7 @@ import MessageActions from '../components/MessageActions';
                         <div className="profile-form-field">
                           <label className="profile-form-label" htmlFor="field-email">
                             <span>Email address</span>
-                            <span className="helper">🔒 Managed by Formant Auth</span>
+                            <span className="helper"><ProfileIcon name="lock" size={13} /> Managed by Formant Auth</span>
                           </label>
                           <input
                             id="field-email"
@@ -1553,7 +1604,7 @@ import MessageActions from '../components/MessageActions';
                       <div className="profile-edit-actions-bar">
                         <button type="button" className="profile-btn-cancel" onClick={cancelEditing}>Cancel</button>
                         <button type="submit" className="profile-btn-save" disabled={saving}>
-                          {saving ? 'Saving…' : 'Save Changes ↗'}
+                          {saving ? 'Saving…' : <>Save Changes <ClientDashboardIcon name="arrow" size={14} /></>}
                         </button>
                       </div>
                     </form>
@@ -1619,7 +1670,7 @@ import MessageActions from '../components/MessageActions';
                       onClick={() => startEditing('career')}
                       aria-label="Edit Career & Experience"
                     >
-                      <span>✎ Edit</span>
+                      <span className="profile-card-edit-content"><ProfileIcon name="edit" size={14} />Edit</span>
                     </button>
                   )}
                 </div>
@@ -1730,7 +1781,7 @@ import MessageActions from '../components/MessageActions';
                                           }}
                                         >
                                           <span>{role}</span>
-                                          <span className="target-role-option-arrow">↗</span>
+                                          <span className="target-role-option-arrow"><ClientDashboardIcon name="arrow" size={13} /></span>
                                         </button>
                                       ))}
                                     </div>
@@ -1751,7 +1802,7 @@ import MessageActions from '../components/MessageActions';
                                     }}
                                   >
                                     <span>+ Use “{customRoleSearch}” as custom target role</span>
-                                    <span>↗</span>
+                                    <ClientDashboardIcon name="arrow" size={13} />
                                   </button>
                                 )}
 
@@ -1791,14 +1842,14 @@ import MessageActions from '../components/MessageActions';
                             onChange={(e) => updateField('skills', e.target.value)}
                             placeholder="e.g. React, TypeScript, Next.js, Node.js, GraphQL, System Design, UX Architecture"
                           />
-                          <span className="profile-form-note">These skills help calibrate keyword density for ATS optimization.</span>
+                          <span className="profile-form-note">Add skills related to the roles you are targeting.</span>
                         </div>
                       </div>
 
                       <div className="profile-edit-actions-bar">
                         <button type="button" className="profile-btn-cancel" onClick={cancelEditing}>Cancel</button>
                         <button type="submit" className="profile-btn-save" disabled={saving}>
-                          {saving ? 'Saving…' : 'Save Changes ↗'}
+                          {saving ? 'Saving…' : <>Save Changes <ClientDashboardIcon name="arrow" size={14} /></>}
                         </button>
                       </div>
                     </form>
@@ -1816,7 +1867,7 @@ import MessageActions from '../components/MessageActions';
                       <div className="profile-data-cell">
                         <span className="profile-data-label">Experience & Career Background</span>
                         <span className="profile-data-value">
-                          {form.experience || <span className="empty-state">No experience details added yet. Useful for experienced hires and career changers alike.</span>}
+                          {form.experience || <span className="empty-state">No experience details added yet.</span>}
                         </span>
                       </div>
 
@@ -1829,7 +1880,7 @@ import MessageActions from '../components/MessageActions';
                             ))}
                           </div>
                         ) : (
-                          <span className="profile-data-value empty-state">No skills listed. Adding technologies helps our writers tailor your CV keywords.</span>
+                          <span className="profile-data-value empty-state">No skills listed yet. Add skills relevant to your target role.</span>
                         )}
                       </div>
                     </div>
@@ -1857,7 +1908,7 @@ import MessageActions from '../components/MessageActions';
                       onClick={() => startEditing('education')}
                       aria-label="Edit Education & Credentials"
                     >
-                      <span>✎ Edit</span>
+                      <span className="profile-card-edit-content"><ProfileIcon name="edit" size={14} />Edit</span>
                     </button>
                   )}
                 </div>
@@ -1900,7 +1951,7 @@ import MessageActions from '../components/MessageActions';
                       <div className="profile-edit-actions-bar">
                         <button type="button" className="profile-btn-cancel" onClick={cancelEditing}>Cancel</button>
                         <button type="submit" className="profile-btn-save" disabled={saving}>
-                          {saving ? 'Saving…' : 'Save Changes ↗'}
+                          {saving ? 'Saving…' : <>Save Changes <ClientDashboardIcon name="arrow" size={14} /></>}
                         </button>
                       </div>
                     </form>
@@ -1944,7 +1995,7 @@ import MessageActions from '../components/MessageActions';
                       onClick={() => startEditing('links')}
                       aria-label="Edit Professional Links"
                     >
-                      <span>✎ Edit</span>
+                      <span className="profile-card-edit-content"><ProfileIcon name="edit" size={14} />Edit</span>
                     </button>
                   )}
                 </div>
@@ -2011,7 +2062,7 @@ import MessageActions from '../components/MessageActions';
                       <div className="profile-edit-actions-bar">
                         <button type="button" className="profile-btn-cancel" onClick={cancelEditing}>Cancel</button>
                         <button type="submit" className="profile-btn-save" disabled={saving}>
-                          {saving ? 'Saving…' : 'Save Changes ↗'}
+                          {saving ? 'Saving…' : <>Save Changes <ClientDashboardIcon name="arrow" size={14} /></>}
                         </button>
                       </div>
                     </form>
@@ -2029,7 +2080,7 @@ import MessageActions from '../components/MessageActions';
                         <div className="profile-link-card-action">
                           {form.linkedin ? (
                             <a href={cleanUrl(form.linkedin)} target="_blank" rel="noopener noreferrer">
-                              Visit Profile ↗
+                              Visit Profile <ClientDashboardIcon name="arrow" size={13} />
                             </a>
                           ) : (
                             <button type="button" onClick={() => startEditing('links')} style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'var(--ink, #11120f)', textDecoration: 'underline', cursor: 'pointer', fontSize: 12 }}>
@@ -2051,7 +2102,7 @@ import MessageActions from '../components/MessageActions';
                         <div className="profile-link-card-action">
                           {form.github ? (
                             <a href={cleanUrl(form.github)} target="_blank" rel="noopener noreferrer">
-                              Visit GitHub ↗
+                              Visit GitHub <ClientDashboardIcon name="arrow" size={13} />
                             </a>
                           ) : (
                             <button type="button" onClick={() => startEditing('links')} style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'var(--ink, #11120f)', textDecoration: 'underline', cursor: 'pointer', fontSize: 12 }}>
@@ -2064,7 +2115,7 @@ import MessageActions from '../components/MessageActions';
                       {/* Portfolio Card */}
                       <div className="profile-link-card">
                         <div className="profile-link-card-top">
-                          <div className="profile-link-icon-box portfolio" aria-hidden="true">🌐</div>
+                          <div className="profile-link-icon-box portfolio" aria-hidden="true"><ProfileIcon name="globe" size={18} /></div>
                           <div>
                             <div className="profile-link-info-name">Portfolio</div>
                             <div className="profile-link-info-handle">{form.portfolio ? form.portfolio.replace(/^https?:\/\/(www\.)?/, '') : 'Not connected'}</div>
@@ -2073,7 +2124,7 @@ import MessageActions from '../components/MessageActions';
                         <div className="profile-link-card-action">
                           {form.portfolio ? (
                             <a href={cleanUrl(form.portfolio)} target="_blank" rel="noopener noreferrer">
-                              View Portfolio ↗
+                              View Portfolio <ClientDashboardIcon name="arrow" size={13} />
                             </a>
                           ) : (
                             <button type="button" onClick={() => startEditing('links')} style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'var(--ink, #11120f)', textDecoration: 'underline', cursor: 'pointer', fontSize: 12 }}>
@@ -2107,7 +2158,7 @@ import MessageActions from '../components/MessageActions';
                       onClick={() => startEditing('preferences')}
                       aria-label="Edit Preferences"
                     >
-                      <span>✎ Edit</span>
+                      <span className="profile-card-edit-content"><ProfileIcon name="edit" size={14} />Edit</span>
                     </button>
                   )}
                 </div>
@@ -2189,7 +2240,7 @@ import MessageActions from '../components/MessageActions';
                       <div className="profile-edit-actions-bar">
                         <button type="button" className="profile-btn-cancel" onClick={cancelEditing}>Cancel</button>
                         <button type="submit" className="profile-btn-save" disabled={saving}>
-                          {saving ? 'Saving…' : 'Save Changes ↗'}
+                          {saving ? 'Saving…' : <>Save Changes <ClientDashboardIcon name="arrow" size={14} /></>}
                         </button>
                       </div>
                     </form>
@@ -2273,7 +2324,7 @@ import MessageActions from '../components/MessageActions';
                     return (
                       <div key={key} className={`profile-checklist-item ${isDone ? 'is-done' : ''}`}>
                         <span className="profile-check-indicator" aria-hidden="true">
-                          {isDone ? '✓' : '·'}
+                          {isDone ? <ClientDashboardIcon name="check" size={13} /> : <ClientDashboardIcon name="circle" size={9} />}
                         </span>
                         <span>{label || FIELD_LABELS[key] || key}</span>
                       </div>
@@ -2284,7 +2335,7 @@ import MessageActions from '../components/MessageActions';
 
               {/* Service Readiness Panel */}
               <div className="profile-service-panel">
-                <h3 className="profile-service-panel-title">Service-Ready Data</h3>
+                <h3 className="profile-service-panel-title">Details for your services</h3>
                 <p className="profile-service-panel-desc">
                   Formant consultants use your saved profile to skip redundant intake forms.
                 </p>
@@ -2294,7 +2345,7 @@ import MessageActions from '../components/MessageActions';
                     <div key={item.name} className="profile-service-item">
                       <span>{item.name}</span>
                       <span className={`profile-service-status-tag ${item.ready ? 'ready' : 'partial'}`}>
-                        {item.ready ? 'Ready ✓' : 'Details needed'}
+                        {item.ready ? <>Ready <ClientDashboardIcon name="check" size={13} /></> : 'Details needed'}
                       </span>
                     </div>
                   ))}
@@ -2304,7 +2355,7 @@ import MessageActions from '../components/MessageActions';
               {/* Data Confidentiality & Security Panel */}
               <div className="profile-security-panel">
                 <h4>
-                  <span aria-hidden="true">🛡</span> Confidential & Secure
+                  <ProfileIcon name="shield" /> Confidential & Secure
                 </h4>
                 <p>
                   Your profile is protected by database access controls. Authorized Formant staff roles may review client profiles to support service operations.
@@ -2313,10 +2364,10 @@ import MessageActions from '../components/MessageActions';
 
               <div className="profile-service-panel profile-pathways-panel">
                 <h3 className="profile-service-panel-title">Keep your career context current</h3>
-                <p className="profile-service-panel-desc">Assessment helps us understand your goals. Your profile stores the professional details used to deliver services.</p>
+                <p className="profile-service-panel-desc">Your assessment records your goals. Your profile holds the career details used for your services.</p>
                 <div className="profile-service-list">
-                  <Link className="profile-pathway-link" to="/assessment">Review career assessment ↗</Link>
-                  <Link className="profile-pathway-link" to="/service-selection">Explore service recommendations ↗</Link>
+                  <Link className="profile-pathway-link" to="/assessment">Review career assessment <ClientDashboardIcon name="arrow" size={13} /></Link>
+                  <Link className="profile-pathway-link" to="/service-selection">Choose a service <ClientDashboardIcon name="arrow" size={13} /></Link>
                 </div>
               </div>
 
@@ -2330,7 +2381,7 @@ import MessageActions from '../components/MessageActions';
                     {(form.lead_assessment_completed_at || assessmentSummary.completedAt) && <span>Completed: {new Date(form.lead_assessment_completed_at || assessmentSummary.completedAt).toLocaleDateString()}</span>}
                   </div>
                 ) : <p className="profile-service-panel-desc">No completed assessment is recorded yet. You can add career-goal context separately from this profile.</p>}
-                <Link className="profile-pathway-link" to="/assessment">Open assessment ↗</Link>
+                <Link className="profile-pathway-link" to="/assessment">Open assessment <ClientDashboardIcon name="arrow" size={13} /></Link>
               </div>
 
             </div>
@@ -2348,10 +2399,67 @@ import MessageActions from '../components/MessageActions';
     ORDERS
   ========================================================= */
 
+  function ClientDashboardIcon({ name, size = 15 }) {
+    const common = {
+      className: 'client-dashboard-icon',
+      width: size,
+      height: size,
+      viewBox: '0 0 24 24',
+      fill: 'none',
+      stroke: 'currentColor',
+      strokeWidth: 1.8,
+      strokeLinecap: 'round',
+      strokeLinejoin: 'round',
+      focusable: false,
+      'aria-hidden': true
+    };
+
+    switch (name) {
+      case 'search':
+        return <svg {...common}><circle cx="10.8" cy="10.8" r="6.6" /><path d="m16 16 4.5 4.5" /></svg>;
+      case 'arrow':
+        return <svg {...common}><path d="M7 17 17 7M8 7h9v9" /></svg>;
+      case 'right':
+        return <svg {...common}><path d="M5 12h14m-6-6 6 6-6 6" /></svg>;
+      case 'up':
+        return <svg {...common}><path d="m6 14 6-6 6 6" /></svg>;
+      case 'down':
+        return <svg {...common}><path d="m6 10 6 6 6-6" /></svg>;
+      case 'check':
+        return <svg {...common}><path d="m5 12 4 4L19 6" /></svg>;
+      case 'alert':
+        return <svg {...common}><path d="M10.3 4.1 2.8 17a2 2 0 0 0 1.7 3h15a2 2 0 0 0 1.7-3L13.7 4.1a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4m0 3h.01" /></svg>;
+      case 'progress':
+        return <svg {...common}><circle cx="12" cy="12" r="8.5" /><path d="M12 7v5l3 2" /></svg>;
+      case 'attachment':
+        return <svg {...common}><path d="m8 12.5 6.7-6.7a3 3 0 0 1 4.2 4.2l-8.5 8.5a5 5 0 0 1-7.1-7.1l8.5-8.5" /></svg>;
+      case 'bell':
+        return <svg {...common}><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M10 21h4" /></svg>;
+      case 'globe':
+        return <svg {...common}><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" /></svg>;
+      case 'appearance':
+        return <svg {...common}><circle cx="12" cy="12" r="8.5" /><path d="M12 3.5v17a8.5 8.5 0 0 0 0-17Z" /></svg>;
+      case 'user':
+        return <svg {...common}><circle cx="12" cy="8" r="3.5" /><path d="M4.5 20a7.5 7.5 0 0 1 15 0" /></svg>;
+      case 'logout':
+        return <svg {...common}><path d="M10 5H5v14h5M14 8l4 4-4 4m4-4H9" /></svg>;
+      case 'preferences':
+        return <svg {...common}><path d="M4 7h9m4 0h3M4 17h3m4 0h9" /><circle cx="15" cy="7" r="2" /><circle cx="9" cy="17" r="2" /></svg>;
+      case 'current':
+        return <svg {...common}><circle cx="12" cy="12" r="7.5" /><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" /></svg>;
+      case 'circle':
+      default:
+        return <svg {...common}><circle cx="12" cy="12" r="7.5" /></svg>;
+    }
+  }
+
   export function Orders() {
     const localState = load();
     const location = useLocation();
     const [orders, setOrders] = useState([]);
+    const [orderStatusFilter, setOrderStatusFilter] = useState('all');
+    const [orderSearch, setOrderSearch] = useState('');
+    const [orderSort, setOrderSort] = useState('newest');
     const [clientTasks, setClientTasks] = useState({});
     const [clientGoals, setClientGoals] = useState({});
     const [clientNotes, setClientNotes] = useState({});
@@ -2477,6 +2585,39 @@ import MessageActions from '../components/MessageActions';
     function statusClass(status) {
       return String(status || 'pending').toLowerCase().replace(/\s+/g, '-');
     }
+
+    function orderStatusGroup(order) {
+      const status = String(order?.status || 'pending').trim().toLowerCase().replace(/[\s-]+/g, '_');
+      if (['pending', 'queued', 'information_required'].includes(status)) return 'pending';
+      if (status === 'completed') return 'completed';
+      if (['cancelled', 'canceled'].includes(status)) return 'cancelled';
+      return 'in_progress';
+    }
+
+    const orderStatusFilters = [
+      { id: 'all', label: 'All' },
+      { id: 'pending', label: 'Pending' },
+      { id: 'in_progress', label: 'In progress' },
+      { id: 'completed', label: 'Completed' },
+      { id: 'cancelled', label: 'Cancelled' }
+    ];
+    const orderStatusCounts = orders.reduce((counts, order) => {
+      counts.all += 1;
+      counts[orderStatusGroup(order)] += 1;
+      return counts;
+    }, { all: 0, pending: 0, in_progress: 0, completed: 0, cancelled: 0 });
+    const visibleOrders = useMemo(() => {
+      const query = orderSearch.trim().toLowerCase();
+      return orders
+        .filter((order) => orderStatusFilter === 'all' || orderStatusGroup(order) === orderStatusFilter)
+        .filter((order) => !query || [order.id, order.service_name, order.package_name, order.status]
+          .some((value) => String(value || '').toLowerCase().includes(query)))
+        .sort((a, b) => {
+          const first = Date.parse(a.created_at || '') || 0;
+          const second = Date.parse(b.created_at || '') || 0;
+          return orderSort === 'oldest' ? first - second : second - first;
+        });
+    }, [orders, orderStatusFilter, orderSearch, orderSort]);
 
     function briefType(order) {
       const name = `${order?.service_name || ''} ${order?.package_name || ''}`.toLowerCase();
@@ -2656,18 +2797,59 @@ import MessageActions from '../components/MessageActions';
         <div className="dash-head orders-page-header">
           <div className="orders-header-copy">
             <p className="eyebrow">MY ORDERS</p>
-            <h1>Your projects.</h1>
-            <p className="orders-page-subtitle">Track the progress of your services and see what’s happening next.</p>
+            <h1>Your projects</h1>
+            <p className="orders-page-subtitle">View order status, service progress and the next step.</p>
           </div>
-          <Link className="btn lime" to="/service-selection">New service ↗</Link>
+          <Link className="btn lime" to="/service-selection">New service <ClientDashboardIcon name="arrow" /></Link>
         </div>
+        <section className="orders-toolbar" aria-label="Filter and search orders">
+          <div className="orders-status-filters" role="group" aria-label="Filter orders by status">
+            {orderStatusFilters.map((filter) => (
+              <button
+                key={filter.id}
+                type="button"
+                className={`orders-filter-button${orderStatusFilter === filter.id ? ' is-active' : ''}`}
+                aria-pressed={orderStatusFilter === filter.id}
+                onClick={() => setOrderStatusFilter(filter.id)}
+                disabled={loading || Boolean(error)}
+              >
+                {filter.label}<span>{orderStatusCounts[filter.id]}</span>
+              </button>
+            ))}
+          </div>
+          <div className="orders-toolbar-controls">
+            <label className="orders-search">
+              <ClientDashboardIcon name="search" size={17} />
+              <span className="sr-only">Search orders</span>
+              <input
+                type="search"
+                value={orderSearch}
+                onChange={(event) => setOrderSearch(event.target.value)}
+                placeholder="Search orders…"
+                disabled={loading || Boolean(error)}
+              />
+            </label>
+            <label className="orders-sort">
+              <span className="sr-only">Sort orders</span>
+              <select value={orderSort} onChange={(event) => setOrderSort(event.target.value)} disabled={loading || Boolean(error)}>
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+              </select>
+              <ClientDashboardIcon name="down" size={15} />
+            </label>
+          </div>
+        </section>
         <div className="panel table-panel orders-list-panel">
           {loading ? (
-            <div className="empty"><h3>Loading your orders…</h3><p>We’re fetching your projects from your Formant workspace.</p></div>
+            <SkeletonState label="Loading orders" variant="table" count={5} />
           ) : error ? (
-            <div className="empty"><h3>We couldn’t load your orders.</h3><p>{error}</p><button type="button" className="btn dark" onClick={() => window.location.reload()}>Try again ↗</button></div>
+            <div className="empty"><h3>We couldn’t load your orders.</h3><p>{error}</p><button type="button" className="btn dark" onClick={() => window.location.reload()}>Try again <ClientDashboardIcon name="arrow" /></button></div>
           ) : orders.length ? (
-            orders.map((o) => {
+            visibleOrders.length ? <>
+            <div className="orders-table-header" aria-hidden="true">
+              <span>Order</span><span>Service</span><span>Price</span><span>Status</span><span>Actions</span>
+            </div>
+            {visibleOrders.map((o) => {
               const currency = o.currency === 'USD' ? '$' : `${o.currency || 'USD'} `;
               const serviceName = o.service_name || 'Formant service';
               const serviceType = briefType(o);
@@ -2746,7 +2928,7 @@ import MessageActions from '../components/MessageActions';
                         </h2>
                         {serviceDescription && <p className="order-card-description">{serviceDescription}</p>}
                         <Link className="order-showcase-link" to={showcaseTab ? `/showcase?tab=${showcaseTab}` : '/showcase'}>
-                          Explore related work <span aria-hidden="true">↗</span>
+                          Explore related work <ClientDashboardIcon name="arrow" size={14} />
                         </Link>
                       </div>
                       <strong className="order-card-price">{currency}{Number(o.total || 0).toFixed(0)}</strong>
@@ -2757,7 +2939,7 @@ import MessageActions from '../components/MessageActions';
                           className={`order-brief-button ${needsBrief ? 'is-required' : ''}`}
                           onClick={() => openBrief(o)}
                         >
-                          {needsBrief ? 'Complete project brief ↗' : 'Open project brief ↗'}
+                          {needsBrief ? 'Complete project brief' : 'Open project brief'} <ClientDashboardIcon name="arrow" size={14} />
                         </button>
                         {hasOrderDetails && <button
                           type="button"
@@ -2770,7 +2952,7 @@ import MessageActions from '../components/MessageActions';
                             : { orderId: roadmapOrderId, mode: 'tap' })}
                         >
                           <span className="order-progress-label">{isRoadmapExpanded ? 'Hide progress' : 'View progress'}</span>
-                          <span className="order-progress-icon" aria-hidden="true">{isRoadmapExpanded ? '⌃' : '⌄'}</span>
+                          <span className="order-progress-icon"><ClientDashboardIcon name={isRoadmapExpanded ? 'up' : 'down'} /></span>
                         </button>}
                       </div>
                     </div>
@@ -2782,25 +2964,33 @@ import MessageActions from '../components/MessageActions';
                     inert={!isRoadmapExpanded ? true : undefined}
                   >
                     <div className="client-order-details-inner">
-                      {clientWorkspaceLoading ? <section className="client-order-roadmap" role="status">Loading your service progress…</section>
+                      {clientWorkspaceLoading ? <section className="client-order-roadmap"><SkeletonState label="Loading your service progress" variant="rows" count={3} /></section>
                         : serviceRoadmap ? <section className="client-order-roadmap" aria-label={`Service progress for order ${o.id}`}>
                           <div className="client-roadmap-summary">
                             <header><div><p className="eyebrow">YOUR SERVICE PROGRESS</p><h3>{serviceRoadmap.service_name}</h3></div><strong>{serviceRoadmap.progress}%</strong></header>
                             <div className="client-roadmap-progress" role="progressbar" aria-label="Service delivery progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow={serviceRoadmap.progress}><span style={{ width: `${serviceRoadmap.progress}%` }} /></div>
-                            <div className="client-roadmap-current"><span className="client-roadmap-current-icon" aria-hidden="true">◎</span><div><small>{serviceRoadmap.current_status === 'WAITING_ON_CLIENT' ? 'ACTION REQUIRED' : serviceRoadmap.current_status === 'BLOCKED' ? 'IN PROGRESS' : serviceRoadmap.current_status === 'COMPLETED' ? 'COMPLETE' : 'CURRENT STAGE'}</small><strong>{serviceRoadmap.current_stage_title}</strong>{serviceRoadmap.client_update && <p>{serviceRoadmap.client_update}</p>}</div></div>
+                            <div className="client-roadmap-current"><span className="client-roadmap-current-icon"><ClientDashboardIcon name="progress" size={17} /></span><div><small>{serviceRoadmap.current_status === 'WAITING_ON_CLIENT' ? 'ACTION REQUIRED' : serviceRoadmap.current_status === 'BLOCKED' ? 'IN PROGRESS' : serviceRoadmap.current_status === 'COMPLETED' ? 'COMPLETE' : 'CURRENT STAGE'}</small><strong>{serviceRoadmap.current_stage_title}</strong>{serviceRoadmap.client_update && <p>{serviceRoadmap.client_update}</p>}</div></div>
                             {(currentRoadmapStage?.description || serviceRoadmap.client_update) && <div className="client-roadmap-about"><span>ABOUT THIS STAGE</span><p>{currentRoadmapStage?.description || serviceRoadmap.client_update}</p></div>}
-                            {nextRoadmapStage && serviceRoadmap.current_status !== 'COMPLETED' && <div className="client-roadmap-next"><span aria-hidden="true">›</span><div><small>NEXT STEP</small><strong>{nextRoadmapStage.title}</strong><p>{nextRoadmapStage.description}</p></div></div>}
+                            {nextRoadmapStage && serviceRoadmap.current_status !== 'COMPLETED' && <div className="client-roadmap-next"><span><ClientDashboardIcon name="right" size={16} /></span><div><small>NEXT STEP</small><strong>{nextRoadmapStage.title}</strong><p>{nextRoadmapStage.description}</p></div></div>}
                             {serviceRoadmap.current_status === 'WAITING_ON_CLIENT' && <div className="client-roadmap-action"><strong>{serviceRoadmap.client_action_title}</strong><p>{serviceRoadmap.client_action_description}</p></div>}
                           </div>
                           <div className="client-roadmap-stage-list">
                             <p className="eyebrow">SERVICE ROADMAP</p>
-                            <ol className="client-roadmap-stages">{(serviceRoadmap.stages || []).map((stage) => <li key={stage.stage_key} className={`is-${String(stage.status).toLowerCase()}`} aria-current={stage.stage_key === serviceRoadmap.current_stage_key ? 'step' : undefined}><span aria-hidden="true">{stage.status === 'COMPLETED' ? '✓' : stage.stage_key === serviceRoadmap.current_stage_key ? (serviceRoadmap.current_status === 'WAITING_ON_CLIENT' || serviceRoadmap.current_status === 'BLOCKED' ? '!' : serviceRoadmap.current_status === 'COMPLETED' ? '✓' : '●') : '○'}</span><div><strong>{stage.title}</strong><small>{stage.description}</small></div></li>)}</ol>
+                            <ol className="client-roadmap-stages">{(serviceRoadmap.stages || []).map((stage) => {
+                              const isCurrent = stage.stage_key === serviceRoadmap.current_stage_key;
+                              const stageIcon = stage.status === 'COMPLETED' || (isCurrent && serviceRoadmap.current_status === 'COMPLETED')
+                                ? 'check'
+                                : isCurrent && (serviceRoadmap.current_status === 'WAITING_ON_CLIENT' || serviceRoadmap.current_status === 'BLOCKED')
+                                  ? 'alert'
+                                  : isCurrent ? 'current' : 'circle';
+                              return <li key={stage.stage_key} className={`is-${String(stage.status).toLowerCase()}`} aria-current={isCurrent ? 'step' : undefined}><span aria-hidden="true"><ClientDashboardIcon name={stageIcon} size={15} /></span><div><strong>{stage.title}</strong><small>{stage.description}</small></div></li>;
+                            })}</ol>
                           </div>
                         </section> : clientWorkspaceError ? <section className="client-order-roadmap" role="alert">Your service progress is temporarily unavailable.</section> : null}
                       {(clientWorkspaceLoading || clientWorkspaceError || visibleTasks.length > 0 || visibleGoals.length > 0 || sharedNotes.length > 0) && (
                         <section className="client-order-action-plan" aria-label={`Action plan for order ${o.id}`}>
                           <h3>Delivery updates</h3>
-                          {clientWorkspaceLoading ? <p role="status">Loading your delivery updates…</p>
+                          {clientWorkspaceLoading ? <SkeletonState label="Loading delivery updates" variant="rows" count={3} />
                             : clientWorkspaceError ? <p role="alert">{clientWorkspaceError}</p>
                               : <>
                                 {visibleTasks.length > 0 && <ul>{visibleTasks.map((task) => (
@@ -2819,9 +3009,16 @@ import MessageActions from '../components/MessageActions';
                   </div>}
                 </div>
               );
-            })
+            })}
+            </> : (
+              <div className="orders-filter-empty">
+                <strong>No orders match these filters.</strong>
+                <p>Try another status or search term.</p>
+                <button type="button" onClick={() => { setOrderStatusFilter('all'); setOrderSearch(''); }}>Clear filters</button>
+              </div>
+            )
           ) : (
-            <div className="empty"><h3>No orders yet.</h3><p>Choose a service and your project will appear here.</p><Link to="/services">Browse services →</Link></div>
+            <div className="empty"><h3>No orders yet</h3><p>Confirmed service orders will appear here.</p><Link to="/services">View services <ClientDashboardIcon name="arrow" /></Link></div>
 
           )}
         </div>
@@ -2861,7 +3058,7 @@ import MessageActions from '../components/MessageActions';
               </div>
 
               {briefLoading ? (
-                <div className="project-brief-loading">Loading your brief…</div>
+                <div className="project-brief-loading"><SkeletonState label="Loading your project brief" variant="form" /></div>
               ) : (
                 <form onSubmit={saveBrief} className="project-brief-form">
                   <section className="brief-section">
@@ -3128,7 +3325,7 @@ import MessageActions from '../components/MessageActions';
                   <div className="project-brief-actions">
                     <p>Your information stays inside your Formant project.</p>
                     <button className="btn lime" type="submit" disabled={briefSaving}>
-                      {briefSaving ? 'Saving…' : 'Save project brief ↗'}
+                      {briefSaving ? 'Saving…' : <>Save project brief <ClientDashboardIcon name="arrow" size={14} /></>}
                     </button>
                   </div>
                 </form>
@@ -3205,13 +3402,42 @@ import MessageActions from '../components/MessageActions';
         rel="noreferrer"
         download={attachment.name}
       >
-        <span className="message-attachment-icon">↗</span>
+        <span className="message-attachment-icon"><MessagesIcon name="download" size={16} /></span>
         <span className="message-attachment-copy">
           <strong>{attachment.name}</strong>
           <small>{attachment.size >= 1024 * 1024 ? `${(attachment.size / (1024 * 1024)).toFixed(1)} MB` : `${Math.round(attachment.size / 1024)} KB`}</small>
         </span>
       </a>
     );
+  }
+
+  function MessagesIcon({ name, size = 18 }) {
+    const common = {
+      width: size,
+      height: size,
+      viewBox: '0 0 24 24',
+      fill: 'none',
+      stroke: 'currentColor',
+      strokeWidth: 1.8,
+      strokeLinecap: 'round',
+      strokeLinejoin: 'round',
+      'aria-hidden': true,
+      focusable: 'false'
+    };
+
+    switch (name) {
+      case 'search': return <svg {...common}><circle cx="10.8" cy="10.8" r="6.8" /><path d="m16 16 4.2 4.2" /></svg>;
+      case 'projects': return <svg {...common}><rect x="3.5" y="5" width="17" height="15" rx="2" /><path d="M8 5V3.5h8V5M3.5 10h17" /></svg>;
+      case 'message': return <svg {...common}><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-6.5A7.5 7.5 0 1 1 20 11.5Z" /><path d="M8 11h.01M12 11h.01M16 11h.01" /></svg>;
+      case 'warning': return <svg {...common}><path d="M10.3 4.1 2.8 17a2 2 0 0 0 1.7 3h15a2 2 0 0 0 1.7-3L13.7 4.1a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4m0 3h.01" /></svg>;
+      case 'mail': return <svg {...common}><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m4 7 8 6 8-6" /></svg>;
+      case 'attachment': return <svg {...common}><path d="m8 12.5 6.7-6.7a3.2 3.2 0 0 1 4.5 4.5l-8.8 8.8a5 5 0 0 1-7.1-7.1l8.5-8.5" /></svg>;
+      case 'back': return <svg {...common}><path d="m14.5 5-7 7 7 7M8 12h12" /></svg>;
+      case 'close': return <svg {...common}><path d="m6 6 12 12M18 6 6 18" /></svg>;
+      case 'send': return <svg {...common}><path d="M5 12 20 4l-5 16-3-7-7-1Z" /><path d="m12 13 4-4" /></svg>;
+      case 'download': return <svg {...common}><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 17v3h14v-3" /></svg>;
+      default: return null;
+    }
   }
 
   export function Messages() {
@@ -4315,16 +4541,8 @@ import MessageActions from '../components/MessageActions';
     }, [orders, orderSearch]);
 
     return (
-      <DashboardShell>
+      <DashboardShell className="messages-dashboard-shell">
         <div ref={messagesRootRef} className={`messages-unified-container ${mobileView === 'chat' ? 'mobile-chat-active' : ''}`}>
-          <div className="messages-unified-head">
-            <div>
-              <p className="eyebrow">MESSAGES</p>
-              <h1>Project conversations.</h1>
-              <p>Updates, questions and revisions with the Formant team.</p>
-            </div>
-          </div>
-
           {error && !messages.length && (
             <div
               className="project-brief-error messages-error"
@@ -4349,7 +4567,7 @@ import MessageActions from '../components/MessageActions';
               {orders.length > 2 && (
                 <div className="messages-inbox-search-wrap">
                   <div className="messages-inbox-search">
-                    <span>⌕</span>
+                    <span className="messages-search-icon"><MessagesIcon name="search" /></span>
                     <input
                       type="text"
                       placeholder="Search projects…"
@@ -4363,9 +4581,7 @@ import MessageActions from '../components/MessageActions';
 
               <div className="messages-inbox-list">
                 {loadingOrders ? (
-                  <div className="messages-empty-state">
-                    <p>Loading conversations…</p>
-                  </div>
+                  <div className="messages-empty-state"><SkeletonState label="Loading conversations" variant="messages" count={4} /></div>
                 ) : filteredOrders.length ? (
                   filteredOrders.map((order) => {
                     const active = String(order.id) === String(selectedOrderId);
@@ -4383,7 +4599,7 @@ import MessageActions from '../components/MessageActions';
                     const lastMessage = thread.length ? thread[thread.length - 1] : null;
                     const lastParsed = lastMessage ? parseMessageBody(lastMessage.body) : null;
                     const snippet = lastParsed
-                      ? (lastParsed.text || (lastParsed.attachment ? `📎 ${lastParsed.attachment.name}` : ''))
+                      ? (lastParsed.text || (lastParsed.attachment ? `Attachment: ${lastParsed.attachment.name}` : ''))
                       : (order.package_name || 'No messages yet');
 
                     const timeDisplay = lastMessage?.created_at
@@ -4469,9 +4685,9 @@ import MessageActions from '../components/MessageActions';
                   })
                 ) : (
                   <div className="messages-empty-state">
-                    <div className="messages-empty-state-icon">📋</div>
+                    <div className="messages-empty-state-icon"><MessagesIcon name="projects" size={20} /></div>
                     <h3>No active orders</h3>
-                    <p>Once you place an order, its project conversation will appear here.</p>
+                    <p>Conversations for your service orders will appear here.</p>
                   </div>
                 )}
               </div>
@@ -4487,7 +4703,7 @@ import MessageActions from '../components/MessageActions';
                     title="Back to conversations"
                     aria-label="Back to conversations"
                   >
-                    ←
+                    <MessagesIcon name="back" />
                   </button>
 
                   <div className="messages-chat-avatar">
@@ -4543,17 +4759,15 @@ import MessageActions from '../components/MessageActions';
               >
                 {!selectedOrderId ? (
                   <div className="messages-empty-state">
-                    <div className="messages-empty-state-icon">💬</div>
+                    <div className="messages-empty-state-icon"><MessagesIcon name="message" size={20} /></div>
                     <h3>Select a project</h3>
                     <p>Choose an order from the list to view updates and chat with your project team.</p>
                   </div>
                 ) : loadingMessages ? (
-                  <div className="messages-empty-state">
-                    <p>Loading messages…</p>
-                  </div>
+                  <div className="messages-empty-state"><SkeletonState label="Loading messages" variant="thread" count={4} /></div>
                 ) : threadError ? (
                   <div className="messages-empty-state messages-empty-state-error">
-                    <div className="messages-empty-state-icon">⚠️</div>
+                    <div className="messages-empty-state-icon"><MessagesIcon name="warning" size={20} /></div>
                     <h3>Could not load conversation</h3>
                     <p>{threadError}</p>
                     <button type="button" className="btn dark" onClick={() => void loadThreadPage(selectedOrderId)}>Retry</button>
@@ -4627,7 +4841,7 @@ import MessageActions from '../components/MessageActions';
                               {message.edited_at && !message.deleted_at && <span className="messages-edited-label"> · Edited</span>}
                               {mine && (
                                 <span className="messages-read-status" title={isRead ? 'Seen by team' : 'Sent'}>
-                                  {isRead ? ' · Seen ✓' : ' · Sent'}
+                                  {isRead ? <> · Seen <ClientDashboardIcon name="check" size={11} /></> : ' · Sent'}
                                 </span>
                               )}
                             </div>
@@ -4648,9 +4862,9 @@ import MessageActions from '../components/MessageActions';
                   </>
                 ) : (
                   <div className="messages-empty-state">
-                    <div className="messages-empty-state-icon">✉️</div>
+                    <div className="messages-empty-state-icon"><MessagesIcon name="mail" size={20} /></div>
                     <h3>No messages yet</h3>
-                    <p>Send a message and the Formant team will reply with updates, questions, or deliverables here.</p>
+                    <p>Use this conversation to ask questions and share project updates with the Formant team.</p>
                   </div>
                 )}
               </div>
@@ -4674,12 +4888,12 @@ import MessageActions from '../components/MessageActions';
                     {(replyTo || editingMessage) && (
                       <div className={`messages-composer-context ${editingMessage ? 'is-editing' : ''}`} role="status">
                         <div><strong>{editingMessage ? 'Editing message' : 'Replying to'}</strong><span>{editingMessage ? editingMessage.originalText : (replyTo.deleted_at ? 'Original message was deleted' : parseMessageBody(replyTo.body).text || 'Attachment').slice(0, 120)}</span></div>
-                        <button type="button" onClick={() => editingMessage ? cancelEdit() : setReplyTo(null)} aria-label={editingMessage ? 'Cancel edit' : 'Cancel reply'}>×</button>
+                        <button type="button" onClick={() => editingMessage ? cancelEdit() : setReplyTo(null)} aria-label={editingMessage ? 'Cancel edit' : 'Cancel reply'}><MessagesIcon name="close" size={16} /></button>
                       </div>
                     )}
                     {attachment && (
                       <div className="messages-attachment-preview">
-                        <span>📎</span>
+                        <span className="messages-attachment-preview-icon"><MessagesIcon name="attachment" size={16} /></span>
                         <strong>{attachment.name}</strong>
                         <small>({formatFileSize(attachment.size)})</small>
                         <button
@@ -4688,7 +4902,7 @@ import MessageActions from '../components/MessageActions';
                           disabled={sending}
                           aria-label="Remove attachment"
                         >
-                          ×
+                          <MessagesIcon name="close" size={16} />
                         </button>
                       </div>
                     )}
@@ -4711,7 +4925,7 @@ import MessageActions from '../components/MessageActions';
                           disabled={!selectedOrderId || sending || Boolean(editingMessage)}
                           aria-label="Attach file"
                         />
-                        <span>+</span>
+                        <MessagesIcon name="attachment" size={18} />
                       </label>
 
                       <textarea
@@ -4742,7 +4956,7 @@ import MessageActions from '../components/MessageActions';
                         }
                         aria-label={editingMessage ? 'Save edited message' : replyTo ? 'Send reply' : 'Send message'}
                       >
-                        {sending ? (editingMessage ? 'Saving…' : 'Sending…') : editingMessage ? 'Save edit' : 'Send ↗'}
+                        {sending ? (editingMessage ? 'Saving…' : 'Sending…') : editingMessage ? 'Save edit' : <>Send <MessagesIcon name="send" size={15} /></>}
                       </button>
                     </div>
 
@@ -4818,7 +5032,7 @@ import MessageActions from '../components/MessageActions';
         rel="noreferrer"
         download={file.name}
       >
-        Open ↗
+        Open <ClientDashboardIcon name="arrow" size={13} />
       </a>
     );
   }
@@ -4983,8 +5197,8 @@ import MessageActions from '../components/MessageActions';
           <div className="dash-head">
             <div>
               <p className="eyebrow">FILES</p>
-              <h1>Your project files.</h1>
-              <p>Files shared with you through your Formant conversations.</p>
+              <h1>Your project files</h1>
+              <p>Files shared in your service conversations.</p>
             </div>
           </div>
 
@@ -4992,17 +5206,17 @@ import MessageActions from '../components/MessageActions';
 
           <section className="panel">
             {loading ? (
-              <div className="empty"><h3>Loading files…</h3></div>
+            <SkeletonState label="Loading files" variant="rows" count={4} />
             ) : !files.length ? (
               <div className="empty">
                 <h3>No files yet.</h3>
-                <p>Files attached to your project conversations will appear here.</p>
+                <p>Files shared in a project conversation will appear here.</p>
               </div>
             ) : (
               <div className="file-list">
                 {files.map((file) => (
                   <div className="file-row" key={`${file.messageId}-${file.path}`}>
-                    <span>📎</span>
+                    <span aria-hidden="true"><ClientDashboardIcon name="attachment" size={16} /></span>
                     <div className="file-row-copy">
                       <strong>{file.name}</strong>
                       <small>
@@ -5044,27 +5258,20 @@ import MessageActions from '../components/MessageActions';
               PAYMENTS
             </p>
 
-            <h1>
-              Payment history.
-            </h1>
+            <h1>Payment history</h1>
 
           </div>
 
         </div>
 
 
-        <div className="panel">
+        <div className="panel client-payments-empty-panel">
 
           <div className="empty">
 
-            <h3>
-              No payments yet.
-            </h3>
+            <h3>Payment records are not available here yet.</h3>
 
-            <p>
-              Payment records will appear here
-              after your first order.
-            </p>
+            <p>Check your order for its current payment status.</p>
 
           </div>
 
@@ -5129,16 +5336,57 @@ import MessageActions from '../components/MessageActions';
 
     function notificationIcon(type) {
       const icons = {
-        message: '✦',
-        order: '↗',
-        project: '◌',
-        payment: '$',
-        file: '⌁',
-        account: '◎',
-        security: '◈'
+        message: 'message',
+        order: 'order',
+        project: 'project',
+        payment: 'payment',
+        file: 'file',
+        account: 'account',
+        security: 'security'
       };
 
-      return icons[String(type || '').toLowerCase()] || '•';
+      return icons[String(type || '').toLowerCase()] || 'update';
+    }
+
+    function NotificationIcon({ name, size = 19 }) {
+      const common = {
+        width: size,
+        height: size,
+        viewBox: '0 0 24 24',
+        fill: 'none',
+        stroke: 'currentColor',
+        strokeWidth: 1.7,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+        focusable: false,
+        'aria-hidden': true
+      };
+
+      switch (name) {
+        case 'message':
+          return <svg {...common}><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-6.5A7.5 7.5 0 1 1 20 11.5Z" /><path d="M8 11h.01M12 11h.01M16 11h.01" /></svg>;
+        case 'order':
+          return <svg {...common}><path d="M6 3.5h8l4 4v13H6z" /><path d="M14 3.5v4h4M9 12h6M9 15.5h6" /></svg>;
+        case 'project':
+          return <svg {...common}><rect x="3.5" y="6" width="17" height="14" rx="2" /><path d="M8 6V4h8v2M3.5 11h17M10 11v2h4v-2" /></svg>;
+        case 'payment':
+          return <svg {...common}><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 10h18M7 15h4" /></svg>;
+        case 'file':
+          return <svg {...common}><path d="M6 3.5h8l4 4v13H6z" /><path d="M14 3.5v4h4M9 12h6M9 15.5h6" /></svg>;
+        case 'account':
+          return <svg {...common}><circle cx="12" cy="8" r="3.5" /><path d="M4.5 20a7.5 7.5 0 0 1 15 0" /></svg>;
+        case 'security':
+          return <svg {...common}><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z" /><path d="m9 12 2 2 4-4" /></svg>;
+        case 'warning':
+          return <svg {...common}><path d="M10.3 4.1 2.8 17a2 2 0 0 0 1.7 3h15a2 2 0 0 0 1.7-3L13.7 4.1a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4m0 3h.01" /></svg>;
+        case 'check':
+          return <svg {...common}><path d="m5 12 4 4L19 6" /></svg>;
+        case 'arrow':
+          return <svg {...common}><path d="M7 17 17 7M8 7h9v9" /></svg>;
+        case 'update':
+        default:
+          return <svg {...common}><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M10 21h4" /></svg>;
+      }
     }
 
     useEffect(() => {
@@ -5354,7 +5602,7 @@ import MessageActions from '../components/MessageActions';
         <div className="dash-head notifications-page-header">
           <div>
             <p className="eyebrow">NOTIFICATIONS</p>
-            <h1>Updates from your team.</h1>
+            <h1>Team updates</h1>
             <p className="notifications-page-subtitle">
               Messages, project updates, files, payments and order activity in one place.
             </p>
@@ -5366,29 +5614,25 @@ import MessageActions from '../components/MessageActions';
               className="btn dark notifications-mark-all"
               onClick={markAllAsRead}
             >
-              Mark all as read ↗
+              Mark all as read
             </button>
           )}
         </div>
 
         <div className="panel notifications-panel">
           {loading ? (
-            <div className="notifications-empty">
-              <div className="notifications-empty-mark">•</div>
-              <h3>Loading notifications…</h3>
-              <p>Checking the latest updates from your Formant workspace.</p>
-            </div>
+            <SkeletonState label="Loading notifications" variant="rows" count={4} />
           ) : error ? (
             <div className="notifications-empty notifications-empty-error">
-              <div className="notifications-empty-mark">!</div>
+              <div className="notifications-empty-mark"><NotificationIcon name="warning" /></div>
               <h3>Notifications need setup.</h3>
               <p>{error}</p>
             </div>
           ) : notifications.length === 0 ? (
             <div className="notifications-empty">
-              <div className="notifications-empty-mark">✓</div>
+              <div className="notifications-empty-mark"><NotificationIcon name="check" /></div>
               <h3>You're all caught up.</h3>
-              <p>New messages, files and project updates will appear here.</p>
+              <p>New messages, shared files and project updates will appear here.</p>
             </div>
           ) : (
             <div className="notifications-list">
@@ -5398,7 +5642,7 @@ import MessageActions from '../components/MessageActions';
                 const content = (
                   <>
                     <div className="notification-item-icon" aria-hidden="true">
-                      {notificationIcon(notification.type)}
+                      <NotificationIcon name={notificationIcon(notification.type)} />
                     </div>
 
                     <div className="notification-item-content">
@@ -5411,7 +5655,7 @@ import MessageActions from '../components/MessageActions';
                         </span>
                       </div>
 
-                      <h3>{notification.title || 'Formant update'}</h3>
+                      <h3>{formatFormantBrandText(notification.title || 'Formant update')}</h3>
                       <p>{notification.body || ''}</p>
 
                       {notification.order_id && (
@@ -5423,7 +5667,8 @@ import MessageActions from '../components/MessageActions';
 
                     <div className="notification-item-status">
                       {unread && <span className="notification-unread-dot" />}
-                      {destination && <span className="notification-item-arrow">↗</span>}
+                      <span className={`notification-read-state ${unread ? 'is-unread' : ''}`}>{unread ? 'Unread' : 'Read'}</span>
+                      {destination && <span className="notification-item-arrow"><NotificationIcon name="arrow" size={16} /></span>}
                     </div>
                   </>
                 );
@@ -5697,7 +5942,7 @@ import MessageActions from '../components/MessageActions';
           <header className="settings-hero-v2">
             <div>
               <p className="eyebrow">ACCOUNT / SETTINGS</p>
-              <h1>Everything in<br /><span>one place.</span></h1>
+              <h1>Account settings.</h1>
             </div>
             <p className="settings-hero-copy">
               Manage your Formant preferences, security and account without leaving your workspace.
@@ -5709,7 +5954,7 @@ import MessageActions from '../components/MessageActions';
               className={`settings-feedback-v2 ${error ? 'is-error' : 'is-success'}`}
               role={error ? 'alert' : 'status'}
             >
-              <span>{error ? '!' : '✓'}</span>
+              <span><ClientDashboardIcon name={error ? 'alert' : 'check'} size={14} /></span>
               <strong>{error || message}</strong>
             </div>
           )}
@@ -5729,14 +5974,14 @@ import MessageActions from '../components/MessageActions';
                   <div className="settings-section-title">
                     <div>
                       <p className="settings-kicker">PREFERENCES</p>
-                      <h2>Your experience.</h2>
+                      <h2>Preferences</h2>
                     </div>
-                    <span className="settings-section-icon">✦</span>
+                    <span className="settings-section-icon"><ClientDashboardIcon name="preferences" size={17} /></span>
                   </div>
 
                   <div className="settings-options-v2">
                     <label className="settings-toggle-v2">
-                      <span className="settings-option-icon">@</span>
+                      <span className="settings-option-icon"><ClientDashboardIcon name="mail" size={16} /></span>
                       <span className="settings-option-copy">
                         <strong>Email notifications</strong>
                         <small>Important project, order and account updates.</small>
@@ -5750,7 +5995,7 @@ import MessageActions from '../components/MessageActions';
                     </label>
 
                     <label className="settings-toggle-v2">
-                      <span className="settings-option-icon">🔔</span>
+                      <span className="settings-option-icon"><ClientDashboardIcon name="bell" size={16} /></span>
                       <span className="settings-option-copy">
                         <strong>Browser push notifications</strong>
                         <small>
@@ -5787,7 +6032,7 @@ import MessageActions from '../components/MessageActions';
                     )}
 
                     <label className="settings-select-v2">
-                      <span className="settings-option-icon">文</span>
+                      <span className="settings-option-icon"><ClientDashboardIcon name="globe" size={16} /></span>
                       <span className="settings-option-copy">
                         <strong>Language</strong>
                         <small>Choose the language used across your account.</small>
@@ -5798,7 +6043,7 @@ import MessageActions from '../components/MessageActions';
                     </label>
 
                     <label className="settings-select-v2">
-                      <span className="settings-option-icon">◐</span>
+                      <span className="settings-option-icon"><ClientDashboardIcon name="appearance" size={16} /></span>
                       <span className="settings-option-copy">
                         <strong>Appearance</strong>
                         <small>Use your device preference or choose a fixed theme.</small>
@@ -5821,7 +6066,7 @@ import MessageActions from '../components/MessageActions';
                   <div className="settings-section-footer-v2">
                     <span>Changes are saved to your Formant account.</span>
                     <button className="btn dark" type="submit" disabled={savingPreferences}>
-                      {savingPreferences ? 'Saving…' : 'Save changes ↗'}
+                      {savingPreferences ? 'Saving…' : <>Save changes <ClientDashboardIcon name="arrow" size={14} /></>}
                     </button>
                   </div>
                 </div>
@@ -5833,9 +6078,9 @@ import MessageActions from '../components/MessageActions';
                   <div className="settings-section-title">
                     <div>
                       <p className="settings-kicker">SECURITY</p>
-                      <h2>Keep it protected.</h2>
+                      <h2>Password and account security</h2>
                     </div>
-                    <span className="settings-section-icon">⌁</span>
+                    <span className="settings-section-icon"><ClientDashboardIcon name="security" size={17} /></span>
                   </div>
 
                   <div className="settings-security-grid-v2">
@@ -5870,7 +6115,7 @@ import MessageActions from '../components/MessageActions';
                       <span>Your password is never stored in Formant profile data.</span>
                     </div>
                     <button className="btn dark" type="submit" disabled={changingPassword}>
-                      {changingPassword ? 'Updating…' : 'Update password ↗'}
+                      {changingPassword ? 'Updating…' : <>Update password <ClientDashboardIcon name="arrow" size={14} /></>}
                     </button>
                   </div>
                 </div>
@@ -5882,19 +6127,19 @@ import MessageActions from '../components/MessageActions';
                   <div className="settings-section-title">
                     <div>
                       <p className="settings-kicker">ACCOUNT</p>
-                      <h2>Your account.</h2>
+                      <h2>Account details</h2>
                     </div>
-                    <span className="settings-section-icon">↗</span>
+                    <span className="settings-section-icon"><ClientDashboardIcon name="user" size={17} /></span>
                   </div>
 
                   <div className="settings-account-list-v2">
                     <Link to="/dashboard/profile" className="settings-account-row-v2">
-                      <span className="settings-account-icon">◎</span>
+                      <span className="settings-account-icon"><ClientDashboardIcon name="user" size={16} /></span>
                       <span>
                         <strong>Edit profile</strong>
                         <small>Update your professional information.</small>
                       </span>
-                      <b>↗</b>
+                      <b><ClientDashboardIcon name="arrow" size={15} /></b>
                     </Link>
 
                     <button
@@ -5905,12 +6150,12 @@ import MessageActions from '../components/MessageActions';
                         window.location.href = '/login';
                       }}
                     >
-                      <span className="settings-account-icon">→</span>
+                      <span className="settings-account-icon"><ClientDashboardIcon name="logout" size={16} /></span>
                       <span>
                         <strong>Sign out</strong>
                         <small>End your current Formant session.</small>
                       </span>
-                      <b>↗</b>
+                      <b><ClientDashboardIcon name="arrow" size={15} /></b>
                     </button>
                   </div>
                 </div>

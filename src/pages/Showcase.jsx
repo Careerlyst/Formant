@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import Footer from '../components/Footer';
 import PublicNav from '../components/PublicNav';
+import SkeletonState from '../components/SkeletonState';
 import { supabase } from '../lib/supabase';
 import { classifyRequestFailure } from '../lib/requestFailure';
 import { RequestProblem } from '../components/ErrorExperience';
@@ -81,6 +82,52 @@ async function createDecodedObjectUrl(blob) {
   }
 }
 
+function createPdfThumbnailScheduler(concurrency = 2) {
+  const queued = [];
+  const active = new Set();
+  let sequence = 0;
+  let disposed = false;
+
+  const pump = () => {
+    while (!disposed && active.size < concurrency && queued.length) {
+      queued.sort((a, b) => a.priority - b.priority || a.sequence - b.sequence);
+      const job = queued.shift();
+      if (job.cancelled) continue;
+      active.add(job);
+      Promise.resolve()
+        .then(() => job.render(() => job.cancelled, (cancel) => { job.cancelRender = cancel; }))
+        .catch(() => {})
+        .finally(() => {
+          active.delete(job);
+          pump();
+        });
+    }
+  };
+
+  return {
+    enqueue(key, priority, render) {
+      if (disposed) return () => {};
+      const job = { key, priority, render, sequence: sequence++, cancelled: false, cancelRender: null };
+      queued.push(job);
+      pump();
+      return () => {
+        job.cancelled = true;
+        const index = queued.indexOf(job);
+        if (index >= 0) queued.splice(index, 1);
+        job.cancelRender?.();
+      };
+    },
+    dispose() {
+      disposed = true;
+      queued.splice(0).forEach((job) => { job.cancelled = true; });
+      active.forEach((job) => {
+        job.cancelled = true;
+        job.cancelRender?.();
+      });
+    }
+  };
+}
+
 function publishedShowcaseRequest(featuredOnly, signal) {
   return supabase.rpc('list_published_showcase_v1', {
     p_service_category: null,
@@ -129,8 +176,8 @@ const SHOWCASE_CATEGORY_COPY = {
 };
 
 const SHOWCASE_FILTERS = [
-  { id: 'all', label: 'All', categories: null, heading: 'Real progress. Real results.', eyebrow: 'WORK SHOWCASE', description: 'Explore real client work and sample projects to see how we transform professional profiles. Each example shows the difference the right strategy and design can make.' },
-  { id: 'cv', label: 'CV', categories: ['cv_demo', 'resume_demo'], heading: 'CV Examples', eyebrow: 'WORK SHOWCASE', description: 'Explore real examples and see how a clear, well-structured CV can make a stronger impression.' },
+  { id: 'all', label: 'All', categories: null, heading: 'Selected work and sample projects', eyebrow: 'WORK SHOWCASE', description: 'Browse published client work and sample projects across CVs, portfolios and professional profiles.' },
+  { id: 'cv', label: 'CV', categories: ['cv_demo', 'resume_demo'], heading: 'CV examples', eyebrow: 'WORK SHOWCASE', description: 'Browse CV projects and sample layouts.' },
   { id: 'cover-letter', label: 'Cover Letter', categories: ['cover_letter_demo'], heading: 'Cover Letter Examples', eyebrow: 'COVER LETTER', description: SHOWCASE_CATEGORY_COPY.cover_letter_demo.description },
   { id: 'linkedin', label: 'LinkedIn', categories: ['linkedin_before_after'], heading: 'LinkedIn Examples', eyebrow: 'LINKEDIN', description: SHOWCASE_CATEGORY_COPY.linkedin_before_after.description },
   { id: 'portfolio', label: 'Portfolio Website', categories: ['portfolio_website_demo'], heading: 'Portfolio Website Examples', eyebrow: 'PORTFOLIO', description: SHOWCASE_CATEGORY_COPY.portfolio_website_demo.description },
@@ -146,7 +193,7 @@ const LEGACY_TAB_FILTERS = {
   'github-before-after': 'github'
 };
 
-export function ShowcaseImage({ image, className = '', eager = false, authorized = false, initialSrc = '', onRetry, onFailure, onImageReady, retryToken = 0, onImageLoad, resourceStyle }) {
+export function ShowcaseImage({ image, className = '', eager = false, authorized = false, initialSrc = '', onRetry, onFailure, onImageReady, retryToken = 0, onImageLoad, resourceStyle, altText }) {
   const resourceRef = useRef(null);
   const [src, setSrc] = useState(initialSrc);
   const [status, setStatus] = useState(initialSrc ? 'ready' : 'idle');
@@ -234,10 +281,11 @@ export function ShowcaseImage({ image, className = '', eager = false, authorized
     };
   }, [image?.id, authorized, initialSrc, shouldLoad, retryToken]);
 
+  const imageAlt = altText !== undefined ? altText : (image?.alt_text || 'Showcase project image');
   const imageElement = status === 'ready' && src
-    ? <img className={className} src={src} data-showcase-image-id={image?.id} alt={image?.alt_text || 'Showcase project image'} decoding="async" draggable={authorized ? undefined : false} onContextMenu={authorized ? undefined : (event) => event.preventDefault()} onLoad={(event) => onImageLoad?.({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })} onError={() => { if (src.startsWith('blob:')) URL.revokeObjectURL(src); setSrc(''); setStatus('error'); onFailure?.(); }} />
+    ? <img className={className} src={src} data-showcase-image-id={image?.id} alt={imageAlt} decoding="async" draggable={authorized ? undefined : false} onContextMenu={authorized ? undefined : (event) => event.preventDefault()} onLoad={(event) => onImageLoad?.({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })} onError={() => { if (src.startsWith('blob:')) URL.revokeObjectURL(src); setSrc(''); setStatus('error'); onFailure?.(); }} />
     : status === 'error'
-      ? <span className="showcase-image-fallback" role="status" aria-live="polite"><span>{image?.alt_text || 'Project image'} preview unavailable.</span>{onRetry && <button type="button" className="showcase-preview-retry" onClick={onRetry}>Try again</button>}</span>
+      ? <span className="showcase-image-fallback" role="status" aria-live="polite"><span>{imageAlt || 'Project'} preview unavailable.</span>{onRetry && <button type="button" className="showcase-preview-retry" onClick={onRetry}>Try again</button>}</span>
       : status === 'idle'
         ? <span className="showcase-image-loading is-deferred" aria-hidden="true" />
         : <span className="showcase-image-loading" role="status" aria-live="polite">Loading preview…</span>;
@@ -352,7 +400,154 @@ export function ShowcaseDocument({ image, authorized = false, downloadEnabled = 
   return <div className="showcase-document-preview"><iframe title={image?.caption || image?.alt_text || 'Showcase document preview'} src={src} loading="eager" />{authorized && downloadEnabled && <button className="showcase-document-download" type="button" onClick={downloadFile} disabled={downloading}>{downloading ? 'Preparing PDF…' : 'Download original PDF'}</button>}<a href={src} target="_blank" rel="noopener noreferrer">Open document in a new tab ↗</a>{downloadError && <p role="alert">{downloadError}</p>}</div>;
 }
 
-function ShowcasePdfReader({ image, title, authorized = false }) {
+function PdfThumbnailItem({ pdf, pageNumber, activePageNumber, isSelected, rotation, sidebarOpen, scrollRootRef, scheduler, onSelect }) {
+  const canvasRef = useRef(null);
+  const itemRef = useRef(null);
+  const [rendered, setRendered] = useState(false);
+  const [aspectRatio, setAspectRatio] = useState(0.707);
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    if (!sidebarOpen) {
+      setIsVisible(false);
+      return undefined;
+    }
+    const item = itemRef.current;
+    if (!item || typeof IntersectionObserver === 'undefined') return undefined;
+    const observer = new IntersectionObserver((entries) => {
+      setIsVisible(entries.some((entry) => entry.isIntersecting));
+    }, { root: scrollRootRef.current, rootMargin: '120px 0px' });
+    observer.observe(item);
+    return () => observer.disconnect();
+  }, [sidebarOpen, scrollRootRef]);
+
+  useEffect(() => {
+    if (isSelected && itemRef.current) {
+      itemRef.current.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'nearest'
+      });
+    }
+  }, [isSelected]);
+
+  const distanceFromActivePage = Math.abs(pageNumber - activePageNumber);
+  const isNearActivePage = distanceFromActivePage <= 2;
+  const shouldRender = sidebarOpen && (isVisible || isSelected || isNearActivePage);
+  const renderPriority = isSelected ? 0 : isNearActivePage ? distanceFromActivePage + 1 : 10;
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!shouldRender || !pdf || !canvas || !scheduler) {
+      setRendered(false);
+      if (canvas) {
+        canvas.width = 0;
+        canvas.height = 0;
+        canvas.style.width = '';
+        canvas.style.height = '';
+      }
+      return undefined;
+    }
+    let active = true;
+    let renderTask = null;
+    setRendered(false);
+    const cancelQueuedJob = scheduler.enqueue(`${pageNumber}:${rotation}`, renderPriority, async (isCancelled, setCancelRender) => {
+      try {
+        const page = await pdf.getPage(pageNumber);
+        if (!active || isCancelled()) return;
+        const totalRotation = ((page.rotate || 0) + rotation) % 360;
+        const unscaledViewport = page.getViewport({ scale: 1, rotation: totalRotation });
+        setAspectRatio(unscaledViewport.width / unscaledViewport.height);
+
+        const targetWidth = 84;
+        const scale = targetWidth / unscaledViewport.width;
+        const viewport = page.getViewport({ scale, rotation: totalRotation });
+        const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+
+        if (!active || isCancelled() || !canvasRef.current) return;
+        const context = canvas.getContext('2d', { alpha: false });
+        if (!context) return;
+
+        canvas.width = Math.ceil(viewport.width * dpr);
+        canvas.height = Math.ceil(viewport.height * dpr);
+        canvas.style.width = `${Math.ceil(viewport.width)}px`;
+        canvas.style.height = `${Math.ceil(viewport.height)}px`;
+
+        context.setTransform(dpr, 0, 0, dpr, 0, 0);
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, viewport.width, viewport.height);
+
+        renderTask = page.render({ canvasContext: context, viewport });
+        setCancelRender(() => renderTask?.cancel());
+        await renderTask.promise;
+        if (active && !isCancelled()) setRendered(true);
+      } catch {
+        // Keep the placeholder visible when a thumbnail cannot be rendered.
+      }
+    });
+
+    return () => {
+      active = false;
+      cancelQueuedJob();
+      renderTask?.cancel();
+      canvas.width = 0;
+      canvas.height = 0;
+      canvas.style.width = '';
+      canvas.style.height = '';
+    };
+  }, [pdf, pageNumber, rotation, shouldRender, renderPriority, scheduler]);
+
+  return (
+    <button
+      ref={itemRef}
+      type="button"
+      className={`showcase-pdf-thumb-item ${isSelected ? 'is-selected' : ''}`}
+      onClick={onSelect}
+      aria-label={`Go to page ${pageNumber}`}
+      aria-current={isSelected ? 'page' : undefined}
+    >
+      <div className="showcase-pdf-thumb-wrapper" style={{ aspectRatio: `${aspectRatio}` }}>
+        <canvas ref={canvasRef} className={`showcase-pdf-thumb-canvas ${rendered ? 'is-ready' : 'is-loading'}`} />
+        {!rendered && <div className="showcase-pdf-thumb-placeholder" aria-hidden="true" />}
+      </div>
+      <span className="showcase-pdf-thumb-num">{pageNumber}</span>
+    </button>
+  );
+}
+
+function PdfReaderIcon({ name }) {
+  const shared = {
+    className: 'showcase-pdf-icon',
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.8,
+    strokeLinecap: 'round',
+    strokeLinejoin: 'round',
+    'aria-hidden': true,
+    focusable: false
+  };
+
+  const shapes = {
+    thumbnailsHide: <><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18M14 8h4M14 12h4M14 16h4M6.5 9.5 4.5 12l2 2.5" /></>,
+    thumbnailsShow: <><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18M13 8h5M13 12h5M13 16h5M5 9.5 7 12l-2 2.5" /></>,
+    zoomOut: <><circle cx="10.8" cy="10.8" r="6.8" /><path d="m16 16 4.5 4.5M8 10.8h5.6" /></>,
+    zoomIn: <><circle cx="10.8" cy="10.8" r="6.8" /><path d="m16 16 4.5 4.5M8 10.8h5.6M10.8 8v5.6" /></>,
+    fitWidth: <><path d="M4 5h16v14H4zM2 12h4m-2-2-2 2 2 2m18-2h-4m2-2 2 2-2 2" /></>,
+    fitPage: <><rect x="6" y="3" width="12" height="18" rx="1.5" /><path d="M3 8V5a2 2 0 0 1 2-2h3m8 0h3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3m8 0h3a2 2 0 0 0 2-2v-3" /></>,
+    previous: <path d="m15 5-7 7 7 7" />,
+    next: <path d="m9 5 7 7-7 7" />,
+    rotate: <><path d="M20 11a8 8 0 0 0-14.5-4L4 9" /><path d="M4 4v5h5M4 13a8 8 0 0 0 14.5 4L20 15" /><path d="M20 20v-5h-5" /></>,
+    fullscreen: <path d="M8 3H5a2 2 0 0 0-2 2v3m13-5h3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3m13-5v3a2 2 0 0 1-2 2h-3" />,
+    fullscreenExit: <path d="M9 3v4a2 2 0 0 1-2 2H3m18 0h-4a2 2 0 0 1-2-2V3M3 15h4a2 2 0 0 1 2 2v4m12-6h-4a2 2 0 0 0-2 2v4" />,
+    close: <path d="m6 6 12 12M18 6 6 18" />
+  };
+
+  return <svg {...shared}>{shapes[name] || shapes.close}</svg>;
+}
+
+function ShowcasePdfReader({ image, title, category, authorized = false, onClose, closeRef, viewerRef, onToggleFullscreen }) {
+  const containerRef = useRef(null);
   const stageRef = useRef(null);
   const canvasRef = useRef(null);
   const loadingTaskRef = useRef(null);
@@ -365,7 +560,9 @@ function ShowcasePdfReader({ image, title, authorized = false }) {
   const pointerInsideStageRef = useRef(false);
   const spacePanActiveRef = useRef(false);
   const panDragRef = useRef(null);
+  const thumbnailsScrollRef = useRef(null);
   const [pdf, setPdf] = useState(null);
+  const thumbnailScheduler = useMemo(() => createPdfThumbnailScheduler(2), [pdf]);
   const [loadStatus, setLoadStatus] = useState(authorized ? 'loading' : 'private');
   const [loadError, setLoadError] = useState('');
   const [renderError, setRenderError] = useState('');
@@ -373,17 +570,30 @@ function ShowcasePdfReader({ image, title, authorized = false }) {
   const [scale, setScale] = useState(1);
   const [fitMode, setFitMode] = useState('width');
   const [manualBaseMode, setManualBaseMode] = useState('width');
+  const [rotation, setRotation] = useState(0);
+  const [showSidebar, setShowSidebar] = useState(() => (typeof window !== 'undefined' ? window.innerWidth > 768 : true));
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
   const [renderStatus, setRenderStatus] = useState('idle');
   const [retryCount, setRetryCount] = useState(0);
   const [spacePanActive, setSpacePanActive] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
+  const [isFullscreenActive, setIsFullscreenActive] = useState(false);
 
-  const updateScale = (nextScale) => {
+  useEffect(() => () => thumbnailScheduler.dispose(), [thumbnailScheduler]);
+
+  const handleThumbnailSelect = useCallback((num) => {
+    setPageNumber(num);
+    if (typeof window !== 'undefined' && window.innerWidth <= 640) {
+      setShowSidebar(false);
+    }
+  }, []);
+
+  const updateScale = useCallback((nextScale) => {
     const next = typeof nextScale === 'function' ? nextScale(scaleRef.current) : nextScale;
     scaleRef.current = next;
     setScale(next);
-  };
+  }, []);
+
   const stopPan = useCallback((updateState = true) => {
     const drag = panDragRef.current;
     panDragRef.current = null;
@@ -396,12 +606,61 @@ function ShowcasePdfReader({ image, title, authorized = false }) {
     }
   }, []);
 
+  const toggleFullscreen = useCallback(async () => {
+    if (onToggleFullscreen) {
+      onToggleFullscreen();
+      return;
+    }
+    const target = viewerRef?.current || containerRef.current;
+    if (!target) return;
+    if (!document.fullscreenElement) {
+      try {
+        if (target.requestFullscreen) {
+          await target.requestFullscreen();
+        }
+      } catch {
+        setIsFullscreenActive(document.fullscreenElement === target);
+      }
+    } else {
+      try {
+        if (document.exitFullscreen) await document.exitFullscreen();
+      } catch {
+        setIsFullscreenActive(document.fullscreenElement === target);
+      }
+    }
+  }, [onToggleFullscreen, viewerRef]);
+
+  const exitFullscreen = useCallback(async () => {
+    const target = viewerRef?.current || containerRef.current;
+    if (document.fullscreenElement && document.exitFullscreen) {
+      try {
+        await document.exitFullscreen();
+      } catch {
+        setIsFullscreenActive(document.fullscreenElement === target);
+      }
+    }
+  }, [viewerRef]);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const target = viewerRef?.current || containerRef.current;
+      setIsFullscreenActive(Boolean(target && document.fullscreenElement === target));
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+    };
+  }, [viewerRef]);
+
   useEffect(() => {
     let active = true;
     let loadingTask = null;
     const controller = new AbortController();
     setPdf(null);
     setPageNumber(1);
+    setRotation(0);
     scaleRef.current = 1;
     updateScale(1);
     fitModeRef.current = 'width';
@@ -481,7 +740,7 @@ function ShowcasePdfReader({ image, title, authorized = false }) {
         canvas.height = 0;
       }
     };
-  }, [image?.id, authorized, retryCount]);
+  }, [image?.id, authorized, retryCount, updateScale]);
 
   useEffect(() => {
     const stage = stageRef.current;
@@ -521,18 +780,17 @@ function ShowcasePdfReader({ image, title, authorized = false }) {
         const lineSteps = wheelLineRemainderRef.current + event.deltaY / 3;
         const wholeSteps = Math.trunc(lineSteps);
         wheelLineRemainderRef.current = lineSteps - wholeSteps;
-        scaleDelta = -wholeSteps * 0.01;
+        scaleDelta = -wholeSteps * 0.05;
       } else if (event.deltaMode === 2) {
-        scaleDelta = -Math.sign(event.deltaY) * Math.max(1, Math.round(Math.abs(event.deltaY))) * 0.01;
+        scaleDelta = -Math.sign(event.deltaY) * Math.max(1, Math.round(Math.abs(event.deltaY))) * 0.05;
       } else if (Math.abs(event.deltaY) >= 50) {
         const wheelNotches = Math.max(1, Math.round(Math.abs(event.deltaY) / 100));
-        scaleDelta = -Math.sign(event.deltaY) * wheelNotches * 0.01;
+        scaleDelta = -Math.sign(event.deltaY) * wheelNotches * 0.05;
       } else {
-        // Pixel-mode trackpad and high-resolution wheel input stays proportional.
-        scaleDelta = -event.deltaY * 0.0001;
+        scaleDelta = -event.deltaY * 0.001;
       }
-      const nextScale = Math.min(2.5, Math.max(0.5, Math.round((scaleRef.current + scaleDelta) * 10000) / 10000));
-      if (Math.abs(nextScale - scaleRef.current) < 0.0001) return;
+      const nextScale = Math.min(3.0, Math.max(0.4, Math.round((scaleRef.current + scaleDelta) * 100) / 100));
+      if (Math.abs(nextScale - scaleRef.current) < 0.001) return;
 
       zoomAnchorRef.current = {
         xRatio: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
@@ -551,12 +809,14 @@ function ShowcasePdfReader({ image, title, authorized = false }) {
     };
     stage.addEventListener('wheel', handleWheel, { passive: false });
     return () => stage.removeEventListener('wheel', handleWheel);
-  }, []);
+  }, [updateScale]);
 
   useEffect(() => {
     const isInteractiveTarget = (target) => Boolean(target?.closest?.('button, a, input, textarea, select, [role="button"], [contenteditable="true"]'));
     const handleKeyDown = (event) => {
-      if (event.code !== 'Space' || event.repeat || !pointerInsideStageRef.current || isInteractiveTarget(event.target)) return;
+      const reader = containerRef.current;
+      const readerHasFocus = Boolean(reader && (reader.contains(event.target) || reader.contains(document.activeElement)));
+      if (event.code !== 'Space' || event.repeat || !readerHasFocus || !pointerInsideStageRef.current || isInteractiveTarget(event.target)) return;
       event.preventDefault();
       spacePanActiveRef.current = true;
       setSpacePanActive(true);
@@ -593,6 +853,80 @@ function ShowcasePdfReader({ image, title, authorized = false }) {
     };
   }, [stopPan]);
 
+  const zoomBy = useCallback((amount) => {
+    if (fitModeRef.current !== 'manual') {
+      manualBaseModeRef.current = fitModeRef.current;
+      setManualBaseMode(fitModeRef.current);
+    }
+    fitModeRef.current = 'manual';
+    setFitMode('manual');
+    updateScale((value) => Math.min(3.0, Math.max(0.4, Math.round((value + amount) * 100) / 100)));
+  }, [updateScale]);
+
+  const selectFitMode = useCallback((mode) => {
+    fitModeRef.current = mode;
+    manualBaseModeRef.current = mode;
+    setFitMode(mode);
+    setManualBaseMode(mode);
+    updateScale(1);
+  }, [updateScale]);
+
+  const resetZoom = useCallback(() => {
+    selectFitMode('width');
+  }, [selectFitMode]);
+
+  const rotatePage = useCallback(() => {
+    setRotation((prev) => (prev + 90) % 360);
+  }, []);
+
+  useEffect(() => {
+    const handleDocKeyDown = (event) => {
+      const reader = containerRef.current;
+      const readerHasFocus = Boolean(reader && (reader.contains(event.target) || reader.contains(document.activeElement)));
+      if (!readerHasFocus) return;
+      if (event.key === 'Escape' && isFullscreenActive) {
+        event.preventDefault();
+        event.stopPropagation();
+        void exitFullscreen();
+        return;
+      }
+      if (event.target?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+      if (event.target?.closest?.('button, a, [role="button"]')) return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+
+      if (event.key === '+' || event.key === '=' || event.code === 'NumpadAdd') {
+        event.preventDefault();
+        zoomBy(0.15);
+      } else if (event.key === '-' || event.key === '_' || event.code === 'NumpadSubtract') {
+        event.preventDefault();
+        zoomBy(-0.15);
+      } else if (event.key === 'ArrowLeft') {
+        if (pageNumber > 1) {
+          event.preventDefault();
+          setPageNumber((page) => Math.max(1, page - 1));
+        }
+      } else if (event.key === 'ArrowRight') {
+        const total = pdf?.numPages || 1;
+        if (pageNumber < total) {
+          event.preventDefault();
+          setPageNumber((page) => Math.min(total, page + 1));
+        }
+      } else if (event.key === 'r' || event.key === 'R') {
+        if (!event.ctrlKey && !event.metaKey && !event.altKey) {
+          event.preventDefault();
+          rotatePage();
+        }
+      } else if (event.key === 't' || event.key === 'T') {
+        if (!event.ctrlKey && !event.metaKey && !event.altKey) {
+          event.preventDefault();
+          setShowSidebar((prev) => !prev);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleDocKeyDown);
+    return () => window.removeEventListener('keydown', handleDocKeyDown);
+  }, [exitFullscreen, isFullscreenActive, pageNumber, pdf?.numPages, rotatePage, zoomBy]);
+
   useEffect(() => {
     if (!pdf || !stageSize.width || !stageSize.height || !canvasRef.current) return undefined;
     let active = true;
@@ -604,15 +938,21 @@ function ShowcasePdfReader({ image, title, authorized = false }) {
 
     const renderPage = async () => {
       try {
-        const page = await withTimeout(pdf.getPage(pageNumber), SHOWCASE_REQUEST_TIMEOUT_MS, 'This PDF page could not be prepared in time. Retry the document.', () => { void pdf.destroy().catch(() => {}); });
+        const page = await withTimeout(
+          pdf.getPage(pageNumber),
+          SHOWCASE_REQUEST_TIMEOUT_MS,
+          'This PDF page could not be prepared in time. Retry the document.',
+          () => { void pdf.destroy().catch(() => {}); }
+        );
         if (!active) return;
-        const baseViewport = page.getViewport({ scale: 1 });
+        const totalRotation = ((page.rotate || 0) + rotation) % 360;
+        const baseViewport = page.getViewport({ scale: 1, rotation: totalRotation });
         const fitWidthScale = stageSize.width / baseViewport.width;
         const fitPageScale = Math.min(fitWidthScale, stageSize.height / baseViewport.height);
         const fittedScale = fitMode === 'page' || (fitMode === 'manual' && manualBaseMode === 'page')
           ? fitPageScale
           : fitWidthScale;
-        const viewport = page.getViewport({ scale: fittedScale * scale });
+        const viewport = page.getViewport({ scale: fittedScale * scale, rotation: totalRotation });
         const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
         const context = canvas.getContext('2d', { alpha: false });
         if (!context) throw new Error('This browser could not create a PDF page canvas.');
@@ -660,25 +1000,10 @@ function ShowcasePdfReader({ image, title, authorized = false }) {
       canvas.style.width = '';
       canvas.style.height = '';
     };
-  }, [pdf, pageNumber, scale, fitMode, manualBaseMode, stageSize]);
+  }, [pdf, pageNumber, scale, fitMode, manualBaseMode, stageSize, rotation]);
 
   const retry = () => setRetryCount((count) => count + 1);
-  const zoomBy = (amount) => {
-    if (fitModeRef.current !== 'manual') {
-      manualBaseModeRef.current = fitModeRef.current;
-      setManualBaseMode(fitModeRef.current);
-    }
-    fitModeRef.current = 'manual';
-    setFitMode('manual');
-    updateScale((value) => Math.min(2.5, Math.max(0.5, Math.round((value + amount) * 10000) / 10000)));
-  };
-  const selectFitMode = (mode) => {
-    fitModeRef.current = mode;
-    manualBaseModeRef.current = mode;
-    setFitMode(mode);
-    setManualBaseMode(mode);
-    updateScale(1);
-  };
+
   const handlePanPointerDown = (event) => {
     if (!spacePanActiveRef.current || event.pointerType !== 'mouse' || event.button !== 0) return;
     event.preventDefault();
@@ -694,6 +1019,7 @@ function ShowcasePdfReader({ image, title, authorized = false }) {
     try { stage.setPointerCapture(event.pointerId); } catch { /* Window-level release handlers remain as a fallback. */ }
     setIsPanning(true);
   };
+
   const handlePanPointerMove = (event) => {
     const drag = panDragRef.current;
     const stage = stageRef.current;
@@ -702,47 +1028,276 @@ function ShowcasePdfReader({ image, title, authorized = false }) {
     stage.scrollLeft = drag.scrollLeft - (event.clientX - drag.startX);
     stage.scrollTop = drag.scrollTop - (event.clientY - drag.startY);
   };
+
+  const handleStagePointerDown = (event) => {
+    if (event.button === 0 && !event.target?.closest?.('button, a, input, textarea, select, [role="button"], [contenteditable="true"]')) {
+      stageRef.current?.focus({ preventScroll: true });
+    }
+    handlePanPointerDown(event);
+  };
+
   const pageCount = pdf?.numPages || 0;
   const pageControlsDisabled = loadStatus !== 'ready';
 
   if (!authorized || loadStatus === 'private') {
-    return <div className="showcase-pdf-state" role="status">The original PDF is available only to authorized staff.</div>;
+    return (
+      <section ref={containerRef} className="showcase-pdf-reader" aria-label={`PDF reader${title ? ` for ${title}` : ''}`} onContextMenu={(e) => e.preventDefault()}>
+        <header className="showcase-pdf-toolbar" role="toolbar" aria-label="PDF document toolbar">
+          <div className="showcase-pdf-toolbar-heading">
+            <h2 className="showcase-pdf-toolbar-title">{title || 'Document preview'}</h2>
+            {category && <span className="showcase-pdf-toolbar-category">{category}</span>}
+          </div>
+          {onClose && (
+            <div className="showcase-pdf-toolbar-actions">
+              <button ref={closeRef} type="button" className="showcase-pdf-btn showcase-pdf-close-btn" onClick={onClose} aria-label="Close document viewer" title="Close document viewer"><PdfReaderIcon name="close" /></button>
+            </div>
+          )}
+        </header>
+        <div className="showcase-pdf-state" role="status">The original PDF is available only to authorized staff.</div>
+      </section>
+    );
   }
+
   if (loadStatus === 'unavailable') {
-    return <div className="showcase-pdf-state is-error" role="alert"><span>{loadError}</span><button type="button" onClick={retry}>Retry PDF loading</button></div>;
+    return (
+      <section ref={containerRef} className="showcase-pdf-reader" aria-label={`PDF reader${title ? ` for ${title}` : ''}`} onContextMenu={(e) => e.preventDefault()}>
+        <header className="showcase-pdf-toolbar" role="toolbar" aria-label="PDF document toolbar">
+          <div className="showcase-pdf-toolbar-heading">
+            <h2 className="showcase-pdf-toolbar-title">{title || 'Document preview'}</h2>
+            {category && <span className="showcase-pdf-toolbar-category">{category}</span>}
+          </div>
+          {onClose && (
+            <div className="showcase-pdf-toolbar-actions">
+              <button ref={closeRef} type="button" className="showcase-pdf-btn showcase-pdf-close-btn" onClick={onClose} aria-label="Close document viewer" title="Close document viewer"><PdfReaderIcon name="close" /></button>
+            </div>
+          )}
+        </header>
+        <div className="showcase-pdf-state is-error" role="alert"><span>{loadError}</span><button type="button" onClick={retry}>Retry PDF loading</button></div>
+      </section>
+    );
   }
 
   return (
-    <section className="showcase-pdf-reader" aria-label={`PDF reader${title ? ` for ${title}` : ''}`}>
-      <div className="showcase-pdf-toolbar" role="group" aria-label="PDF page and zoom controls">
-        <button type="button" onClick={() => setPageNumber((page) => Math.max(1, page - 1))} disabled={pageControlsDisabled || pageNumber <= 1} aria-label="Previous page">‹</button>
-        <span className="showcase-pdf-page-count" aria-live="polite">{loadStatus === 'loading' ? 'Loading PDF…' : `Page ${pageNumber} of ${pageCount || '—'}`}</span>
-        <button type="button" onClick={() => setPageNumber((page) => Math.min(pageCount, page + 1))} disabled={pageControlsDisabled || pageNumber >= pageCount} aria-label="Next page">›</button>
-        <span className="showcase-pdf-toolbar-spacer" />
-        <button type="button" onClick={() => zoomBy(-0.01)} disabled={pageControlsDisabled || scale <= 0.5} aria-label="Zoom out">−</button>
-        <span className="showcase-pdf-zoom" aria-live="polite">{(scale * 100).toFixed(2).replace(/\.00$/, '')}%</span>
-        <button type="button" onClick={() => zoomBy(0.01)} disabled={pageControlsDisabled || scale >= 2.5} aria-label="Zoom in">＋</button>
-        <button type="button" className="showcase-pdf-fit" onClick={() => selectFitMode('width')} disabled={pageControlsDisabled} aria-pressed={fitMode === 'width'} aria-label="Fit page to viewer width">Fit width</button>
-        <button type="button" className="showcase-pdf-fit" onClick={() => selectFitMode('page')} disabled={pageControlsDisabled} aria-pressed={fitMode === 'page'} aria-label="Fit entire page in viewer">Fit page</button>
+    <section
+      ref={containerRef}
+      className={`showcase-pdf-reader ${isFullscreenActive ? 'is-fullscreen' : ''}`}
+      aria-label={`PDF reader${title ? ` for ${title}` : ''}`}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <header className="showcase-pdf-toolbar" role="toolbar" aria-label="PDF document toolbar">
+        <div className="showcase-pdf-toolbar-heading">
+          <div className="showcase-pdf-title-row">
+            <button
+              type="button"
+              className={`showcase-pdf-btn showcase-pdf-sidebar-toggle ${showSidebar ? 'is-active' : ''}`}
+              onClick={() => setShowSidebar((prev) => !prev)}
+              disabled={pageControlsDisabled}
+              aria-label={showSidebar ? 'Hide thumbnails (t)' : 'Show thumbnails (t)'}
+              aria-pressed={showSidebar}
+              title={showSidebar ? 'Hide thumbnails (t)' : 'Show thumbnails (t)'}
+            >
+              <PdfReaderIcon name={showSidebar ? 'thumbnailsHide' : 'thumbnailsShow'} />
+            </button>
+            <h2 className="showcase-pdf-toolbar-title">{title || 'Document preview'}</h2>
+          </div>
+          {category && <span className="showcase-pdf-toolbar-category">{category}</span>}
+        </div>
+        <div className="showcase-pdf-toolbar-actions" role="group" aria-label="PDF controls">
+          <div className="showcase-pdf-control-group" role="group" aria-label="Zoom controls">
+            <button
+              type="button"
+              className="showcase-pdf-btn"
+              onClick={() => zoomBy(-0.15)}
+              disabled={pageControlsDisabled || scale <= 0.4}
+              aria-label="Zoom out (-)"
+              title="Zoom out (-)"
+            >
+              <PdfReaderIcon name="zoomOut" />
+            </button>
+            <button
+              type="button"
+              className="showcase-pdf-btn showcase-pdf-zoom-btn"
+              onClick={resetZoom}
+              disabled={pageControlsDisabled}
+              aria-label={`Current zoom ${Math.round(scale * 100)} percent. Click to reset.`}
+              title="Reset zoom to 100%"
+            >
+              {Math.round(scale * 100)}%
+            </button>
+            <button
+              type="button"
+              className="showcase-pdf-btn"
+              onClick={() => zoomBy(0.15)}
+              disabled={pageControlsDisabled || scale >= 3.0}
+              aria-label="Zoom in (+)"
+              title="Zoom in (+)"
+            >
+              <PdfReaderIcon name="zoomIn" />
+            </button>
+          </div>
+          <div className="showcase-pdf-control-group showcase-pdf-fit-group" role="group" aria-label="Fit controls">
+            <button
+              type="button"
+              className={`showcase-pdf-btn showcase-pdf-fit-btn ${fitMode === 'width' && scale === 1 ? 'is-active' : ''}`}
+              onClick={() => selectFitMode('width')}
+              disabled={pageControlsDisabled}
+              aria-pressed={fitMode === 'width' && scale === 1}
+              aria-label="Fit page to width"
+              title="Fit page to width"
+            >
+              <PdfReaderIcon name="fitWidth" /><span className="showcase-pdf-fit-label">Fit width</span>
+            </button>
+            <button
+              type="button"
+              className={`showcase-pdf-btn showcase-pdf-fit-btn ${fitMode === 'page' && scale === 1 ? 'is-active' : ''}`}
+              onClick={() => selectFitMode('page')}
+              disabled={pageControlsDisabled}
+              aria-pressed={fitMode === 'page' && scale === 1}
+              aria-label="Fit entire page in view"
+              title="Fit entire page in view"
+            >
+              <PdfReaderIcon name="fitPage" /><span className="showcase-pdf-fit-label">Fit page</span>
+            </button>
+          </div>
+          <div className="showcase-pdf-control-group" role="group" aria-label="Page navigation">
+            <button
+              type="button"
+              className="showcase-pdf-btn"
+              onClick={() => setPageNumber((page) => Math.max(1, page - 1))}
+              disabled={pageControlsDisabled || pageNumber <= 1}
+              aria-label="Previous page (Left arrow)"
+              title="Previous page (Left arrow)"
+            >
+              <PdfReaderIcon name="previous" />
+            </button>
+            <span className="showcase-pdf-page-indicator" aria-live="polite">
+              {pageControlsDisabled ? '— / —' : `${pageNumber} / ${pageCount || 1}`}
+            </span>
+            <button
+              type="button"
+              className="showcase-pdf-btn"
+              onClick={() => setPageNumber((page) => Math.min(pageCount, page + 1))}
+              disabled={pageControlsDisabled || pageNumber >= pageCount}
+              aria-label="Next page (Right arrow)"
+              title="Next page (Right arrow)"
+            >
+              <PdfReaderIcon name="next" />
+            </button>
+          </div>
+          <div className="showcase-pdf-control-group" role="group" aria-label="View actions">
+            <button
+              type="button"
+              className="showcase-pdf-btn"
+              onClick={rotatePage}
+              disabled={pageControlsDisabled}
+              aria-label={`Rotate clockwise 90 degrees (r). Current: ${rotation}°`}
+              title="Rotate clockwise (r)"
+            >
+              <PdfReaderIcon name="rotate" />
+            </button>
+            <button
+              type="button"
+              className={`showcase-pdf-btn ${isFullscreenActive ? 'is-active' : ''}`}
+              onClick={() => void toggleFullscreen()}
+              disabled={pageControlsDisabled || (!onToggleFullscreen && !(viewerRef?.current || containerRef.current)?.requestFullscreen)}
+              aria-label={isFullscreenActive ? 'Exit fullscreen' : 'Enter fullscreen'}
+              title={isFullscreenActive ? 'Exit fullscreen' : 'Enter fullscreen'}
+              aria-pressed={isFullscreenActive}
+            >
+              <PdfReaderIcon name={isFullscreenActive ? 'fullscreenExit' : 'fullscreen'} />
+            </button>
+            {onClose && (
+              <button
+                ref={closeRef}
+                type="button"
+                className="showcase-pdf-btn showcase-pdf-close-btn"
+                onClick={onClose}
+                aria-label="Close document viewer (Escape)"
+                title="Close (Escape)"
+              >
+                <PdfReaderIcon name="close" />
+              </button>
+            )}
+          </div>
+        </div>
+      </header>
+      <div className={`showcase-pdf-body ${showSidebar ? 'has-sidebar' : 'is-sidebar-collapsed'}`}>
+        <aside
+          className={`showcase-pdf-sidebar ${showSidebar ? 'is-open' : 'is-collapsed'}`}
+          aria-label="Document thumbnails"
+          aria-hidden={!showSidebar}
+        >
+          <div className="showcase-pdf-sidebar-header">
+            <span className="showcase-pdf-sidebar-title">Pages ({pageCount || 1})</span>
+            <button
+              type="button"
+              className="showcase-pdf-sidebar-close"
+              onClick={() => setShowSidebar(false)}
+              aria-label="Close thumbnails sidebar"
+              title="Close sidebar (t)"
+            >
+              <PdfReaderIcon name="close" />
+            </button>
+          </div>
+          <div ref={thumbnailsScrollRef} className="showcase-pdf-thumbnails-scroll" role="list" tabIndex={0} aria-label="Page thumbnail list">
+            {pageCount > 0 ? (
+              Array.from({ length: pageCount }, (_, i) => i + 1).map((num) => (
+                <PdfThumbnailItem
+                  key={num}
+                  pdf={pdf}
+                  pageNumber={num}
+                  activePageNumber={pageNumber}
+                  isSelected={num === pageNumber}
+                  rotation={rotation}
+                  sidebarOpen={showSidebar}
+                  scrollRootRef={thumbnailsScrollRef}
+                  scheduler={thumbnailScheduler}
+                  onSelect={() => handleThumbnailSelect(num)}
+                />
+              ))
+            ) : (
+              <div className="showcase-pdf-thumb-loading">Loading pages…</div>
+            )}
+          </div>
+        </aside>
+        {showSidebar && (
+          <div
+            className="showcase-pdf-sidebar-backdrop"
+            onClick={() => setShowSidebar(false)}
+            aria-hidden="true"
+          />
+        )}
+        <div
+          ref={stageRef}
+          className={`showcase-pdf-stage${fitMode === 'page' ? ' is-fit-page' : ''}${spacePanActive ? ' is-pan-mode' : ''}${isPanning ? ' is-panning' : ''}`}
+          role="region"
+          tabIndex={0}
+          aria-label={`PDF page ${pageNumber} of ${pageCount || 'loading'}`}
+          onContextMenu={(event) => event.preventDefault()}
+          onPointerEnter={(event) => { if (event.pointerType === 'mouse') pointerInsideStageRef.current = true; }}
+          onPointerLeave={() => { pointerInsideStageRef.current = false; }}
+          onPointerDown={handleStagePointerDown}
+          onPointerMove={handlePanPointerMove}
+          onLostPointerCapture={stopPan}
+        >
+          {loadStatus === 'loading' && <div className="showcase-pdf-state" role="status" aria-live="polite">Loading authorized PDF…</div>}
+          {loadStatus === 'error' && <div className="showcase-pdf-state is-error" role="alert"><span>{loadError}</span><button type="button" onClick={retry}>Retry PDF loading</button></div>}
+          {loadStatus === 'ready' && renderStatus === 'rendering' && <div className="showcase-pdf-render-status" role="status" aria-live="polite">Rendering page {pageNumber}…</div>}
+          {loadStatus === 'ready' && renderStatus === 'error' && <div className="showcase-pdf-state is-error" role="alert"><span>{renderError}</span><button type="button" onClick={retry}>Retry PDF loading</button></div>}
+          {loadStatus === 'ready' && renderStatus !== 'error' && (
+            <canvas
+              ref={canvasRef}
+              className="showcase-pdf-page"
+              aria-label={`${title || 'Document'} page ${pageNumber}`}
+              onContextMenu={(event) => event.preventDefault()}
+            />
+          )}
+        </div>
       </div>
-      <div
-        ref={stageRef}
-        className={`showcase-pdf-stage${fitMode === 'page' ? ' is-fit-page' : ''}${spacePanActive ? ' is-pan-mode' : ''}${isPanning ? ' is-panning' : ''}`}
-        role="region"
-        tabIndex={0}
-        aria-label={`PDF page ${pageNumber} of ${pageCount || 'loading'}`}
-        onPointerEnter={(event) => { if (event.pointerType === 'mouse') pointerInsideStageRef.current = true; }}
-        onPointerLeave={() => { pointerInsideStageRef.current = false; }}
-        onPointerDown={handlePanPointerDown}
-        onPointerMove={handlePanPointerMove}
-        onLostPointerCapture={stopPan}
-      >
-        {loadStatus === 'loading' && <div className="showcase-pdf-state" role="status" aria-live="polite">Loading authorized PDF…</div>}
-        {loadStatus === 'error' && <div className="showcase-pdf-state is-error" role="alert"><span>{loadError}</span><button type="button" onClick={retry}>Retry PDF loading</button></div>}
-        {loadStatus === 'ready' && renderStatus === 'rendering' && <div className="showcase-pdf-render-status" role="status" aria-live="polite">Rendering page {pageNumber}…</div>}
-        {loadStatus === 'ready' && renderStatus === 'error' && <div className="showcase-pdf-state is-error" role="alert"><span>{renderError}</span><button type="button" onClick={retry}>Retry PDF loading</button></div>}
-        {loadStatus === 'ready' && renderStatus !== 'error' && <canvas ref={canvasRef} className="showcase-pdf-page" aria-label={`${title || 'Document'} page ${pageNumber}`} />}
-      </div>
+      <footer className="showcase-pdf-foot">
+        <span>Original PDF · authorized staff view</span>
+        <small id="showcase-pdf-privacy">Private original PDF shown in this viewer. The approved PNG remains separate cover media.</small>
+      </footer>
     </section>
   );
 }
@@ -831,6 +1386,11 @@ function ShowcaseLightbox({ images, index, onClose, onChange, authorized = false
       if (event.key === 'Escape') {
         event.preventDefault();
         if (document.fullscreenElement) {
+          if (documentImage && viewerRef.current?.contains(document.fullscreenElement)) {
+            event.stopPropagation();
+            void document.exitFullscreen().catch(() => {});
+            return;
+          }
           void document.exitFullscreen().catch(() => {}).finally(() => latestRef.current.onClose());
         } else {
           latestRef.current.onClose();
@@ -894,43 +1454,56 @@ function ShowcaseLightbox({ images, index, onClose, onChange, authorized = false
 
   return (
     <div className={`showcase-lightbox-backdrop ${isDocument ? 'is-document-viewer' : ''}`} onMouseDown={(event) => { if (event.target === event.currentTarget) void closeViewer(); }}>
-      <section ref={viewerRef} className={`showcase-lightbox ${isDocument ? 'is-document-viewer' : ''}`} role="dialog" aria-modal="true" aria-labelledby="showcase-lightbox-title" aria-describedby="showcase-lightbox-privacy">
-        <header className="showcase-lightbox-top">
-          <div className="showcase-viewer-heading"><h2 id="showcase-lightbox-title">{project?.title || title}</h2><span>{project ? `${categoryLabel(project.service_category)} · ${projectTypeLabel(project.project_type)}` : image.caption || image.alt_text || 'Project preview'}</span></div>
-          <div className="showcase-viewer-header-actions">
-            {!documentImage && <div className="showcase-lightbox-zoom" role="group" aria-label="Preview zoom controls"><button type="button" onClick={() => changeZoom(-0.25)} disabled={zoom <= 0.75} aria-label="Zoom out" title="Zoom out">−</button><button type="button" onClick={() => setZoom(1)} aria-label={`Reset zoom, currently ${Math.round(zoom * 100)} percent`} title="Reset zoom">{Math.round(zoom * 100)}%</button><button type="button" onClick={() => changeZoom(0.25)} disabled={zoom >= 2.5} aria-label="Zoom in" title="Zoom in">＋</button></div>}
-            <div className="showcase-viewer-utility-actions">
-              {!documentImage && <button type="button" className="showcase-viewer-fit" onClick={fitPreview} aria-label="Fit preview to canvas" title="Fit to view" aria-pressed={zoom === 1}>Fit</button>}
-              <button type="button" className="showcase-viewer-fullscreen" onClick={() => void toggleFullscreen()} disabled={!canFullscreen} aria-label={isFullscreen ? 'Exit full screen' : 'Enter full screen'} title={isFullscreen ? 'Exit full screen' : 'Enter full screen'} aria-pressed={isFullscreen}>⛶</button>
-              <button ref={closeRef} type="button" onClick={() => void closeViewer()} aria-label="Close preview viewer" title="Close preview">×</button>
+      <section ref={viewerRef} className={`showcase-lightbox ${isDocument ? 'is-document-viewer' : ''}`} role="dialog" aria-modal="true" aria-labelledby="showcase-lightbox-title" aria-describedby="showcase-lightbox-privacy" onContextMenu={(event) => { if (documentImage || isDocument) event.preventDefault(); }}>
+        {documentImage ? (
+          <ShowcasePdfReader
+            key={documentImage.id}
+            image={documentImage}
+            title={project?.title || title}
+            category={project ? `${categoryLabel(project.service_category)} · ${projectTypeLabel(project.project_type)}` : ''}
+            authorized
+            onClose={closeViewer}
+            closeRef={closeRef}
+            viewerRef={viewerRef}
+          />
+        ) : (
+          <>
+            <header className="showcase-lightbox-top">
+              <div className="showcase-viewer-heading"><h2 id="showcase-lightbox-title">{project?.title || title}</h2><span>{project ? `${categoryLabel(project.service_category)} · ${projectTypeLabel(project.project_type)}` : image.caption || image.alt_text || 'Project preview'}</span></div>
+              <div className="showcase-viewer-header-actions">
+                <div className="showcase-lightbox-zoom" role="group" aria-label="Preview zoom controls"><button type="button" onClick={() => changeZoom(-0.25)} disabled={zoom <= 0.75} aria-label="Zoom out" title="Zoom out">−</button><button type="button" onClick={() => setZoom(1)} aria-label={`Reset zoom, currently ${Math.round(zoom * 100)} percent`} title="Reset zoom">{Math.round(zoom * 100)}%</button><button type="button" onClick={() => changeZoom(0.25)} disabled={zoom >= 2.5} aria-label="Zoom in" title="Zoom in">＋</button></div>
+                <div className="showcase-viewer-utility-actions">
+                  <button type="button" className="showcase-viewer-fit" onClick={fitPreview} aria-label="Fit preview to canvas" title="Fit to view" aria-pressed={zoom === 1}>Fit</button>
+                  <button type="button" className="showcase-viewer-fullscreen" onClick={() => void toggleFullscreen()} disabled={!canFullscreen} aria-label={isFullscreen ? 'Exit full screen' : 'Enter full screen'} title={isFullscreen ? 'Exit full screen' : 'Enter full screen'} aria-pressed={isFullscreen}>⛶</button>
+                  <button ref={closeRef} type="button" onClick={() => void closeViewer()} aria-label="Close preview viewer" title="Close preview">×</button>
+                </div>
+              </div>
+            </header>
+            <div className={`showcase-viewer-body ${images.length > 1 ? 'has-thumbnails' : ''}`}>
+              {images.length > 1 && <nav className="showcase-viewer-thumbnails" aria-label="Available preview images">
+                {images.map((pageImage, pageIndex) => <button key={pageImage.id} type="button" className={pageIndex === index ? 'is-active' : ''} aria-current={pageIndex === index ? 'true' : undefined} aria-label={`Show preview ${pageIndex + 1}: ${previewLabel(pageImage, pageIndex)}`} onClick={() => onChange(pageIndex)}><span className="showcase-viewer-thumbnail-frame"><ShowcaseImage image={pageImage} /></span><span>{pageIndex + 1}</span></button>)}
+              </nav>}
+              <div className="showcase-viewer-main">
+                <div ref={canvasRef} className="showcase-lightbox-image" role="region" tabIndex={0} aria-label={`Preview image ${index + 1} of ${images.length}`}>
+                  <ShowcaseImage
+                    key={`${image.id}-${retryCount}`}
+                    image={image}
+                    eager
+                    authorized={authorized}
+                    initialSrc={retryCount === 0 ? initialSrc : ''}
+                    onRetry={() => setRetryCount((count) => count + 1)}
+                    onImageLoad={(size) => { naturalSizeRef.current = size; updateFitSize(); }}
+                    resourceStyle={fitSize ? { width: `${fitSize.width * zoom}px`, height: `${fitSize.height * zoom}px` } : undefined}
+                  />
+                </div>
+              </div>
             </div>
-          </div>
-        </header>
-        <div className={`showcase-viewer-body ${!documentImage && images.length > 1 ? 'has-thumbnails' : ''}`}>
-          {!documentImage && images.length > 1 && <nav className="showcase-viewer-thumbnails" aria-label="Available preview images">
-            {images.map((pageImage, pageIndex) => <button key={pageImage.id} type="button" className={pageIndex === index ? 'is-active' : ''} aria-current={pageIndex === index ? 'true' : undefined} aria-label={`Show preview ${pageIndex + 1}: ${previewLabel(pageImage, pageIndex)}`} onClick={() => onChange(pageIndex)}><span className="showcase-viewer-thumbnail-frame"><ShowcaseImage image={pageImage} /></span><span>{pageIndex + 1}</span></button>)}
-          </nav>}
-          <div className="showcase-viewer-main">
-            <div ref={canvasRef} className={`showcase-lightbox-image ${documentImage ? 'is-pdf-document' : ''}`} role="region" tabIndex={0} aria-label={documentImage ? 'Authorized original PDF document' : `Preview image ${index + 1} of ${images.length}`}>
-              {documentImage
-                ? <ShowcasePdfReader key={documentImage.id} image={documentImage} title={project?.title || title} authorized />
-                : <ShowcaseImage
-                key={`${image.id}-${retryCount}`}
-                image={image}
-                eager
-                authorized={authorized}
-                initialSrc={retryCount === 0 ? initialSrc : ''}
-                onRetry={() => setRetryCount((count) => count + 1)}
-                onImageLoad={(size) => { naturalSizeRef.current = size; updateFitSize(); }}
-                resourceStyle={fitSize ? { width: `${fitSize.width * zoom}px`, height: `${fitSize.height * zoom}px` } : undefined}
-              />}
-            </div>
-          </div>
-        </div>
-        <footer className="showcase-lightbox-controls">
-          <div className="showcase-lightbox-page-count" aria-live="polite">{documentImage ? 'Original PDF · authorized staff view' : `Preview image ${index + 1} of ${images.length}`}<small id="showcase-lightbox-privacy">{documentImage ? 'This private document is available only to authorized staff.' : 'Preview only. Original document remains private.'}</small></div>
-          {!documentImage && images.length > 1 && <div className="showcase-lightbox-page-nav"><button type="button" onClick={() => onChange(index - 1)} disabled={index === 0} aria-label="Previous preview image">←</button><button type="button" onClick={() => onChange(index + 1)} disabled={index === images.length - 1} aria-label="Next preview image">→</button></div>}
-        </footer>
+            <footer className="showcase-lightbox-controls">
+              <div className="showcase-lightbox-page-count" aria-live="polite">{`Preview image ${index + 1} of ${images.length}`}<small id="showcase-lightbox-privacy">Preview only. Original document remains private.</small></div>
+              {images.length > 1 && <div className="showcase-lightbox-page-nav"><button type="button" onClick={() => onChange(index - 1)} disabled={index === 0} aria-label="Previous preview image">←</button><button type="button" onClick={() => onChange(index + 1)} disabled={index === images.length - 1} aria-label="Next preview image">→</button></div>}
+            </footer>
+          </>
+        )}
       </section>
     </div>
   );
@@ -1070,14 +1643,14 @@ export function FeaturedShowcase() {
         <div className="showcase-featured-head">
           <div>
             <p className="eyebrow">SELECTED WORK</p>
-            <h2 id="showcase-featured-title">A closer look at <span>the craft.</span></h2>
-            <p>Explore published examples of how thoughtful career work comes together.</p>
+            <h2 id="showcase-featured-title">Selected work and <span>sample projects.</span></h2>
+            <p>Browse published CVs, profile work and sample projects.</p>
           </div>
           <Link className="showcase-text-link" to="/showcase">
             View all work <span aria-hidden="true">↗</span>
           </Link>
         </div>
-        {state === 'loading' ? <p className="showcase-featured-state" role="status">Loading featured work…</p>
+        {state === 'loading' ? <div className="showcase-featured-state"><SkeletonState label="Loading featured work" variant="cards" count={3} /></div>
           : state === 'error' ? <div className="showcase-featured-state"><RequestProblem kind={failureKind} onRetry={() => { setState('loading'); setRetryCount((count) => count + 1); }} /><Link to="/showcase">Explore the Showcase</Link></div>
             : state === 'unavailable' ? <p className="showcase-featured-state">Featured work is temporarily unavailable. <Link to="/showcase">Explore the Showcase</Link></p>
               : projects.length ? <>
@@ -1111,7 +1684,7 @@ export function FeaturedShowcase() {
                     <Link className="showcase-featured-card" key={project.project_id} to={`/showcase?tab=${categoryTab}`}>
                       <div className={`showcase-featured-media ${previewVariant} ${tint}`}>
                         {featuredImage
-                          ? <ShowcaseImage image={featuredImage} eager />
+                          ? <ShowcaseImage image={featuredImage} eager altText="" />
                           : <div className="showcase-document-featured" role="status">
                             <strong>Project preview coming soon.</strong>
                           </div>}
@@ -1262,6 +1835,13 @@ function ShowcaseSelectedViewer({ project, images, index, onChange, onOpen, onOp
     if (!open || lightboxOpen) return undefined;
     const onKeyDown = (event) => {
       if (event.key === 'Escape') {
+        const fullscreenElement = document.fullscreenElement;
+        if (fullscreenElement && viewerRef.current?.contains(fullscreenElement)) {
+          event.preventDefault();
+          event.stopPropagation();
+          void document.exitFullscreen?.().catch(() => {});
+          return;
+        }
         event.preventDefault();
         onClose();
         return;
@@ -1289,43 +1869,97 @@ function ShowcaseSelectedViewer({ project, images, index, onChange, onOpen, onOp
   }
 
   return (
-    <aside ref={viewerRef} id="showcase-project-preview" className={`showcase-reference-viewer ${categoryClass}`} role="dialog" aria-modal="true" aria-labelledby="showcase-project-preview-title" aria-label={`Selected ${categoryLabel(project.service_category)} preview`} onClick={(event) => event.stopPropagation()}>
-      <header className="showcase-reference-viewer-head">
-        <div className="showcase-reference-viewer-heading"><h2 id="showcase-project-preview-title">{project.title}</h2><p>{categoryLabel(project.service_category)} <span aria-hidden="true">·</span> {projectTypeLabel(project.project_type)}</p></div>
-        <div className="showcase-reference-viewer-tools" aria-label="Preview actions">
-          {isPortfolio && portfolioUrl && <a className="showcase-reference-external-action" href={portfolioUrl} target="_blank" rel="noopener noreferrer">Visit website <span aria-hidden="true">↗</span></a>}
-          {isLinkedIn && profileUrl && <a className="showcase-reference-external-action" href={profileUrl} target="_blank" rel="noopener noreferrer">Visit profile <span aria-hidden="true">↗</span></a>}
-          {isGitHub && repositoryUrls.map((url) => <a className="showcase-reference-external-action" key={url} href={url} target="_blank" rel="noopener noreferrer">Visit repository <span aria-hidden="true">↗</span></a>)}
-          {isDocument && documentStatus === 'error' && <button type="button" className="showcase-reference-external-action" onClick={onRetryDocumentCheck}>Retry PDF check</button>}
-          {showImagePreview && <div className="showcase-reference-zoom" role="group" aria-label="Preview zoom controls"><button type="button" onClick={() => setZoom((value) => Math.max(.75, Math.round((value - .25) * 100) / 100))} disabled={zoom <= .75} aria-label="Zoom out">−</button><span aria-live="polite">{Math.round(zoom * 100)}%</span><button type="button" onClick={() => setZoom((value) => Math.min(2, Math.round((value + .25) * 100) / 100))} disabled={zoom >= 2} aria-label="Zoom in">+</button></div>}
-          {documentImage && <button type="button" className="showcase-reference-external-action" onClick={onOpenDocument}>View full PDF <span aria-hidden="true">↗</span></button>}
-          {showImagePreview && <button type="button" className="showcase-reference-fullscreen" onClick={onOpen} aria-label="Open full-screen approved preview">⛶</button>}
-          <button ref={closeRef} type="button" className="showcase-reference-close" onClick={onClose} aria-label="Close project preview">×</button>
-        </div>
-      </header>
-      <div className={`showcase-reference-viewer-body ${!showOriginalPdf && !isDocumentCheckPending && images.length > 1 ? 'has-thumbnails' : ''}`}>
-        {!showOriginalPdf && !isDocumentCheckPending && images.length > 1 && <nav className="showcase-reference-thumbnails" aria-label="Project preview images">{images.map((preview, previewIndex) => <button type="button" key={preview.id} onClick={() => onChange(previewIndex)} className={previewIndex === index ? 'is-active' : ''} aria-current={previewIndex === index ? 'true' : undefined} aria-label={`Show preview ${previewIndex + 1}: ${preview.alt_text || preview.caption || 'Project image'}`}><span><ShowcaseImage image={preview} /></span><small>{previewIndex + 1}</small></button>)}</nav>}
-        <div className={`showcase-reference-viewer-canvas ${isPortfolio ? 'is-portfolio-canvas' : ''} ${showOriginalPdf ? 'is-pdf-canvas' : ''}`}>
-          {showOriginalPdf ? <ShowcasePdfReader key={documentImage.id} image={documentImage} title={project.title} authorized /> : isDocumentCheckPending ? (
-            <div className="showcase-document-fallback" role="status" aria-live="polite">Checking for this CV’s authorized original PDF…</div>
-          ) : image ? isPortfolio ? (
-            <figure className="showcase-reference-portfolio-frame">
-              <figcaption><span className="showcase-reference-browser-dots" aria-hidden="true">● ● ●</span><span>{portfolioUrl ? new URL(portfolioUrl).hostname : 'Approved website preview'}</span></figcaption>
-              <div className="showcase-reference-viewer-image" style={{ '--showcase-preview-zoom': zoom }}><ShowcaseImage key={`${image.id}-${retryCount}`} image={image} eager initialSrc={retryCount === 0 && initialPreviewSource?.id === image.id ? initialPreviewSource.src : ''} onRetry={() => setRetryCount((count) => count + 1)} /></div>
-            </figure>
-          ) : (
-            <div className={`showcase-reference-viewer-image ${isDocument ? 'is-document-page' : 'is-profile-preview'}`} style={{ '--showcase-preview-zoom': zoom }}>
-              {isLinkedIn || isGitHub ? <span className="showcase-reference-preview-label">Approved Showcase preview · {isLinkedIn ? 'not a live LinkedIn page' : 'not a live GitHub page'}</span> : null}
-              <ShowcaseImage key={`${image.id}-${retryCount}`} image={image} eager initialSrc={retryCount === 0 && initialPreviewSource?.id === image.id ? initialPreviewSource.src : ''} onRetry={() => setRetryCount((count) => count + 1)} />
+    <aside
+      ref={viewerRef}
+      id="showcase-project-preview"
+      className={`showcase-reference-viewer ${categoryClass} ${showOriginalPdf ? 'is-pdf-mode' : ''}`}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="showcase-project-preview-title"
+      aria-label={`Selected ${categoryLabel(project.service_category)} preview`}
+      onClick={(event) => event.stopPropagation()}
+      onContextMenu={(event) => { if (showOriginalPdf || isDocument) event.preventDefault(); }}
+    >
+      {showOriginalPdf ? (
+        <ShowcasePdfReader
+          key={documentImage.id}
+          image={documentImage}
+          title={project.title}
+          category={`${categoryLabel(project.service_category)} · ${projectTypeLabel(project.project_type)}`}
+          authorized
+          onClose={onClose}
+          closeRef={closeRef}
+          viewerRef={viewerRef}
+        />
+      ) : (
+        <>
+          <header className="showcase-reference-viewer-head">
+            <div className="showcase-reference-viewer-heading">
+              <h2 id="showcase-project-preview-title">{project.title}</h2>
+              <p>{categoryLabel(project.service_category)} <span aria-hidden="true">·</span> {projectTypeLabel(project.project_type)}</p>
             </div>
-          ) : <div className={`showcase-reference-viewer-empty ${categoryClass}`} role="status"><strong>{emptyCopy[0]}</strong><span>{emptyCopy[1]}</span></div>}
-        </div>
-      </div>
-      <footer className="showcase-reference-viewer-foot">
-        <span aria-live="polite">{showOriginalPdf ? 'Original PDF · authorized staff view' : image ? `Preview ${index + 1} of ${images.length}` : 'No approved preview'}</span>
-        {!showOriginalPdf && !isDocumentCheckPending && images.length > 1 && <div className="showcase-reference-page-controls"><button type="button" onClick={() => onChange(index - 1)} disabled={index <= 0} aria-label="Previous preview">‹</button><button type="button" onClick={() => onChange(index + 1)} disabled={index >= images.length - 1} aria-label="Next preview">›</button></div>}
-        <small>{isDocument ? showOriginalPdf ? 'Private original PDF shown in this viewer. The approved PNG remains separate cover media.' : isDocumentCheckPending ? 'Checking whether an authorized original PDF is associated with this project…' : documentStatus === 'error' ? 'The staff-only PDF association could not be checked. The approved image preview remains available.' : documentStatus === 'ready' ? 'No PDF document record is associated with this project. This image is only an approved preview.' : 'The original PDF is available only to authorized staff. Showing the approved image preview.' : isPortfolio ? 'Approved screenshot preview. External website opens separately.' : isLinkedIn ? 'Approved Showcase material only; no live LinkedIn content is embedded.' : isGitHub ? 'Approved Showcase material only; no repository metrics are inferred.' : 'Approved Showcase preview only.'}</small>
-      </footer>
+            <div className="showcase-reference-viewer-tools" aria-label="Preview actions">
+              {isPortfolio && portfolioUrl && <a className="showcase-reference-external-action" href={portfolioUrl} target="_blank" rel="noopener noreferrer">Visit website <span aria-hidden="true">↗</span></a>}
+              {isLinkedIn && profileUrl && <a className="showcase-reference-external-action" href={profileUrl} target="_blank" rel="noopener noreferrer">Visit profile <span aria-hidden="true">↗</span></a>}
+              {isGitHub && repositoryUrls.map((url) => <a className="showcase-reference-external-action" key={url} href={url} target="_blank" rel="noopener noreferrer">Visit repository <span aria-hidden="true">↗</span></a>)}
+              {isDocument && documentStatus === 'error' && <button type="button" className="showcase-reference-external-action" onClick={onRetryDocumentCheck}>Retry PDF check</button>}
+              {showImagePreview && (
+                <div className="showcase-reference-zoom" role="group" aria-label="Preview zoom controls">
+                  <button type="button" onClick={() => setZoom((value) => Math.max(.75, Math.round((value - .25) * 100) / 100))} disabled={zoom <= .75} aria-label="Zoom out">−</button>
+                  <span aria-live="polite">{Math.round(zoom * 100)}%</span>
+                  <button type="button" onClick={() => setZoom((value) => Math.min(2, Math.round((value + .25) * 100) / 100))} disabled={zoom >= 2} aria-label="Zoom in">+</button>
+                </div>
+              )}
+              {showImagePreview && <button type="button" className="showcase-reference-fullscreen" onClick={onOpen} aria-label="Open full-screen approved preview">⛶</button>}
+              <button ref={closeRef} type="button" className="showcase-reference-close" onClick={onClose} aria-label="Close project preview">×</button>
+            </div>
+          </header>
+          <div className={`showcase-reference-viewer-body ${!isDocumentCheckPending && images.length > 1 ? 'has-thumbnails' : ''}`}>
+            {!isDocumentCheckPending && images.length > 1 && (
+              <nav className="showcase-reference-thumbnails" aria-label="Project preview images">
+                {images.map((preview, previewIndex) => (
+                  <button
+                    type="button"
+                    key={preview.id}
+                    onClick={() => onChange(previewIndex)}
+                    className={previewIndex === index ? 'is-active' : ''}
+                    aria-current={previewIndex === index ? 'true' : undefined}
+                    aria-label={`Show preview ${previewIndex + 1}: ${preview.alt_text || preview.caption || 'Project image'}`}
+                  >
+                    <span><ShowcaseImage image={preview} /></span>
+                    <small>{previewIndex + 1}</small>
+                  </button>
+                ))}
+              </nav>
+            )}
+            <div className={`showcase-reference-viewer-canvas ${isPortfolio ? 'is-portfolio-canvas' : ''}`}>
+              {isDocumentCheckPending ? (
+                <div className="showcase-document-fallback" role="status" aria-live="polite">Checking for this CV’s authorized original PDF…</div>
+              ) : image ? isPortfolio ? (
+                <figure className="showcase-reference-portfolio-frame">
+                  <figcaption><span className="showcase-reference-browser-dots" aria-hidden="true">● ● ●</span><span>{portfolioUrl ? new URL(portfolioUrl).hostname : 'Approved website preview'}</span></figcaption>
+                  <div className="showcase-reference-viewer-image" style={{ '--showcase-preview-zoom': zoom }}><ShowcaseImage key={`${image.id}-${retryCount}`} image={image} eager initialSrc={retryCount === 0 && initialPreviewSource?.id === image.id ? initialPreviewSource.src : ''} onRetry={() => setRetryCount((count) => count + 1)} /></div>
+                </figure>
+              ) : (
+                <div className={`showcase-reference-viewer-image ${isDocument ? 'is-document-page' : 'is-profile-preview'}`} style={{ '--showcase-preview-zoom': zoom }}>
+                  {isLinkedIn || isGitHub ? <span className="showcase-reference-preview-label">Approved Showcase preview · {isLinkedIn ? 'not a live LinkedIn page' : 'not a live GitHub page'}</span> : null}
+                  <ShowcaseImage key={`${image.id}-${retryCount}`} image={image} eager initialSrc={retryCount === 0 && initialPreviewSource?.id === image.id ? initialPreviewSource.src : ''} onRetry={() => setRetryCount((count) => count + 1)} />
+                </div>
+              ) : <div className={`showcase-reference-viewer-empty ${categoryClass}`} role="status"><strong>{emptyCopy[0]}</strong><span>{emptyCopy[1]}</span></div>}
+            </div>
+          </div>
+          <footer className="showcase-reference-viewer-foot">
+            <span aria-live="polite">{image ? `Preview ${index + 1} of ${images.length}` : 'No approved preview'}</span>
+            {!isDocumentCheckPending && images.length > 1 && (
+              <div className="showcase-reference-page-controls">
+                <button type="button" onClick={() => onChange(index - 1)} disabled={index <= 0} aria-label="Previous preview">‹</button>
+                <button type="button" onClick={() => onChange(index + 1)} disabled={index >= images.length - 1} aria-label="Next preview">›</button>
+              </div>
+            )}
+            <small>{isDocument ? isDocumentCheckPending ? 'Checking whether an authorized original PDF is associated with this project…' : documentStatus === 'error' ? 'The staff-only PDF association could not be checked. The approved image preview remains available.' : documentStatus === 'ready' ? 'No PDF document record is associated with this project. This image is only an approved preview.' : 'The original PDF is available only to authorized staff. Showing the approved image preview.' : isPortfolio ? 'Approved screenshot preview. External website opens separately.' : isLinkedIn ? 'Approved Showcase material only; no live LinkedIn content is embedded.' : isGitHub ? 'Approved Showcase material only; no repository metrics are inferred.' : 'Approved Showcase preview only.'}</small>
+          </footer>
+        </>
+      )}
     </aside>
   );
 }
@@ -1586,7 +2220,7 @@ export default function Showcase() {
         <header className="showcase-hero showcase-reference-hero">
           <div className="showcase-hero-copy">
             <p className="eyebrow">{activeFilter.id === 'all' ? 'WORK SHOWCASE' : activeFilter.eyebrow}</p>
-            <h1>{activeFilter.id === 'all' ? <>Real progress.<br /><span>Real results.</span></> : activeFilter.heading}</h1>
+            <h1>{activeFilter.id === 'all' ? <>Published work.<br /><span>Sample projects.</span></> : activeFilter.heading}</h1>
           </div>
           <div className="showcase-hero-detail">
             <p>{activeFilter.description}</p>
@@ -1601,7 +2235,7 @@ export default function Showcase() {
           <div className="showcase-filter-list showcase-reference-filters" role="tablist" aria-label="Showcase categories">{SHOWCASE_FILTERS.map((filter, index) => <button ref={(node) => { filterRefs.current[index] = node; }} role="tab" id={`showcase-filter-${filter.id}`} aria-controls="showcase-projects-panel" aria-selected={activeFilter.id === filter.id} tabIndex={activeFilter.id === filter.id ? 0 : -1} type="button" key={filter.id} onClick={() => selectFilter(filter)} onKeyDown={(event) => onFilterKeyDown(event, index)}>{filter.label}</button>)}</div>
           <div id="showcase-projects-panel" role="tabpanel" aria-labelledby={`showcase-filter-${activeFilter.id}`} className="showcase-projects-panel" tabIndex={0}>
             <div className="showcase-reference-section-heading"><span className="eyebrow">{activeFilter.id === 'all' ? 'SELECTED WORK' : activeFilter.eyebrow}</span><span>{visibleProjects.length} {visibleProjects.length === 1 ? 'project' : 'projects'}</span></div>
-            {state === 'loading' ? <div className="showcase-state is-loading" role="status" aria-live="polite" aria-busy="true"><strong className="showcase-sr-only">Loading published projects…</strong><span className="showcase-loading-copy" aria-hidden="true">Loading projects…</span><div className="showcase-loading-lines" aria-hidden="true"><i /><i /><i /></div></div>
+            {state === 'loading' ? <div className="showcase-state is-loading"><SkeletonState label="Loading published projects" variant="cards" count={6} /></div>
               : state === 'error' ? <div className="showcase-state is-error"><RequestProblem kind={failureKind} onRetry={retryProjects} /></div>
                 : state === 'unavailable' ? <div className="showcase-state"><strong>Showcase is unavailable in this environment.</strong><p>Connect to the Formant project to browse published work.</p></div>
                   : !visibleProjects.length ? <div className="showcase-state is-empty"><strong>{activeFilter.id === 'all' ? 'More work coming soon' : `More ${activeFilter.label} work coming soon`}</strong><p>We’re preparing more examples for this category. Check back soon.</p></div>
