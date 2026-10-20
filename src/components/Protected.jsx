@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { activateUser, load } from '../lib/store';
+import SkeletonState from './SkeletonState';
 
 export default function Protected({ children }) {
 
@@ -163,20 +164,10 @@ export default function Protected({ children }) {
     Never redirect until the initial authentication check has finished.
   */
   if (loading) {
-
     return (
-      <div
-        style={{
-          minHeight: '100vh',
-          display: 'grid',
-          placeItems: 'center',
-          background: 'var(--cream, #fbfaf3)', // Updated to canonical design token
-          color: 'var(--ink, #11120f)',
-          fontFamily: "'DM Sans', sans-serif"
-        }}
-      >
-        Checking your account...
-      </div>
+      <main className="protected-loading" aria-busy="true">
+        <SkeletonState label="Checking your account" variant="profile" />
+      </main>
     );
   }
 

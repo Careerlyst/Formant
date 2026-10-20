@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import DashboardShell from '../components/DashboardShell';
+import { useToast } from '../components/ToastProvider';
+import SkeletonState from '../components/SkeletonState';
 import { supabase } from '../lib/supabase';
 import './admin-settings.css';
 
@@ -133,13 +135,17 @@ function Toggle({ checked, onChange, disabled = false }) {
 }
 
 function SettingRow({ title, description, children }) {
+  const labeledControl = React.isValidElement(children)
+    ? React.cloneElement(children, { 'aria-label': children.props['aria-label'] || title })
+    : children;
+
   return (
     <div className="admin-settings-row">
       <div className="admin-settings-row-copy">
         <strong>{title}</strong>
         <span>{description}</span>
       </div>
-      <div className="admin-settings-row-control">{children}</div>
+      <div className="admin-settings-row-control">{labeledControl}</div>
     </div>
   );
 }
@@ -171,6 +177,7 @@ function SelectField({ label, value, onChange, options, disabled = false }) {
 }
 
 export default function AdminSettings() {
+  const { showToast } = useToast();
   const [section, setSection] = useState('general');
   const [settings, setSettings] = useState(cloneDefaults);
   const [staff, setStaff] = useState([]);
@@ -304,7 +311,7 @@ export default function AdminSettings() {
       });
 
       setUpdatedAt(data?.updated_at || new Date().toISOString());
-      setNotice(`${currentSection[1]} settings saved successfully.`);
+      showToast(`${currentSection[1]} settings saved successfully.`, { type: 'success' });
       const { data: logs } = await supabase
         .from('admin_audit_logs')
         .select('id, actor_id, action, resource, created_at, details')
@@ -346,7 +353,7 @@ export default function AdminSettings() {
     return (
       <DashboardShell admin>
         <div className="admin-settings-page">
-          <section className="admin-settings-loading">Loading admin settings…</section>
+          <section className="admin-settings-loading" aria-busy="true"><SkeletonState label="Loading admin settings" variant="form" count={1} /></section>
         </div>
       </DashboardShell>
     );
@@ -401,7 +408,7 @@ export default function AdminSettings() {
               <section className="admin-settings-card">
                 <div className="admin-settings-grid">
                   <Field label="Platform name" value={settings.general.platformName} onChange={(v) => update('general', 'platformName', v)} disabled={!canEdit} />
-                  <Field label="Support email" type="email" value={settings.general.supportEmail} onChange={(v) => update('general', 'supportEmail', v)} disabled={!canEdit} placeholder="support@careerlyst.com" />
+                  <Field label="Support email" type="email" value={settings.general.supportEmail} onChange={(v) => update('general', 'supportEmail', v)} disabled={!canEdit} placeholder="support@example.com" />
                   <Field label="Support phone" value={settings.general.supportPhone} onChange={(v) => update('general', 'supportPhone', v)} disabled={!canEdit} />
                   <SelectField label="Currency" value={settings.general.currency} onChange={(v) => update('general', 'currency', v)} disabled={!canEdit} options={[['BDT', 'BDT — Bangladeshi Taka'], ['USD', 'USD — US Dollar'], ['EUR', 'EUR — Euro'], ['GBP', 'GBP — British Pound']]} />
                   <SelectField label="Timezone" value={settings.general.timezone} onChange={(v) => update('general', 'timezone', v)} disabled={!canEdit} options={[['Asia/Dhaka', 'Asia/Dhaka'], ['UTC', 'UTC'], ['Asia/Kolkata', 'Asia/Kolkata'], ['Europe/London', 'Europe/London']]} />

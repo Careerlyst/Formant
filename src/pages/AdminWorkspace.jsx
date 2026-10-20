@@ -1,7 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import DashboardShell from '../components/DashboardShell';
 import AdminProfileContext from '../components/AdminProfileContext';
+import SkeletonState from '../components/SkeletonState';
+import { useToast } from '../components/ToastProvider';
 import { getProfileProgress } from '../lib/profileCompletion';
 import { supabase } from '../lib/supabase';
 import './admin-workspace.css';
@@ -98,6 +100,7 @@ function ErrorNotice({ children }) {
 }
 
 export default function AdminWorkspace() {
+  const { showToast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedOrderId = searchParams.get('order') || '';
   const requestedClientId = searchParams.get('client') || '';
@@ -110,7 +113,6 @@ export default function AdminWorkspace() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
-  const [toast, setToast] = useState('');
   const [orderSearch, setOrderSearch] = useState('');
   const [messageSummary, setMessageSummary] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -136,23 +138,23 @@ export default function AdminWorkspace() {
   const [goalDraft, setGoalDraft] = useState({ title: '', description: '', target_date: '', status: 'active', client_visible: false });
   const [sessionOpen, setSessionOpen] = useState(false);
   const [sessionDraft, setSessionDraft] = useState({ title: '', starts_at: '', assigned_to: '', meeting_url: '', notes: '' });
-
-  const showToast = useCallback((message) => {
-    setToast(message);
-    window.setTimeout(() => setToast(''), 2800);
-  }, []);
+  const workspaceLoadSequenceRef = useRef(0);
 
   const loadWorkspace = useCallback(async (silent = false) => {
+    const requestId = ++workspaceLoadSequenceRef.current;
+    const isCurrentRequest = () => requestId === workspaceLoadSequenceRef.current;
     if (!supabase) { setError('Supabase is not configured.'); setLoading(false); return; }
     if (silent) setRefreshing(true); else setLoading(true);
     setError('');
     try {
       const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
       if (sessionError) throw sessionError;
+      if (!isCurrentRequest()) return;
       const user = sessionData?.session?.user;
       if (!user) { setAuthorized(false); return; }
       const { data: roleRow, error: roleError } = await supabase.from('user_roles').select('role').eq('user_id', user.id).maybeSingle();
       if (roleError) throw roleError;
+      if (!isCurrentRequest()) return;
       const currentRole = String(roleRow?.role || '').toLowerCase();
       if (!STAFF_ROLES.includes(currentRole)) { setAuthorized(false); return; }
       setRole(currentRole);
@@ -165,31 +167,47 @@ export default function AdminWorkspace() {
         .order('created_at', { ascending: false }).limit(100);
       if (orderError) throw orderError;
       const nextOrders = orderRows || [];
-      setOrders(nextOrders);
+      if (!isCurrentRequest()) return;
 
       const ids = [...new Set([...nextOrders.map((order) => order.user_id), requestedClientId].filter(Boolean))];
-      if (!ids.length) { setProfiles({}); setBriefs({}); return; }
-      const { data: profileRows, error: profileError } = await supabase.from('profiles')
-        .select('id, name, email, phone, location, target_role, experience, education, skills, certifications, linkedin, github, portfolio, bio, preferences, lead_assessment, lead_score, lead_status, lead_assessment_completed_at, updated_at')
-        .in('id', ids);
-      if (profileError) throw profileError;
-      setProfiles(Object.fromEntries((profileRows || []).map((profile) => [String(profile.id), profile])));
+      let nextProfiles = {};
+      if (ids.length) {
+        const { data: profileRows, error: profileError } = await supabase.from('profiles')
+          .select('id, name, email, phone, location, target_role, experience, education, skills, certifications, linkedin, github, portfolio, bio, preferences, lead_assessment, lead_score, lead_status, lead_assessment_completed_at, updated_at')
+          .in('id', ids);
+        if (profileError) throw profileError;
+        nextProfiles = Object.fromEntries((profileRows || []).map((profile) => [String(profile.id), profile]));
+        if (!isCurrentRequest()) return;
+      }
 
       const orderIds = nextOrders.map((order) => order.id).filter(Boolean);
-      if (!orderIds.length) { setBriefs({}); return; }
-      const { data: briefRows, error: briefError } = await supabase.from('project_briefs').select('*').in('order_id', orderIds);
-      if (briefError) throw briefError;
-      setBriefs(Object.fromEntries((briefRows || []).map((brief) => [String(brief.order_id), brief])));
+      let nextBriefs = {};
+      if (orderIds.length) {
+        const { data: briefRows, error: briefError } = await supabase.from('project_briefs').select('*').in('order_id', orderIds);
+        if (briefError) throw briefError;
+        nextBriefs = Object.fromEntries((briefRows || []).map((brief) => [String(brief.order_id), brief]));
+      }
+      if (!isCurrentRequest()) return;
+      setOrders(nextOrders);
+      setProfiles(nextProfiles);
+      setBriefs(nextBriefs);
     } catch (loadError) {
-      console.error('Admin workspace load error:', loadError);
-      setError(loadError?.message || 'Could not load the client workspace.');
+      if (isCurrentRequest()) {
+        console.error('Admin workspace load error:', loadError);
+        setError(loadError?.message || 'Could not load the client workspace.');
+      }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (isCurrentRequest()) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [requestedClientId]);
 
-  useEffect(() => { void loadWorkspace(); }, [loadWorkspace]);
+  useEffect(() => {
+    void loadWorkspace();
+    return () => { workspaceLoadSequenceRef.current += 1; };
+  }, [loadWorkspace]);
 
   const requestedOrder = orders.find((order) => String(order.id) === String(requestedOrderId)) || null;
   const orderClientMismatch = Boolean(requestedClientId && requestedOrder && String(requestedOrder.user_id) !== String(requestedClientId));
@@ -307,7 +325,7 @@ export default function AdminWorkspace() {
       const { error: saveError } = await request;
       if (saveError) throw saveError;
       setTaskDraft({ title: '', description: '', status: 'todo', priority: 'medium', due_at: '', assigned_to: '', client_visible: false });
-      setEditingTaskId(''); setTaskOpen(false); await loadSelectedContext(selectedOrder); showToast(editingTaskId ? 'Task updated.' : 'Task added.');
+      setEditingTaskId(''); setTaskOpen(false); await loadSelectedContext(selectedOrder); showToast(editingTaskId ? 'Task updated.' : 'Task added.', { type: 'success' });
     } catch (saveError) { setSectionErrors((current) => ({ ...current, tasks: saveError?.message || 'Task could not be saved.' })); }
   }
 
@@ -323,7 +341,7 @@ export default function AdminWorkspace() {
     try {
       const { error: updateError } = await supabase.from('workspace_tasks').update({ ...changes, completed_at: nextStatus === 'done' ? new Date().toISOString() : null, updated_at: new Date().toISOString() }).eq('id', task.id).eq('order_id', selectedOrder.id);
       if (updateError) throw updateError;
-      await loadSelectedContext(selectedOrder); showToast('Task status updated.');
+      await loadSelectedContext(selectedOrder); showToast('Task status updated.', { type: 'success' });
     } catch (updateError) { setSectionErrors((current) => ({ ...current, tasks: updateError?.message || 'Task could not be updated.' })); }
   }
 
@@ -332,7 +350,7 @@ export default function AdminWorkspace() {
     try {
       const { error: deleteError } = await supabase.from('workspace_tasks').delete().eq('id', task.id).eq('order_id', selectedOrder.id);
       if (deleteError) throw deleteError;
-      await loadSelectedContext(selectedOrder); showToast('Task deleted.');
+      await loadSelectedContext(selectedOrder); showToast('Task deleted.', { type: 'success' });
     } catch (deleteError) { setSectionErrors((current) => ({ ...current, tasks: deleteError?.message || 'Task could not be deleted.' })); }
   }
 
@@ -342,7 +360,7 @@ export default function AdminWorkspace() {
     try {
       const { error: insertError } = await supabase.from('workspace_notes').insert({ order_id: selectedOrder.id, body: noteDraft.body.trim(), visibility: noteDraft.visibility, created_by: staffUserId });
       if (insertError) throw insertError;
-      setNoteDraft({ body: '', visibility: 'internal' }); setNoteOpen(false); await loadSelectedContext(selectedOrder); showToast('Note added.');
+      setNoteDraft({ body: '', visibility: 'internal' }); setNoteOpen(false); await loadSelectedContext(selectedOrder); showToast('Note added.', { type: 'success' });
     } catch (insertError) { setSectionErrors((current) => ({ ...current, notes: insertError?.message || 'Note could not be saved.' })); }
   }
 
@@ -352,7 +370,7 @@ export default function AdminWorkspace() {
     try {
       const { error: insertError } = await supabase.from('workspace_goals').insert({ ...goalDraft, title: goalDraft.title.trim(), order_id: selectedOrder.id, target_date: goalDraft.target_date || null, created_by: staffUserId });
       if (insertError) throw insertError;
-      setGoalDraft({ title: '', description: '', target_date: '', status: 'active', client_visible: false }); setGoalOpen(false); await loadSelectedContext(selectedOrder); showToast('Goal added.');
+      setGoalDraft({ title: '', description: '', target_date: '', status: 'active', client_visible: false }); setGoalOpen(false); await loadSelectedContext(selectedOrder); showToast('Goal added.', { type: 'success' });
     } catch (insertError) { setSectionErrors((current) => ({ ...current, goals: insertError?.message || 'Goal could not be saved.' })); }
   }
 
@@ -362,7 +380,7 @@ export default function AdminWorkspace() {
     try {
       const { error: insertError } = await supabase.from('workspace_sessions').insert({ ...sessionDraft, title: sessionDraft.title.trim(), order_id: selectedOrder.id, starts_at: new Date(sessionDraft.starts_at).toISOString(), assigned_to: sessionDraft.assigned_to || null, created_by: staffUserId });
       if (insertError) throw insertError;
-      setSessionDraft({ title: '', starts_at: '', assigned_to: '', meeting_url: '', notes: '' }); setSessionOpen(false); await loadSelectedContext(selectedOrder); showToast('Session scheduled.');
+      setSessionDraft({ title: '', starts_at: '', assigned_to: '', meeting_url: '', notes: '' }); setSessionOpen(false); await loadSelectedContext(selectedOrder); showToast('Session scheduled.', { type: 'success' });
     } catch (insertError) { setSectionErrors((current) => ({ ...current, sessions: insertError?.message || 'Session could not be saved.' })); }
   }
 
@@ -385,7 +403,7 @@ export default function AdminWorkspace() {
       setRoadmap(data || null);
       setRoadmapDraft({ stage_key: data?.current_stage_key || '', status: data?.current_status || 'CURRENT', client_update: data?.client_update || '', client_action_title: data?.client_action_title || '', client_action_description: data?.client_action_description || '', internal_reason: '' });
       setRoadmapEditorOpen(false);
-      showToast('Service roadmap updated.');
+      showToast('Service roadmap updated.', { type: 'success' });
     } catch (updateError) {
       setRoadmapError(updateError?.message || 'The service roadmap could not be updated.');
     } finally {
@@ -472,17 +490,17 @@ export default function AdminWorkspace() {
     <DashboardShell admin>
       <main className="client360-page">
         <header className="client360-page-head">
-          <div><p className="eyebrow">ADMIN · CLIENT SERVICE DELIVERY</p><h1>Workspace.</h1><p>Understand the client, see what needs attention, and move the work forward.</p></div>
+          <div><p className="eyebrow">ADMIN · CLIENT SERVICE DELIVERY</p><h1>Client service workspace</h1><p>Review client details, delivery stages, tasks and scheduled sessions.</p></div>
           <button type="button" className="btn" onClick={() => void loadWorkspace(true)} disabled={loading || refreshing}>{refreshing ? 'Refreshing…' : 'Refresh ↻'}</button>
         </header>
 
         {error && <ErrorNotice>{error}</ErrorNotice>}
-        {loading ? <div className="workspace-state panel" role="status">Loading client workspace…</div> : (
+        {loading ? <div className="workspace-state panel"><SkeletonState label="Loading client workspace" variant="profile" /></div> : (
           <div className="client360-layout">
             <aside className="client360-rail" aria-label="Client and order selector">
               <label className="workspace-search"><span aria-hidden="true">⌕</span><input value={orderSearch} onChange={(event) => setOrderSearch(event.target.value)} placeholder="Find a client or order" aria-label="Search clients and orders" /></label>
               <div className="workspace-selector-title"><span>RECENT SERVICE ORDERS</span><b>{selectableOrders.length}</b></div>
-              {loading ? <p className="workspace-muted">Loading orders…</p> : selectableOrders.length ? (
+              {loading ? <SkeletonState label="Loading orders" variant="rows" count={3} className="workspace-muted" /> : selectableOrders.length ? (
                 <ul className="workspace-order-picker">
                   {selectableOrders.map((order) => {
                     const profile = profiles[String(order.user_id)] || {};
@@ -512,7 +530,7 @@ export default function AdminWorkspace() {
                 <div className="client360-columns">
                   <div className="client360-primary">
                     <Section id="service-roadmap" eyebrow={`ORDER #${selectedOrder.id} · ${selectedOrder.service_name || 'SERVICE'}`} title="Service roadmap" className="workspace-roadmap-panel" action={canEdit && roadmap && <button type="button" className="btn dark" onClick={() => { setRoadmapDraft({ stage_key: roadmap.current_stage_key, status: roadmap.current_status, client_update: roadmap.client_update || '', client_action_title: roadmap.client_action_title || '', client_action_description: roadmap.client_action_description || '', internal_reason: '' }); setRoadmapEditorOpen((open) => !open); }}>{roadmapEditorOpen ? 'Close' : 'Update stage'}</button>}>
-                      {roadmapLoading ? <div className="workspace-empty workspace-empty-small" role="status">Loading the service roadmap…</div>
+                      {roadmapLoading ? <SkeletonState label="Loading the service roadmap" variant="rows" count={2} className="workspace-empty workspace-empty-small" />
                         : roadmapError ? <ErrorNotice>{roadmapError}</ErrorNotice>
                           : !roadmap ? <div className="workspace-empty workspace-empty-small"><strong>No delivery roadmap is configured.</strong><p>This order’s service is not mapped to a delivery workflow yet.</p></div>
                             : <>
@@ -557,7 +575,7 @@ export default function AdminWorkspace() {
                     <Section id="career-progress" eyebrow="DELIVERY JOURNEY" title="Career progress"><ol className="workspace-progress-list">{progressStages.map((stage, index) => <li className={stage.done ? 'is-complete' : ''} key={stage.label}><span className="workspace-progress-index">{stage.done ? '✓' : String(index + 1).padStart(2, '0')}</span><div><strong>{stage.label}</strong><span>{stage.state}</span></div></li>)}</ol><p className="workspace-muted workspace-progress-note">Stages use saved assessment/profile data, shared message files, and the existing order status. No percentage is inferred.</p></Section>
 
                     <Section id="workspace-tasks" eyebrow="ACTION PLAN" title="Tasks" action={canEdit && <button className="btn dark" type="button" onClick={() => { setEditingTaskId(''); setTaskDraft({ title: '', description: '', status: 'todo', priority: 'medium', due_at: '', assigned_to: '', client_visible: false }); setTaskOpen((open) => !open); }}>{taskOpen ? 'Close' : '+ Add task'}</button>}>
-                      {sectionLoading.tasks ? <div className="workspace-empty" role="status">Loading tasks…</div> : sectionErrors.tasks ? <ErrorNotice>{sectionErrors.tasks}</ErrorNotice> : tasks.length ? <div className="workspace-task-list">{tasks.map((task) => {
+                      {sectionLoading.tasks ? <SkeletonState label="Loading tasks" variant="rows" count={3} className="workspace-empty" /> : sectionErrors.tasks ? <ErrorNotice>{sectionErrors.tasks}</ErrorNotice> : tasks.length ? <div className="workspace-task-list">{tasks.map((task) => {
                         const due = task.due_at ? new Date(task.due_at) : null; const overdue = due && due.getTime() < Date.now() && task.status !== 'done'; const assignee = staffOptions.find((person) => person.id === String(task.assigned_to));
                         return <article className="workspace-task" key={task.id}><div className="workspace-task-main"><div className="workspace-task-heading"><strong>{task.title}</strong><div className="workspace-task-tags"><StatusBadge tone={overdue ? 'high' : ''}>{overdue ? 'Overdue' : humanize(task.status)}</StatusBadge><StatusBadge>{humanize(task.priority)} priority</StatusBadge>{task.client_visible && <StatusBadge tone="visible">Client visible</StatusBadge>}</div></div>{task.description && <p>{task.description}</p>}<small>{due ? `Due ${formatDate(due)}` : 'No due date'}{assignee ? ` · ${assignee.name}` : ''}</small></div><div className="workspace-task-controls">{canEdit ? <><label className="workspace-control-label">Status<select value={task.status} onChange={(event) => void updateTask(task, { status: event.target.value })}>{TASK_STATES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><button type="button" className="workspace-text-action" onClick={() => editTask(task)}>Edit</button><button type="button" className="workspace-text-action is-danger" onClick={() => void deleteTask(task)}>Delete</button></> : <span>{humanize(task.status)}</span>}</div></article>;
                       })}</div> : <div className="workspace-empty"><strong>No tasks yet.</strong><p>Create a clear next action for this service.</p>{canEdit && <button type="button" className="workspace-text-action" onClick={() => setTaskOpen(true)}>Add the first task →</button>}</div>}
@@ -570,17 +588,17 @@ export default function AdminWorkspace() {
                     </Section>
 
                     <Section id="workspace-goals" eyebrow="CLIENT OUTCOME" title="Goals" action={canEdit && <button className="btn" type="button" onClick={() => setGoalOpen((open) => !open)}>{goalOpen ? 'Close' : '+ Add goal'}</button>}>
-                      {sectionLoading.goals ? <div className="workspace-empty" role="status">Loading goals…</div> : sectionErrors.goals ? <ErrorNotice>{sectionErrors.goals}</ErrorNotice> : goals.length ? <div className="workspace-simple-list">{goals.map((goal) => <article key={goal.id}><div><strong>{goal.title}</strong><p>{goal.description || 'No additional detail.'}</p></div><div><StatusBadge>{humanize(goal.status)}</StatusBadge>{goal.target_date && <small>Target {formatDate(goal.target_date)}</small>}</div></article>)}</div> : <div className="workspace-empty"><strong>No goals recorded.</strong><p>A goal describes the outcome; tasks describe the work to reach it.</p></div>}
+                      {sectionLoading.goals ? <SkeletonState label="Loading goals" variant="rows" count={3} className="workspace-empty" /> : sectionErrors.goals ? <ErrorNotice>{sectionErrors.goals}</ErrorNotice> : goals.length ? <div className="workspace-simple-list">{goals.map((goal) => <article key={goal.id}><div><strong>{goal.title}</strong><p>{goal.description || 'No additional detail.'}</p></div><div><StatusBadge>{humanize(goal.status)}</StatusBadge>{goal.target_date && <small>Target {formatDate(goal.target_date)}</small>}</div></article>)}</div> : <div className="workspace-empty"><strong>No goals recorded.</strong><p>A goal describes the outcome; tasks describe the work to reach it.</p></div>}
                       {goalOpen && canEdit && <form className="workspace-form" onSubmit={saveGoal}><h3>New goal</h3><label>Goal<input required maxLength={180} value={goalDraft.title} onChange={(event) => setGoalDraft({ ...goalDraft, title: event.target.value })} /></label><label>Description<textarea rows="2" value={goalDraft.description} onChange={(event) => setGoalDraft({ ...goalDraft, description: event.target.value })} /></label><div className="workspace-form-grid"><label>Target date<input type="date" value={goalDraft.target_date} onChange={(event) => setGoalDraft({ ...goalDraft, target_date: event.target.value })} /></label><label>Status<select value={goalDraft.status} onChange={(event) => setGoalDraft({ ...goalDraft, status: event.target.value })}><option value="active">Active</option><option value="achieved">Achieved</option><option value="paused">Paused</option></select></label></div><label className="workspace-check"><input type="checkbox" checked={goalDraft.client_visible} onChange={(event) => setGoalDraft({ ...goalDraft, client_visible: event.target.checked })} />Visible to this client</label><div className="workspace-form-actions"><button type="button" className="btn" onClick={() => setGoalOpen(false)}>Cancel</button><button className="btn dark" type="submit">Save goal</button></div></form>}
                     </Section>
 
                     <Section id="workspace-sessions" eyebrow="CONSULTATION" title="Sessions" action={canEdit && <button className="btn" type="button" onClick={() => setSessionOpen((open) => !open)}>{sessionOpen ? 'Close' : '+ Add session'}</button>}>
-                      {sectionLoading.sessions ? <div className="workspace-empty" role="status">Loading sessions…</div> : sectionErrors.sessions ? <ErrorNotice>{sectionErrors.sessions}</ErrorNotice> : sessions.length ? <div className="workspace-simple-list">{sessions.map((session) => { const meetingUrl = safeHttpUrl(session.meeting_url); return <article key={session.id}><div><strong>{session.title}</strong><p>{formatDate(session.starts_at, true)}{session.assigned_to ? ` · ${staffOptions.find((person) => person.id === String(session.assigned_to))?.name || 'Assigned consultant'}` : ''}</p>{session.notes && <small>{session.notes}</small>}</div><div><StatusBadge>{humanize(session.status)}</StatusBadge>{meetingUrl && <a className="workspace-text-action" href={meetingUrl} target="_blank" rel="noreferrer">Meeting link ↗</a>}</div></article>; })}</div> : <div className="workspace-empty"><strong>No sessions scheduled.</strong><p>Session records are lightweight and do not connect to a scheduling service.</p></div>}
+                      {sectionLoading.sessions ? <SkeletonState label="Loading sessions" variant="rows" count={2} className="workspace-empty" /> : sectionErrors.sessions ? <ErrorNotice>{sectionErrors.sessions}</ErrorNotice> : sessions.length ? <div className="workspace-simple-list">{sessions.map((session) => { const meetingUrl = safeHttpUrl(session.meeting_url); return <article key={session.id}><div><strong>{session.title}</strong><p>{formatDate(session.starts_at, true)}{session.assigned_to ? ` · ${staffOptions.find((person) => person.id === String(session.assigned_to))?.name || 'Assigned consultant'}` : ''}</p>{session.notes && <small>{session.notes}</small>}</div><div><StatusBadge>{humanize(session.status)}</StatusBadge>{meetingUrl && <a className="workspace-text-action" href={meetingUrl} target="_blank" rel="noreferrer">Meeting link ↗</a>}</div></article>; })}</div> : <div className="workspace-empty"><strong>No sessions scheduled.</strong><p>Session records are lightweight and do not connect to a scheduling service.</p></div>}
                       {sessionOpen && canEdit && <form className="workspace-form" onSubmit={saveSession}><h3>New session</h3><label>Title<input required maxLength={180} value={sessionDraft.title} onChange={(event) => setSessionDraft({ ...sessionDraft, title: event.target.value })} /></label><div className="workspace-form-grid"><label>Date and time<input required type="datetime-local" value={sessionDraft.starts_at} onChange={(event) => setSessionDraft({ ...sessionDraft, starts_at: event.target.value })} /></label><label>Consultant<select value={sessionDraft.assigned_to} onChange={(event) => setSessionDraft({ ...sessionDraft, assigned_to: event.target.value })}><option value="">Unassigned</option>{staffOptions.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label></div><label>Meeting link<input type="url" placeholder="https://" value={sessionDraft.meeting_url} onChange={(event) => setSessionDraft({ ...sessionDraft, meeting_url: event.target.value })} /></label><label>Internal notes<textarea rows="2" value={sessionDraft.notes} onChange={(event) => setSessionDraft({ ...sessionDraft, notes: event.target.value })} /></label><p className="workspace-muted">Session details are staff-only in this phase.</p><div className="workspace-form-actions"><button type="button" className="btn" onClick={() => setSessionOpen(false)}>Cancel</button><button className="btn dark" type="submit">Save session</button></div></form>}
                     </Section>
 
                     <Section id="workspace-notes" eyebrow="TEAM CONTEXT" title="Notes" action={canEdit && <button className="btn" type="button" onClick={() => setNoteOpen((open) => !open)}>{noteOpen ? 'Close' : '+ Add note'}</button>}>
-                      {sectionLoading.notes ? <div className="workspace-empty" role="status">Loading notes…</div> : sectionErrors.notes ? <ErrorNotice>{sectionErrors.notes}</ErrorNotice> : notes.length ? <div className="workspace-note-list">{notes.map((note) => <article key={note.id} className={note.visibility === 'internal' ? 'is-internal' : 'is-shared'}><header><StatusBadge tone={note.visibility === 'internal' ? 'high' : 'visible'}>{note.visibility === 'internal' ? 'Internal note' : 'Shared with client'}</StatusBadge><time>{formatDate(note.created_at, true)}</time></header><p>{note.body}</p></article>)}</div> : <div className="workspace-empty"><strong>No notes yet.</strong><p>Keep operational context here without duplicating profile or order fields.</p></div>}
+                      {sectionLoading.notes ? <SkeletonState label="Loading notes" variant="rows" count={2} className="workspace-empty" /> : sectionErrors.notes ? <ErrorNotice>{sectionErrors.notes}</ErrorNotice> : notes.length ? <div className="workspace-note-list">{notes.map((note) => <article key={note.id} className={note.visibility === 'internal' ? 'is-internal' : 'is-shared'}><header><StatusBadge tone={note.visibility === 'internal' ? 'high' : 'visible'}>{note.visibility === 'internal' ? 'Internal note' : 'Shared with client'}</StatusBadge><time>{formatDate(note.created_at, true)}</time></header><p>{note.body}</p></article>)}</div> : <div className="workspace-empty"><strong>No notes yet.</strong><p>Keep operational context here without duplicating profile or order fields.</p></div>}
                       {noteOpen && canEdit && <form className="workspace-form" onSubmit={saveNote}><h3>New note</h3><label>Note<textarea required rows="4" maxLength={5000} value={noteDraft.body} onChange={(event) => setNoteDraft({ ...noteDraft, body: event.target.value })} /></label><label>Visibility<select value={noteDraft.visibility} onChange={(event) => setNoteDraft({ ...noteDraft, visibility: event.target.value })}><option value="internal">Internal · staff only</option><option value="shared">Shared with this client</option></select></label><p className="workspace-muted">Visibility is enforced by database row-level security.</p><div className="workspace-form-actions"><button type="button" className="btn" onClick={() => setNoteOpen(false)}>Cancel</button><button className="btn dark" type="submit">Save note</button></div></form>}
                     </Section>
                   </div>
@@ -590,7 +608,7 @@ export default function AdminWorkspace() {
 
                     <Section id="workspace-assessment" eyebrow="CAREER DIRECTION" title="Assessment">{clientProfile?.lead_assessment ? <div className="workspace-assessment-summary"><div className="workspace-score"><strong>{clientProfile.lead_score ?? '—'}</strong><span>{clientProfile.lead_status ? humanize(clientProfile.lead_status) : 'Completed'}</span></div><p>Completed {formatDate(clientProfile.lead_assessment_completed_at || clientProfile.lead_assessment.completedAt)}</p><dl>{Object.entries(clientProfile.lead_assessment.answers || {}).slice(0, 7).map(([key, value]) => <div key={key}><dt>{humanize(key)}</dt><dd>{Array.isArray(value) ? value.join(', ') : humanize(value)}</dd></div>)}</dl><Link className="workspace-text-action" to={`/admin/leads?client=${encodeURIComponent(selectedClientId)}`}>Open lead assessments →</Link></div> : <div className="workspace-empty workspace-empty-small"><strong>No assessment on file.</strong><p>Assessment state is read from the profile source of truth.</p></div>}</Section>
 
-                    <Section id="messages" eyebrow="CONVERSATION" title="Messages" action={<Link className="workspace-text-action" to={`/admin/messages?order=${encodeURIComponent(selectedOrder.id)}`}>Open conversation →</Link>}>{sectionLoading.messages ? <div className="workspace-empty workspace-empty-small" role="status">Loading conversation…</div> : sectionErrors.messages ? <ErrorNotice>{sectionErrors.messages}</ErrorNotice> : <div className="workspace-message-summary"><StatusBadge tone={Number(messageSummary?.unread_count) ? 'high' : 'visible'}>{Number(messageSummary?.unread_count) || 0} unread</StatusBadge><p>{messageSummary?.latest_message_id ? messageText(messageSummary.latest_body).slice(0, 220) || 'Attachment shared' : 'No messages in this conversation yet.'}</p><small>{messageSummary?.latest_created_at ? `Last message ${formatDate(messageSummary.latest_created_at, true)}` : 'Conversation activity will appear here.'}</small></div>}</Section>
+                    <Section id="messages" eyebrow="CONVERSATION" title="Messages" action={<Link className="workspace-text-action" to={`/admin/messages?order=${encodeURIComponent(selectedOrder.id)}`}>Open conversation →</Link>}>{sectionLoading.messages ? <SkeletonState label="Loading conversation" variant="messages" count={2} className="workspace-empty workspace-empty-small" /> : sectionErrors.messages ? <ErrorNotice>{sectionErrors.messages}</ErrorNotice> : <div className="workspace-message-summary"><StatusBadge tone={Number(messageSummary?.unread_count) ? 'high' : 'visible'}>{Number(messageSummary?.unread_count) || 0} unread</StatusBadge><p>{messageSummary?.latest_message_id ? messageText(messageSummary.latest_body).slice(0, 220) || 'Attachment shared' : 'No messages in this conversation yet.'}</p><small>{messageSummary?.latest_created_at ? `Last message ${formatDate(messageSummary.latest_created_at, true)}` : 'Conversation activity will appear here.'}</small></div>}</Section>
 
                     <Section id="workspace-activity" eyebrow="RECENT HISTORY" title="Activity"><div className="workspace-timeline">{timeline.length ? timeline.map((entry, index) => <article key={`${entry.kind}-${entry.at}-${index}`}><span className="workspace-timeline-dot" aria-hidden="true" /><div><time>{formatDate(entry.at, true)}</time><strong>{entry.title}</strong><p>{entry.detail}</p></div></article>) : <div className="workspace-empty workspace-empty-small"><strong>No activity recorded yet.</strong></div>}</div></Section>
                   </aside>
@@ -600,7 +618,6 @@ export default function AdminWorkspace() {
             )}
           </div>
         )}
-        {toast && <div className="workspace-toast" role="status">{toast}</div>}
       </main>
     </DashboardShell>
   );

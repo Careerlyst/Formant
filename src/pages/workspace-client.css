@@ -5,15 +5,15 @@
 }
 
 .app-shell:has(.orders-page-header) .app-main {
-  padding: 24px 36px 48px 52px !important;
+  padding: 30px clamp(20px, 3.2vw, 48px) 44px !important;
 }
 
 .app-shell .dash-head.orders-page-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
-  margin: 0 0 32px !important;
+  gap: 20px;
+  margin: 0 0 24px !important;
   padding: 0 !important;
   border: 0 !important;
 }
@@ -32,8 +32,8 @@
 .app-shell .orders-page-header h1 {
   margin: 0 !important;
   color: var(--ink) !important;
-  font: 800 clamp(46px, 3.65vw, 56px)/.98 'Manrope', sans-serif !important;
-  letter-spacing: -.072em !important;
+  font: 800 clamp(40px, 3.2vw, 50px)/1 'Manrope', sans-serif !important;
+  letter-spacing: -.06em !important;
 }
 
 .app-shell .orders-header-copy .orders-page-subtitle {
@@ -45,13 +45,153 @@
 }
 
 .app-shell .orders-page-header > .btn {
-  min-height: 42px;
+  min-height: 44px;
   flex: 0 0 auto;
   align-self: center;
   padding: 0 18px;
   border-radius: 5px;
   font-size: 12px;
   font-weight: 700;
+}
+
+.orders-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 0 14px;
+  min-width: 0;
+}
+
+.orders-status-filters,
+.orders-toolbar-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.orders-status-filters { flex-wrap: wrap; }
+
+.orders-filter-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 600 12px/1.2 'DM Sans', sans-serif;
+  cursor: pointer;
+}
+
+.orders-filter-button > span {
+  min-width: 19px;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.orders-filter-button.is-active {
+  border-color: var(--line);
+  box-shadow: inset 0 -2px var(--lime);
+  color: var(--ink);
+}
+
+.orders-filter-button:disabled { cursor: default; opacity: .58; }
+
+.orders-search,
+.orders-sort {
+  display: flex;
+  align-items: center;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--paper);
+  color: var(--muted);
+}
+
+.orders-search { gap: 9px; width: min(285px, 24vw); padding: 0 11px; }
+.orders-search svg { flex: 0 0 auto; }
+.orders-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font: 400 13px/1.3 'DM Sans', sans-serif;
+}
+.orders-search:focus-within,
+.orders-sort:focus-within { border-color: var(--ink); }
+.orders-search input::placeholder { color: var(--muted); opacity: 1; }
+.orders-search input:disabled,
+.orders-sort select:disabled { cursor: default; opacity: .6; }
+
+.orders-sort { position: relative; min-width: 144px; padding: 0 11px; }
+.orders-sort select {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  appearance: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font: 600 12px/1.2 'DM Sans', sans-serif;
+  cursor: pointer;
+}
+.orders-sort svg { pointer-events: none; }
+
+.orders-toolbar button:focus-visible,
+.orders-toolbar input:focus-visible,
+.orders-toolbar select:focus-visible,
+.orders-filter-empty button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.orders-table-header {
+  display: grid;
+  grid-template-columns: minmax(104px, 132px) 42px minmax(0, 1fr) max-content max-content minmax(190px, 218px);
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px 23px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font: 700 10px/1.2 'DM Sans', sans-serif;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.orders-table-header span:nth-child(2) { grid-column: 2 / 4; }
+.orders-table-header span:nth-child(3) { grid-column: 4; text-align: right; }
+.orders-table-header span:nth-child(4) { grid-column: 5; text-align: center; }
+.orders-table-header span:nth-child(5) { grid-column: 6; }
+
+.orders-filter-empty {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 42px 20px;
+  text-align: center;
+}
+.orders-filter-empty strong { color: var(--ink); font: 700 15px/1.4 'Manrope', sans-serif; }
+.orders-filter-empty p { margin: 0; color: var(--muted); font-size: 13px; }
+.orders-filter-empty button {
+  min-height: 40px;
+  margin-top: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 600 12px 'DM Sans', sans-serif;
+  cursor: pointer;
 }
 
 .app-shell .panel.orders-list-panel {
@@ -64,12 +204,13 @@
 
 .client-order-card {
   min-width: 0;
-  margin: 8px 0;
+  margin: 0;
   overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--paper);
-  transition: border-color 180ms ease, background-color 180ms ease;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  transition: background-color 150ms ease;
 }
 
 .client-order-card:first-child {
@@ -77,7 +218,7 @@
 }
 
 .client-order-card.is-roadmap-expanded {
-  border-color: #a6ba60;
+  background: rgba(199, 247, 47, 0.035);
 }
 
 .client-order-card > .order-row.detailed {
@@ -89,12 +230,12 @@
 
 .order-card-header {
   display: grid;
-  grid-template-columns: 140px 52px minmax(220px, 1fr) minmax(72px, max-content) minmax(110px, max-content) minmax(218px, max-content);
+  grid-template-columns: minmax(104px, 132px) 42px minmax(0, 1fr) max-content max-content minmax(190px, 218px);
   align-items: center;
   gap: 12px;
   min-width: 0;
-  min-height: 80px;
-  padding: 11px 15px;
+  min-height: 76px;
+  padding: 11px 12px;
 }
 
 .client-order-card.is-roadmap-expanded .order-card-header {
@@ -124,12 +265,12 @@
 .order-service-icon {
   display: grid;
   place-items: center;
-  width: 49px;
-  height: 49px;
-  border: 1px solid transparent;
-  border-radius: 50%;
-  background: #f3f5dc;
-  color: #49651b;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--soft);
+  color: var(--ink);
 }
 
 .order-service-icon svg {
@@ -150,25 +291,9 @@
   stroke: none;
 }
 
-.order-service-icon-linkedin {
-  background: #edf1f3;
-  color: #252a2b;
-}
-
 .order-service-linkedin {
-  font: 800 21px/1 'Manrope', sans-serif;
+  font: 800 18px/1 'Manrope', sans-serif;
   letter-spacing: -.09em;
-}
-
-.order-service-icon-portfolio,
-.order-service-icon-cover {
-  background: #e5f6f4;
-  color: #175f62;
-}
-
-.order-service-icon-interview {
-  background: #eef1f6;
-  color: #394c65;
 }
 
 .order-card-copy {
@@ -198,7 +323,7 @@
 
 .order-card-copy .order-showcase-link { display: inline-flex; align-items: center; gap: 5px; width: fit-content; margin-top: 7px; color: #566d1e; font-size: 11px; font-weight: 700; text-decoration: none; }
 .order-card-copy .order-showcase-link:hover { text-decoration: underline; text-underline-offset: 3px; }
-.order-card-copy .order-showcase-link:focus-visible { border-radius: 3px; outline: 2px solid #829d2b; outline-offset: 3px; }
+.order-card-copy .order-showcase-link:focus-visible { border-radius: 3px; outline: 2px solid var(--ink); outline-offset: 3px; }
 
 .order-card-price {
   justify-self: end;
@@ -214,46 +339,20 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 110px;
+  min-width: 0;
   max-width: 100%;
   min-height: 28px;
-  padding: 5px 10px !important;
-  border: 1px solid #eee8d8 !important;
-  border-radius: 999px !important;
-  background: #fbf8ec !important;
-  color: #625d4a !important;
-  font: 700 10px/1.2 'DM Sans', sans-serif !important;
-  letter-spacing: .045em;
+  padding: 4px 8px !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 4px !important;
+  background: var(--soft) !important;
+  color: var(--ink) !important;
+  font: 650 10px/1.25 'DM Sans', sans-serif !important;
+  letter-spacing: .025em;
   text-align: center;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.app-shell .order-card-header > .order-card-status.in-progress,
-.app-shell .order-card-header > .order-card-status.in_progress,
-.app-shell .order-card-header > .order-card-status.queued,
-.app-shell .order-card-header > .order-card-status.information-required,
-.app-shell .order-card-header > .order-card-status.information_required,
-.app-shell .order-card-header > .order-card-status.internal-review,
-.app-shell .order-card-header > .order-card-status.internal_review,
-.app-shell .order-card-header > .order-card-status.client-review,
-.app-shell .order-card-header > .order-card-status.client_review,
-.app-shell .order-card-header > .order-card-status.revision {
-  border-color: #e5dbbe !important;
-  background: #fbf3df !important;
-  color: #735725 !important;
-}
-
-.app-shell .order-card-header > .order-card-status.completed {
-  border-color: #cfe8d5 !important;
-  background: #e9f6eb !important;
-  color: #25713c !important;
-}
-
-.app-shell .order-card-header > .order-card-status.cancelled {
-  border-color: var(--line) !important;
-  background: #f6f5ef !important;
-  color: #6d7069 !important;
+  text-transform: capitalize;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .order-card-actions {
@@ -261,7 +360,7 @@
   grid-template-columns: minmax(164px, 1fr) 44px;
   align-items: center;
   gap: 10px;
-  min-width: 218px;
+  min-width: 0;
 }
 
 .order-card-actions .order-brief-button {
@@ -269,21 +368,26 @@
   align-items: center;
   justify-content: center;
   min-width: 0;
-  min-height: 42px;
+  min-height: 44px;
   margin: 0;
   padding: 0 12px;
   border: 0;
-  border-radius: 9px;
-  background: #f7f7f4;
+  border-radius: 5px;
+  background: var(--soft);
   color: var(--ink);
-  font: 600 11px/1.25 'DM Sans', sans-serif;
+  font: 650 11px/1.25 'DM Sans', sans-serif;
   text-align: center;
   text-decoration: none;
   white-space: nowrap;
 }
 
 .order-card-actions .order-brief-button:hover {
-  background: #efeee8;
+  background: #eeeee7;
+}
+
+.order-card-actions .order-brief-button.is-required {
+  background: var(--lime);
+  color: var(--ink);
 }
 
 .order-card-actions .order-progress-toggle {
@@ -295,21 +399,21 @@
   height: 44px;
   padding: 0;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  background: #f8f8f5;
+  border-radius: 5px;
+  background: transparent;
   color: var(--ink);
   cursor: pointer;
   transition: background-color 180ms ease, border-color 180ms ease;
 }
 
 .order-card-actions .order-progress-toggle:hover {
-  border-color: #bfc0b8;
-  background: #f0f0eb;
+  border-color: var(--ink);
+  background: var(--soft);
 }
 
 .order-card-actions .order-progress-toggle:focus-visible,
 .order-card-actions .order-brief-button:focus-visible {
-  outline: 2px solid var(--green);
+  outline: 2px solid var(--ink);
   outline-offset: 2px;
 }
 
@@ -318,14 +422,44 @@
 }
 
 .order-progress-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.order-progress-icon svg,
+.order-card-actions .order-brief-button svg,
+.orders-page-header > .btn svg,
+.order-showcase-link svg,
+.orders-page-header + .orders-list-panel .empty a svg,
+.orders-list-panel .empty button svg {
   display: block;
-  font: 500 18px/1 'DM Sans', sans-serif;
+  flex: 0 0 auto;
+}
+
+.order-card-actions .order-brief-button,
+.app-shell .orders-page-header > .btn,
+.order-card-actions .order-progress-toggle,
+.order-showcase-link,
+.orders-list-panel .empty a,
+.orders-list-panel .empty button {
+  gap: 7px;
+}
+
+.app-shell .orders-page-header > .btn:focus-visible,
+.order-card-actions .order-brief-button:focus-visible,
+.order-card-actions .order-progress-toggle:focus-visible,
+.order-showcase-link:focus-visible,
+.orders-list-panel .empty a:focus-visible,
+.orders-list-panel .empty button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
 }
 
 @media (hover: hover) and (pointer: fine) {
   .client-order-card:hover,
   .client-order-card:focus-within {
-    border-color: #a6ba60;
+    background: rgba(17, 18, 15, 0.018);
   }
 }
 
@@ -694,6 +828,11 @@
   .order-card-price { grid-column: 4; grid-row: 1; }
   .order-card-status { grid-column: 5; grid-row: 1; }
   .order-card-actions { grid-column: 2 / 6; grid-row: 2; justify-self: end; }
+  .orders-table-header { grid-template-columns: 125px 42px minmax(0, 1fr) minmax(72px, max-content) minmax(110px, max-content); }
+  .orders-table-header span:nth-child(2) { grid-column: 2 / 4; }
+  .orders-table-header span:nth-child(3) { grid-column: 4; }
+  .orders-table-header span:nth-child(4) { grid-column: 5; }
+  .orders-table-header span:nth-child(5) { display: none; }
   .client-order-roadmap { grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); }
 }
 
@@ -707,6 +846,11 @@
   .app-shell:has(.orders-page-header) .app-main { padding: 0 18px 40px !important; }
   .app-shell .dash-head.orders-page-header { align-items: flex-start; flex-direction: column; gap: 14px; margin-bottom: 23px !important; }
   .app-shell .orders-page-header > .btn { align-self: flex-start; }
+  .orders-toolbar { align-items: stretch; flex-direction: column; }
+  .orders-toolbar-controls { width: 100%; }
+  .orders-search { width: auto; flex: 1 1 auto; }
+  .orders-sort { flex: 0 0 144px; }
+  .orders-table-header { display: none; }
   .order-card-header { grid-template-columns: minmax(0, 1fr) auto; gap: 11px 14px; padding: 14px; }
   .order-card-identity { grid-column: 1; grid-row: 1; padding-left: 0; }
   .order-service-icon { display: grid; grid-column: 1; grid-row: 2; width: 42px; height: 42px; }
@@ -728,14 +872,21 @@
   .app-shell .orders-page-header h1 { font-size: clamp(42px, 11vw, 52px) !important; }
   .app-shell .orders-header-copy .orders-page-subtitle { max-width: 390px; font-size: 14px !important; }
   .app-shell .orders-page-header > .btn { min-height: 44px; }
-  .client-order-card { margin: 8px 0; }
+  .orders-status-filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .orders-filter-button { min-width: 0; min-height: 44px; gap: 5px; padding: 0 7px; font-size: 11px; }
+  .orders-toolbar-controls { gap: 7px; }
+  .orders-search,
+  .orders-sort { min-height: 44px; }
+  .orders-sort select { min-height: 42px; }
+  .orders-sort { flex-basis: 132px; min-width: 0; padding: 0 8px; }
+  .client-order-card { margin: 0; }
   .order-card-header { gap: 10px 12px; padding: 12px; }
   .order-card-copy h2 { font-size: 15px; }
   .order-card-copy .order-showcase-link { min-height: 32px; font-size: 11px; }
   .order-card-date { font-size: 10px; }
   .order-card-price { font-size: 17px; }
   .app-shell .order-card-header > .order-card-status { min-width: 74px; min-height: 27px; font-size: 9px !important; }
-  .order-card-actions { grid-template-columns: minmax(140px, 1fr) minmax(124px, auto); min-width: 271px; gap: 7px; }
+  .order-card-actions { grid-template-columns: minmax(0, 1fr) minmax(124px, auto); min-width: 0; gap: 8px; }
   .order-card-actions .order-brief-button { min-height: 44px; padding: 0 8px; font-size: 10px; white-space: normal; }
   .order-card-actions .order-progress-toggle { min-width: 124px; width: 100%; height: 44px; padding: 0 10px; }
   .order-progress-label { display: inline; font: 700 11px/1.2 'DM Sans', sans-serif; white-space: nowrap; }
@@ -758,6 +909,13 @@
   .client-order-action-plan li { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .client-order-action-plan li > span,
   .client-order-action-plan li time { white-space: normal; }
+}
+
+@media (max-width: 720px) {
+  .client-dashboard-shell .app-main .dash-head.notifications-page-header {
+    align-items: flex-start !important;
+    flex-direction: column;
+  }
 }
 
 html[data-theme="dark"] .client-roadmap-summary,
@@ -799,6 +957,8 @@ html[data-theme="dark"] .client-roadmap-next p {
 @media (max-width: 350px) {
   .app-shell:has(.orders-page-header) .app-main { padding-right: 11px !important; padding-left: 11px !important; }
   .order-card-header { padding: 10px; }
+  .orders-status-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .orders-sort { flex-basis: 112px; }
   .order-card-actions { grid-template-columns: minmax(0, 1fr); }
   .order-card-actions .order-progress-toggle { justify-content: center; }
 }
@@ -809,4 +969,264 @@ html[data-theme="dark"] .client-roadmap-next p {
   .client-roadmap-progress span,
   .order-card-actions .order-progress-toggle,
   .order-progress-icon { transition: none !important; }
+}
+
+/* Shared rhythm for client dashboard sections. Messages keeps its dedicated full-height layout. */
+.client-dashboard-shell .client-dashboard-icon {
+  display: inline-block;
+  flex: 0 0 auto;
+  vertical-align: middle;
+}
+
+.client-dashboard-shell .settings-section-icon,
+.client-dashboard-shell .settings-option-icon,
+.client-dashboard-shell .settings-account-icon,
+.client-dashboard-shell .settings-account-row-v2 > b {
+  color: var(--muted);
+}
+
+.client-dashboard-shell .settings-section-icon {
+  width: 24px;
+  height: 24px;
+  flex-basis: 24px;
+  border: 0;
+  border-radius: 0;
+}
+
+.client-dashboard-shell .settings-section-title {
+  margin-bottom: 18px;
+}
+
+.client-dashboard-shell .settings-section-v2 {
+  padding-block: 26px 30px;
+}
+
+.client-dashboard-shell .notifications-empty {
+  min-height: 168px;
+  padding: 24px 16px;
+}
+
+.client-dashboard-shell .app-main .orders-list-panel,
+.client-dashboard-shell .app-main .careerlyst-files-page > .panel,
+.client-dashboard-shell .app-main .notifications-panel,
+.client-dashboard-shell .app-main .client-payments-empty-panel {
+  overflow: hidden;
+  border: 1px solid var(--line) !important;
+  border-radius: 10px !important;
+  background: var(--paper, #fff) !important;
+  box-shadow: none !important;
+}
+
+.client-dashboard-shell:not(.messages-dashboard-shell) .app-main {
+  padding: 32px clamp(20px, 3.2vw, 48px) 44px !important;
+}
+
+.client-dashboard-shell:not(.messages-dashboard-shell) .app-main-content {
+  width: 100%;
+  min-width: 0;
+}
+
+.client-dashboard-shell .app-main .dash-head {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 18px !important;
+  margin: 0 0 22px !important;
+  padding: 0 !important;
+  border: 0 !important;
+}
+
+.client-dashboard-shell .app-main .dash-head .eyebrow {
+  margin: 0 0 5px !important;
+  color: var(--muted) !important;
+  font-size: 10px !important;
+  line-height: 1.3 !important;
+  letter-spacing: .08em !important;
+}
+
+.client-dashboard-shell .app-main .dash-head h1 {
+  margin: 0 !important;
+  color: var(--ink) !important;
+  font: 750 clamp(28px, 2.5vw, 36px)/1.15 'Manrope', sans-serif !important;
+  letter-spacing: -.045em !important;
+}
+
+.client-dashboard-shell .app-main .dash-head p:not(.eyebrow) {
+  max-width: 680px;
+  margin: 5px 0 0 !important;
+  color: var(--muted) !important;
+  font: 400 14px/1.5 'DM Sans', sans-serif !important;
+}
+
+.client-dashboard-shell .app-main .dash-head > .btn {
+  min-height: 44px;
+  flex: 0 0 auto;
+  border-radius: 5px;
+}
+
+.client-dashboard-shell .overview-page {
+  max-width: none !important;
+}
+
+.client-dashboard-shell .app-main .overview-header {
+  align-items: center !important;
+  gap: 24px !important;
+  margin-bottom: 22px;
+  padding-bottom: 0 !important;
+  border-bottom: 0 !important;
+}
+
+.client-dashboard-shell .overview-header-copy .eyebrow {
+  margin: 0 0 5px !important;
+}
+
+.client-dashboard-shell .app-main .overview-header-copy h1 {
+  font-size: clamp(28px, 2.5vw, 36px) !important;
+  line-height: 1.15 !important;
+  letter-spacing: -.045em !important;
+}
+
+.client-dashboard-shell .app-main .overview-header-copy h1 span::after {
+  display: none !important;
+}
+
+.client-dashboard-shell .app-main .overview-lede {
+  margin: 5px 0 0 !important;
+  color: var(--muted) !important;
+  font: 400 14px/1.5 'DM Sans', sans-serif !important;
+}
+
+.client-dashboard-shell .app-main .overview-header-action {
+  gap: 7px !important;
+}
+
+.client-dashboard-shell .app-main .overview-header-action > span {
+  font-size: 9px;
+}
+
+.client-dashboard-shell .settings-page-v2 {
+  max-width: none;
+  margin: 0;
+  padding: 0 0 40px;
+}
+
+.client-dashboard-shell .settings-hero-v2 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin: 0 0 22px;
+  padding: 0;
+  border: 0;
+}
+
+.client-dashboard-shell .settings-hero-v2 h1 {
+  font-size: clamp(28px, 2.5vw, 36px);
+  line-height: 1.15;
+  letter-spacing: -.045em;
+}
+
+.client-dashboard-shell .settings-hero-v2 h1 span::after {
+  display: none;
+}
+
+.client-dashboard-shell .settings-hero-copy {
+  max-width: 480px;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.client-dashboard-shell .settings-v2-grid {
+  padding-top: 18px;
+}
+
+.client-dashboard-shell .careerlyst-files-page > .panel {
+  padding: 0 !important;
+}
+
+.client-dashboard-shell .careerlyst-files-page .file-list {
+  padding: 0 !important;
+}
+
+.client-dashboard-shell .careerlyst-files-page .file-row {
+  padding-inline: 10px !important;
+}
+
+.client-dashboard-shell .client-payments-empty-panel {
+  padding: 0 !important;
+}
+
+.client-dashboard-shell .client-payments-empty-panel .empty {
+  padding: 24px;
+}
+
+@media (max-width: 900px) {
+  .client-dashboard-shell:not(.messages-dashboard-shell) .app-main {
+    padding: 0 !important;
+  }
+
+  .client-dashboard-shell:not(.messages-dashboard-shell) .app-main-content {
+    padding: 22px 22px 40px !important;
+  }
+
+  .client-dashboard-shell .app-main .overview-header {
+    display: flex !important;
+    align-items: flex-start !important;
+    flex-direction: column;
+    margin-bottom: 20px;
+  }
+
+  .client-dashboard-shell .app-main .overview-header-action {
+    align-items: flex-start !important;
+    margin-top: 0 !important;
+  }
+
+  .client-dashboard-shell .settings-page-v2 {
+    padding-bottom: 32px;
+  }
+
+  .client-dashboard-shell .settings-hero-v2 {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+}
+
+@media (max-width: 620px) {
+  .client-dashboard-shell:not(.messages-dashboard-shell) .app-main-content {
+    padding: 20px 16px 32px !important;
+  }
+
+  .client-dashboard-shell .app-main .dash-head {
+    align-items: flex-start !important;
+    flex-direction: column;
+    gap: 12px !important;
+    margin-bottom: 18px !important;
+  }
+
+  .client-dashboard-shell .app-main .dash-head > .btn {
+    align-self: flex-start;
+  }
+
+  .client-dashboard-shell .app-main .overview-header {
+    flex-direction: column;
+    gap: 12px !important;
+    margin-bottom: 18px;
+  }
+
+  .client-dashboard-shell .app-main .overview-header-action {
+    margin-top: 0 !important;
+  }
+
+  .client-dashboard-shell .settings-hero-v2 {
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 18px;
+  }
+
+  .client-dashboard-shell .settings-v2-grid {
+    gap: 20px;
+    padding-top: 12px;
+  }
 }

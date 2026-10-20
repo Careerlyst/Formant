@@ -20,6 +20,12 @@ interface PushRequestBody {
   priority?: "normal" | "important" | "urgent";
 }
 
+function formatFormantBrandText(value: string): string {
+  return value
+    .replace(/\bCareerlyst\s+Team\b/gi, "Formant team")
+    .replace(/\bCareerlyst\b/gi, "Formant");
+}
+
 Deno.serve(async (req: Request) => {
   // 1. Handle CORS Preflight
   if (req.method === "OPTIONS") {
@@ -133,6 +139,8 @@ Deno.serve(async (req: Request) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    const notificationTitle = formatFormantBrandText(title.trim());
 
     // 6. Resolve and verify target client user IDs
     let targetUserIds: string[] = [];
@@ -278,7 +286,7 @@ Deno.serve(async (req: Request) => {
     // 8. Prepare notification payload
     const linkDestination = (action_url || url || "/dashboard").trim();
     const pushPayloadString = JSON.stringify({
-      title: title.trim(),
+      title: notificationTitle,
       body: body ? body.trim() : "",
       icon: "/assets/formant-symbol-192.png",
       badge: "/assets/formant-symbol-192.png",

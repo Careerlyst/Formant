@@ -172,10 +172,10 @@ export function demoLogin(email, name = 'Demo Client') {
 }
 
 export const services = [
-  { id: 'resume', name: 'Resume / CV', desc: 'A focused, role-specific resume built for clarity, relevance and ATS readability.', price: 'From $19' },
-  { id: 'linkedin', name: 'LinkedIn', desc: 'A sharper LinkedIn presence that aligns your headline, story and target role.', price: 'From $29' },
-  { id: 'github', name: 'GitHub', desc: 'A cleaner developer profile that makes your work easier to understand.', price: 'From $29' },
-  { id: 'portfolio', name: 'Portfolio', desc: 'A polished portfolio that turns projects into credible evidence.', price: 'From $79' },
-  { id: 'cover', name: 'Cover Letter', desc: 'A concise, specific letter tailored to the opportunity.', price: 'From $19' },
-  { id: 'interview', name: 'Interview Preparation', desc: 'Targeted preparation, practice and feedback for the role ahead.', price: 'From $49' }
+  { id: 'resume', name: 'Resume / CV', desc: 'Rework your CV’s structure and wording around a target role.', price: 'From $19' },
+  { id: 'linkedin', name: 'LinkedIn', desc: 'Refine your headline, About section and experience for the roles you want.', price: 'From $29' },
+  { id: 'github', name: 'GitHub', desc: 'Curate repositories and README content to make your strongest work easier to find.', price: 'From $29' },
+  { id: 'portfolio', name: 'Portfolio', desc: 'Plan project pages and case studies that explain your role and decisions.', price: 'From $79' },
+  { id: 'cover', name: 'Cover Letter', desc: 'Connect your experience to the requirements of a specific opportunity.', price: 'From $19' },
+  { id: 'interview', name: 'Interview Preparation', desc: 'Practice role-specific answers and get feedback before the interview.', price: 'From $49' }
 ];

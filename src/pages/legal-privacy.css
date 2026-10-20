@@ -694,3 +694,21 @@
     break-inside: avoid;
   }
 }
+
+/* Keep the long-form privacy headings in the shared public type scale. */
+.privacy-title {
+  font-size: var(--public-page-title-size);
+  line-height: var(--public-display-line-height);
+  letter-spacing: -.045em;
+  text-wrap: balance;
+}
+
+.privacy-section h2 {
+  font-size: var(--public-subsection-size);
+  line-height: 1.25;
+}
+
+.privacy-subsection h3 {
+  font-size: var(--public-card-title-size);
+  line-height: 1.3;
+}

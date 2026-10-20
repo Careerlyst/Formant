@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Logo from '../components/Logo';
+import SkeletonState from '../components/SkeletonState';
 import { supabase } from '../lib/supabase';
 import { load, patch } from '../lib/store';
 
@@ -72,7 +73,7 @@ const QUESTIONS = [
   {
     id: 'budget',
     eyebrow: '06 / INVESTMENT',
-    title: 'How much are you looking to invest in getting this done professionally?',
+    title: 'What budget range are you considering for this service?',
     options: [
       ['under_25', 'Under $25'],
       ['25_50', '$25–$50'],
@@ -84,7 +85,7 @@ const QUESTIONS = [
   {
     id: 'readiness',
     eyebrow: '07 / NEXT STEP',
-    title: 'If we can provide the right service for your needs, how soon would you be ready to get started?',
+    title: 'If you find a suitable service, when would you be ready to start?',
     options: [
       ['now', 'I’m ready to start now'],
       ['few_days', 'Within a few days'],
@@ -556,13 +557,7 @@ export default function LeadAssessment() {
   }
 
   if (initializing) {
-    return (
-      <main className="lead-assessment" style={{ display: 'grid', placeItems: 'center' }}>
-        <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--muted, #6d7069)' }}>
-          Loading assessment...
-        </div>
-      </main>
-    );
+    return <main className="lead-assessment"><SkeletonState label="Loading your assessment" variant="form" /></main>;
   }
 
   return (
@@ -616,22 +611,19 @@ export default function LeadAssessment() {
           <aside className="lead-assessment-aside">
 
             <p className="eyebrow">
-              A QUICK START
+              7 QUESTIONS
             </p>
 
             <h1>
-              Let’s understand what you need.
+              Tell us what you’re preparing for.
             </h1>
 
             <p>
-              Seven quick questions help us
-              understand your situation and
-              point you toward the right
-              Formant service.
+              Answer questions about your target service, timing and current materials. We’ll use your answers to suggest services.
             </p>
 
             <span className="lead-assessment-note">
-              About 2 minutes
+              Your answers help tailor service suggestions.
             </span>
 
           </aside>

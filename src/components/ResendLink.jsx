@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase"; // File structure onujayi path
+import { useToast } from './ToastProvider';
 
 export default function ResendLink({ email }) {
+  const { showToast } = useToast();
   const [timeLeft, setTimeLeft] = useState(30);
   const [canResend, setCanResend] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [message, setMessage] = useState({ text: "", type: "" });
 
   useEffect(() => {
     if (timeLeft > 0) {
@@ -19,7 +20,6 @@ export default function ResendLink({ email }) {
   const handleResend = async () => {
     if (!email) return;
     setIsLoading(true);
-    setMessage({ text: "", type: "" });
 
     const { error } = await supabase.auth.resend({
       type: 'signup', // Confirmation link er jonno[cite: 2]
@@ -27,9 +27,9 @@ export default function ResendLink({ email }) {
     });
 
     if (error) {
-      setMessage({ text: error.message, type: "error" });
+      showToast(error.message, { type: 'error', title: 'Link not sent' });
     } else {
-      setMessage({ text: "Confirmation link resent successfully!", type: "success" });
+      showToast('Confirmation link resent successfully!', { type: 'success', title: 'Confirmation link sent' });
       setCanResend(false);
       setTimeLeft(30);
     }
@@ -68,16 +68,6 @@ export default function ResendLink({ email }) {
         )}
       </div>
 
-      {message.text && (
-        <p style={{
-          marginTop: 'var(--space-2, 8px)',
-          fontSize: 'var(--font-sm, 11px)', // Compact metadata size[cite: 3]
-          color: message.type === 'error' ? 'var(--danger, #b94a48)' : 'var(--green, #8fb61c)',
-          fontFamily: "'DM Sans', sans-serif"
-        }}>
-          {message.text}
-        </p>
-      )}
     </div>
   );
 }

@@ -613,3 +613,30 @@
     justify-content: center;
   }
 }
+
+/* Service-detail headings and introduction use the shared public scale. */
+.service-detail-hero-title {
+  font-size: var(--public-page-title-size);
+  line-height: var(--public-display-line-height);
+  letter-spacing: -.045em;
+  text-wrap: balance;
+}
+
+.service-detail-section-title,
+.service-detail-final-title {
+  font-size: var(--public-section-size);
+  line-height: var(--public-heading-line-height);
+  letter-spacing: -.035em;
+  text-wrap: balance;
+}
+
+.service-pkg-name {
+  font-size: var(--public-card-title-size);
+  line-height: 1.2;
+  letter-spacing: -.025em;
+}
+
+.service-detail-hero-desc {
+  font-size: var(--public-lede-size);
+  line-height: var(--public-copy-line-height);
+}

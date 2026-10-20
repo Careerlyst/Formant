@@ -12,7 +12,7 @@ import { applySeoMetadata, normalizePath } from './lib/seo';
 import './styles.css';
 import './pages/messages.css';
 
-import Preloader from './components/Preloader';
+import { ToastProvider } from './components/ToastProvider';
 import { PageNotFound, RouteErrorBoundary } from './components/ErrorExperience';
 
 import Home from './pages/Home';
@@ -67,6 +67,8 @@ import {
   AdminSimple,
   AdminWorkspace
 } from './pages/Admin';
+
+import './dashboard-refinement.css';
 
 // Apply the saved preference synchronously as soon as the app entry module executes.
 // This keeps startup theme initialization independent of the Settings route.
@@ -475,12 +477,12 @@ createRoot(
   document.getElementById('root')
 ).render(
   <>
-    <Preloader />
-
     <BrowserRouter>
-      <ScrollManager />
-      <TitleManager />
-      <RouteErrorBoundary><App /></RouteErrorBoundary>
+      <ToastProvider>
+        <ScrollManager />
+        <TitleManager />
+        <RouteErrorBoundary><App /></RouteErrorBoundary>
+      </ToastProvider>
     </BrowserRouter>
   </>
 );
