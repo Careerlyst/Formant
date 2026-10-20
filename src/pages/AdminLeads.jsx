@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import DashboardShell from '../components/DashboardShell';
+import SkeletonState from '../components/SkeletonState';
 import { supabase } from '../lib/supabase';
 
 const QUESTIONS = [
@@ -316,13 +317,10 @@ export default function AdminLeads() {
             LEAD ASSESSMENTS
           </p>
 
-          <h1>
-            Understand every client.
-          </h1>
+          <h1>Lead assessments</h1>
 
           <p>
-            Review the answers clients give before
-            starting their Formant journey.
+            Review assessment responses and the profile information saved for each lead.
           </p>
         </div>
 
@@ -439,17 +437,7 @@ export default function AdminLeads() {
         ================================================= */}
 
         {loading ? (
-
-          <div className="empty">
-            <h3>
-              Loading assessments…
-            </h3>
-
-            <p>
-              Fetching client assessment data
-              from Supabase.
-            </p>
-          </div>
+          <SkeletonState label="Loading assessments" variant="table" count={5} />
 
         ) : !filteredLeads.length ? (
 

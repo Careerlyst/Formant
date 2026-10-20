@@ -10,7 +10,7 @@
 .formant-error-secondary { background: transparent; color: var(--ink, #11120f); }
 .formant-error-primary:hover, .formant-error-secondary:hover { transform: translateY(-1px); }
 .formant-error-secondary:hover { background: var(--soft, #f2f1eb); }
-.formant-error-primary:focus-visible, .formant-error-secondary:focus-visible, .formant-error-links a:focus-visible { outline: 3px solid #90af20; outline-offset: 3px; }
+.formant-error-primary:focus-visible, .formant-error-secondary:focus-visible, .formant-error-links a:focus-visible { outline: 3px solid var(--ink, #11120f); outline-offset: 3px; }
 .formant-error-links { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 34px; padding-top: 18px; border-top: 1px solid var(--line, #deded5); }
 .formant-error-links a { min-height: 36px; display: inline-flex; align-items: center; color: var(--muted, #6d7069); font-size: 13px; font-weight: 600; }
 .formant-request-problem { padding: clamp(22px, 4vw, 34px); border: 1px solid var(--line, #deded5); border-radius: 14px; background: var(--cream, #fbfaf3); color: var(--ink, #11120f); }

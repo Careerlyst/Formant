@@ -6,6 +6,7 @@ import { services as fallbackServices, load } from '../lib/store';
 import { supabase } from '../lib/supabase';
 import { classifyRequestFailure } from '../lib/requestFailure';
 import { RequestProblem } from '../components/ErrorExperience';
+import SkeletonState from '../components/SkeletonState';
 import './service-selection.css';
 
 /* =========================================================
@@ -89,25 +90,25 @@ function getRefinedDescription(service) {
   const key = `${service?.slug || ''} ${service?.id || ''} ${service?.name || ''}`.toLowerCase();
 
   if (key.includes('resume') || key.includes('cv')) {
-    return 'Turn your experience into a clear, compelling story.';
+    return 'Organize your experience into a CV for your target role.';
   }
   if (key.includes('linkedin')) {
-    return 'Build a profile that communicates your value.';
+    return 'Review your headline, summary and profile sections.';
   }
   if (key.includes('portfolio')) {
-    return 'Show your work with structure and confidence.';
+    return 'Present selected work in a clear portfolio.';
   }
   if (key.includes('github')) {
-    return 'Make your technical work easier to understand.';
+    return 'Make your projects and contributions easier to review.';
   }
   if (key.includes('cover')) {
-    return 'Make every application feel intentional.';
+    return 'Connect your experience to the role in a cover letter.';
   }
   if (key.includes('interview')) {
-    return 'Prepare with clarity before the conversation starts.';
+    return 'Prepare answers for role-specific interview questions.';
   }
 
-  return service.desc || service.description || 'Professional bespoke career advancement service.';
+  return service.desc || service.description || 'Review this service to see its scope.';
 }
 
 /* =========================================================
@@ -319,11 +320,7 @@ export default function ServiceSelection() {
   }, [navigate, retryCount]);
 
   if (checking) {
-    return (
-      <div className="service-selection-loading" role="status">
-        Loading services...
-      </div>
-    );
+    return <main className="service-selection-loading"><SkeletonState label="Loading service recommendations" variant="cards" count={4} /></main>;
   }
 
   if (failureKind && services.length === 0) {
@@ -355,7 +352,7 @@ export default function ServiceSelection() {
               SERVICES
             </h1>
             <p className="service-selection-hero-sub">
-              Choose what you want to build next.
+              Choose a service for your next career step.
             </p>
           </div>
         </header>
@@ -367,11 +364,11 @@ export default function ServiceSelection() {
             ===================================================== */}
         <section className="service-selection-mission" aria-label="Our Next Mission">
           <p className="service-selection-mission-eyebrow">
-            OUR NEXT MISSION
+            CHOOSE YOUR NEXT SERVICE
           </p>
           <h2 className="service-selection-mission-statement">
-            Build a career presence{' '}
-            <span className="service-selection-mission-highlight">that gets you noticed.</span>
+            Choose the support{' '}
+            <span className="service-selection-mission-highlight">that fits your goal.</span>
           </h2>
         </section>
 
@@ -448,7 +445,7 @@ export default function ServiceSelection() {
               NOT READY TO CHOOSE YET?
             </p>
             <p className="service-selection-escape-text">
-              Continue from your dashboard whenever you're ready.
+              You can return to your projects from the dashboard.
             </p>
             <Link to="/dashboard" className="service-selection-escape-btn">
               <span>Go to Dashboard</span>

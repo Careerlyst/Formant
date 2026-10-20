@@ -62,7 +62,7 @@ function PublicHome({ user = null, profileName = '' }) {
 
             <div className="hero-copy">
               <p className="eyebrow">
-                {user ? 'YOUR FORMANT. YOUR NEXT MOVE.' : 'A STRONGER YOU. A BRIGHTER TOMORROW.'}
+                {user ? 'YOUR FORMANT. YOUR NEXT MOVE.' : 'CAREER MATERIALS FOR YOUR NEXT ROLE'}
               </p>
 
               <h1>
@@ -74,22 +74,22 @@ function PublicHome({ user = null, profileName = '' }) {
                   </>
                 ) : (
                   <>
-                    Get ready for
+                    Present your experience
                     <br />
-                    the role <span>you want.</span>
+                    for the role <span>you want.</span>
                   </>
                 )}
               </h1>
 
               <p className="lede">
                 {user
-                  ? 'Keep building a professional profile that is clear, credible and ready for the opportunities you want next.'
-                  : 'Resume, LinkedIn, GitHub, portfolio and interview preparation — prepared as one coherent professional profile.'}
+                  ? 'Manage your profile, review current projects and choose another service.'
+                  : 'Get help preparing the documents, profiles and interview materials for your job search.'}
               </p>
 
               <div className="actions">
                 <Link className="btn lime" to={user ? '/services' : '/signup'}>
-                  {user ? 'Start a project' : 'Start your profile'} <span>↗</span>
+                  {user ? 'Browse services' : 'Create your account'} <span>↗</span>
                 </Link>
 
                 <a className="watch" href="#process">
@@ -101,7 +101,7 @@ function PublicHome({ user = null, profileName = '' }) {
               <p className="micro">
                 <i />
                 {user
-                  ? 'Everything you need to make your professional story work together.'
+                  ? 'Choose one service or bring several into the same career story.'
                   : 'Built by career experts. Designed around your target role.'}
               </p>
             </div>
@@ -131,9 +131,9 @@ function PublicHome({ user = null, profileName = '' }) {
               </p>
 
               <h2>
-                A clearer process for a
+                A three-step process{' '}
                 <br />
-                <span>stronger profile.</span>
+                <span>from brief to delivery.</span>
               </h2>
             </div>
 
@@ -156,13 +156,12 @@ function PublicHome({ user = null, profileName = '' }) {
 
               <div className="process-content">
                 <h3>
-                  Start with your direction.
+                  Tell us what you are aiming for.
                 </h3>
 
                 <p>
-                  Tell us the role, industry and opportunity you're preparing
-                  for. We start with where you want to go—not just where
-                  you've been.
+                  Share the role, industry or opportunity you are preparing
+                  for, and tell us where you need support.
                 </p>
               </div>
 
@@ -182,12 +181,12 @@ function PublicHome({ user = null, profileName = '' }) {
 
               <div className="process-content">
                 <h3>
-                  We shape the profile.
+                  Choose the materials to work on.
                 </h3>
 
                 <p>
-                  Our career experts turn your experience into focused,
-                  role-specific materials that work together as one profile.
+                  We tailor the services you choose to the role or opportunity
+                  you are preparing for.
                 </p>
               </div>
 
@@ -207,12 +206,12 @@ function PublicHome({ user = null, profileName = '' }) {
 
               <div className="process-content">
                 <h3>
-                  Review. Refine. Receive.
+                  Review your work with us.
                 </h3>
 
                 <p>
-                  Give feedback, request revisions and receive the finished
-                  work through your Formant account.
+                  Use your Formant account to share feedback, request
+                  revisions and receive the finished files.
                 </p>
               </div>
 
@@ -235,13 +234,13 @@ function PublicHome({ user = null, profileName = '' }) {
             <div>
               <span className="service-label">SERVICES</span>
               <h2 id="home-services-title">
-                Everything you need
+                Career support,
                 <br />
-                to <span>look ready.</span>
+                for the role <span>ahead.</span>
               </h2>
             </div>
             <p>
-              Practical career support designed around the role you want next.
+              Choose one service or combine several around the role you are targeting.
             </p>
           </div>
 
@@ -339,15 +338,15 @@ function PublicHome({ user = null, profileName = '' }) {
               <div className="client-home-context-heading">
                 <span>YOUR FORMANT</span>
                 <h2>
-                  Your career,
+                  Projects and
                   <br />
-                  <span>in one place.</span>
+                  <span>conversations, together.</span>
                 </h2>
               </div>
 
               <div className="client-home-context-copy">
                 <p>
-                  Keep your work, projects and conversations close while you build the professional profile you want next.
+                  Review active projects, open conversations and check service updates from your account.
                 </p>
 
                 <div className="client-home-context-links">
@@ -371,9 +370,9 @@ function PublicHome({ user = null, profileName = '' }) {
     <div className="profile-statement-grid">
 
       <h2>
-        Your professional profile
+        Make your experience
         <br />
-        deserves a <span>point of view.</span>
+        <span>easy to follow.</span>
       </h2>
 
       <div className="profile-statement-side">
@@ -387,7 +386,7 @@ function PublicHome({ user = null, profileName = '' }) {
           className="profile-statement-link"
           to="/signup"
         >
-          <span>Start your profile</span>
+          <span>Create your account</span>
           <span>↗</span>
         </Link>
 
@@ -420,34 +419,23 @@ function PublicHome({ user = null, profileName = '' }) {
 
       <div className="availability-heading">
         <h2>
-          A clear
+          Choose
           <br />
-          <span>next step.</span>
+          <span>where to start.</span>
         </h2>
       </div>
 
       <div className="availability-content">
 
         <p className="availability-description">
-          Explore the services and choose the support that fits the role or opportunity you are preparing for.
+          Review each service’s scope and starting price.
         </p>
-
-        <div className="availability-note">
-          <span className="availability-note-label">
-            HOW TO BEGIN
-          </span>
-
-          <p>
-            Each service explains what it includes, so you can decide which one fits your next career step.
-          </p>
-
-        </div>
 
         <Link
           className="availability-link"
           to="/services"
         >
-          <span>Explore services</span>
+          <span>Compare services</span>
           <span>↗</span>
         </Link>
 
@@ -469,7 +457,6 @@ function PublicHome({ user = null, profileName = '' }) {
 export default function Home() {
   const [session, setSession] = useState(null);
   const [profileName, setProfileName] = useState('');
-  const [checkingSession, setCheckingSession] = useState(Boolean(supabase));
 
   useEffect(() => {
     let mounted = true;
@@ -480,7 +467,6 @@ export default function Home() {
         const localState = load();
         if (mounted) {
           setSession(localState.user ? { user: localState.user } : null);
-          setCheckingSession(false);
         }
         return;
       }
@@ -494,7 +480,6 @@ export default function Home() {
       }
 
       setSession(data?.session || null);
-      setCheckingSession(false);
     }
 
     resolveSession();
@@ -540,14 +525,6 @@ export default function Home() {
       window.removeEventListener('careerlyst-profile-updated', onProfileUpdated);
     };
   }, [session?.user?.id]);
-
-  if (checkingSession) {
-    return (
-      <div className="home-auth-loading">
-        <span>Loading Formant…</span>
-      </div>
-    );
-  }
 
   return <PublicHome user={session?.user || null} profileName={profileName} />;
 }

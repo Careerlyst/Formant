@@ -16,6 +16,8 @@ import { load } from '../lib/store';
 import MessageActions from '../components/MessageActions';
 import { useMessageViewport } from '../lib/messageViewport';
 import AdminProfileContext from '../components/AdminProfileContext';
+import { useToast } from '../components/ToastProvider';
+import SkeletonState from '../components/SkeletonState';
 
   /* =========================================================
     STAFF ROLES
@@ -410,13 +412,9 @@ import AdminProfileContext from '../components/AdminProfileContext';
               CONTROL PANEL
             </p>
 
-            <h1>
-              Operations overview.
-            </h1>
+            <h1>Operations overview</h1>
 
-            <p>
-              Keep the small team focused on the right work.
-            </p>
+            <p>Review current orders, client activity and work needing attention.</p>
 
           </div>
 
@@ -548,10 +546,7 @@ import AdminProfileContext from '../components/AdminProfileContext';
           </div>
 
           {loading ? (
-            <div className="empty">
-              <h3>Checking attention items…</h3>
-              <p>Reviewing active orders and payment status.</p>
-            </div>
+            <SkeletonState label="Loading items that need attention" variant="rows" count={3} />
           ) : (
             <>
               {unreadMessages.length > 0 && (
@@ -707,15 +702,7 @@ import AdminProfileContext from '../components/AdminProfileContext';
           </div>
 
           {loading ? (
-            <div className="empty">
-              <h3>
-                Loading active orders…
-              </h3>
-
-              <p>
-                Fetching the latest orders from Supabase.
-              </p>
-            </div>
+            <SkeletonState label="Loading active orders" variant="rows" count={4} />
           ) : !activeOrders.length ? (
             <div className="empty">
               <h3>
@@ -785,11 +772,7 @@ import AdminProfileContext from '../components/AdminProfileContext';
           </div>
 
           {loading ? (
-            <div className="empty">
-              <h3>
-                Loading activity…
-              </h3>
-            </div>
+            <SkeletonState label="Loading recent activity" variant="rows" count={3} />
           ) : !recentOrders.length ? (
             <div className="empty">
               <h3>
@@ -858,11 +841,7 @@ import AdminProfileContext from '../components/AdminProfileContext';
           </div>
 
           {loading ? (
-            <div className="empty">
-              <h3>
-                Loading messages…
-              </h3>
-            </div>
+            <SkeletonState label="Loading unread messages" variant="messages" count={3} />
           ) : !messageSnapshot.length ? (
             <div className="empty">
               <h3>
@@ -1117,14 +1096,20 @@ import AdminProfileContext from '../components/AdminProfileContext';
     const [search, setSearch] = useState('');
     const [selectedOrder, setSelectedOrder] = useState(null);
     const [loading, setLoading] = useState(isOrders);
+    const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState('');
     const [savingId, setSavingId] = useState(null);
     const [connection, setConnection] = useState('connecting');
+    const hasLoadedOrdersRef = useRef(false);
+    const loadOrdersRequestRef = useRef(0);
 
     async function loadOrders() {
       if (!isOrders) return;
-      setLoading(true);
+      const requestId = ++loadOrdersRequestRef.current;
+      if (hasLoadedOrdersRef.current) setRefreshing(true);
+      else setLoading(true);
       setError('');
+      let staffVerified = false;
 
       try {
         const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
@@ -1141,6 +1126,7 @@ import AdminProfileContext from '../components/AdminProfileContext';
           ['admin', 'expert', 'support', 'finance'].includes(String(row.role).toLowerCase())
         );
         if (!allowed) throw new Error('You do not have permission to view admin orders.');
+        staffVerified = true;
 
         const { data: orderRows, error: ordersError } = await supabase
           .from('orders')
@@ -1161,16 +1147,29 @@ import AdminProfileContext from '../components/AdminProfileContext';
           profileMap = Object.fromEntries((profileRows || []).map((row) => [row.id, row]));
         }
 
+        if (requestId !== loadOrdersRequestRef.current) return;
         setOrders(rows);
         setProfiles(profileMap);
+        hasLoadedOrdersRef.current = true;
         setSelectedOrder((current) => {
           if (!current) return null;
           return rows.find((row) => String(row.id) === String(current.id)) || null;
         });
       } catch (err) {
-        setError(err?.message || 'Unable to load orders.');
+        if (requestId === loadOrdersRequestRef.current) {
+          if (!staffVerified) {
+            setOrders([]);
+            setProfiles({});
+            setSelectedOrder(null);
+            hasLoadedOrdersRef.current = false;
+          }
+          setError(err?.message || 'Unable to load orders.');
+        }
       } finally {
-        setLoading(false);
+        if (requestId === loadOrdersRequestRef.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     }
 
@@ -1206,6 +1205,7 @@ import AdminProfileContext from '../components/AdminProfileContext';
         .subscribe((status) => setConnection(status));
 
       return () => {
+        loadOrdersRequestRef.current += 1;
         supabase.removeChannel(channel);
       };
     }, [isOrders]);
@@ -1274,7 +1274,7 @@ import AdminProfileContext from '../components/AdminProfileContext';
         <div className="dash-head admin-orders-head">
           <div>
             <p className="eyebrow">ADMIN · ORDERS</p>
-            <h1>Orders & queue.</h1>
+            <h1>Orders and queue</h1>
             <p>Manage live client orders, queue position, payment state and project status.</p>
           </div>
           <div className="admin-orders-connection">● {connection === 'SUBSCRIBED' ? 'Live' : connection === 'CHANNEL_ERROR' ? 'Connection error' : 'Connecting…'}</div>
@@ -1306,7 +1306,7 @@ import AdminProfileContext from '../components/AdminProfileContext';
             <option value="pending">Pending</option>
             <option value="failed">Failed</option>
           </select>
-          <button className="btn light" type="button" onClick={loadOrders} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</button>
+          <button className="btn light" type="button" onClick={loadOrders} disabled={loading || refreshing}>{loading || refreshing ? 'Refreshing…' : 'Refresh'}</button>
         </div>
 
         {error && <div className="admin-orders-error" role="alert">{error}<button type="button" onClick={loadOrders}>Try again</button></div>}
@@ -1314,7 +1314,7 @@ import AdminProfileContext from '../components/AdminProfileContext';
         <div className="panel admin-orders-panel">
           <div className="panel-head"><div><p className="eyebrow">LIVE DIRECTORY</p><h2>{filteredOrders.length} order{filteredOrders.length === 1 ? '' : 's'}</h2></div><Link to="/admin/workspace">Open workspace →</Link></div>
 
-          {loading ? <div className="admin-orders-empty"><strong>Loading orders…</strong><span>Fetching the current Supabase order queue.</span></div> : !filteredOrders.length ? <div className="admin-orders-empty"><strong>No matching orders.</strong><span>Try changing the search or filters.</span></div> : (
+          {loading ? <div className="admin-orders-empty"><SkeletonState label="Loading orders" variant="table" count={5} /></div> : !filteredOrders.length ? <div className="admin-orders-empty"><strong>No matching orders.</strong><span>Try changing the search or filters.</span></div> : (
             <div className="admin-orders-list">
               {filteredOrders.map((order) => {
                 const client = profiles[order.user_id] || {};
@@ -1541,7 +1541,7 @@ import AdminProfileContext from '../components/AdminProfileContext';
           <div className="dash-head admin-users-head">
             <div>
               <p className="eyebrow">ADMIN · USERS</p>
-              <h1>Users.</h1>
+              <h1>Users</h1>
               <p>Manage the people connected to Formant projects.</p>
             </div>
             <button
@@ -1598,10 +1598,7 @@ import AdminProfileContext from '../components/AdminProfileContext';
             </div>
 
             {loading ? (
-              <div className="admin-users-empty">
-                <h3>Loading users…</h3>
-                <p>Fetching profiles, roles and project activity.</p>
-              </div>
+              <SkeletonState label="Loading users" variant="rows" count={5} />
             ) : !userRows.length ? (
               <div className="admin-users-empty">
                 <h3>No users found.</h3>
@@ -1767,6 +1764,7 @@ export function AdminReviews() {
   }
 
   function AdminMessagesPage() {
+    const { showToast } = useToast();
     const location = useLocation();
     const [staffUserId, setStaffUserId] = useState('');
     const [staffRole, setStaffRole] = useState('');
@@ -1789,7 +1787,6 @@ export function AdminReviews() {
     const [connection, setConnection] = useState('connecting');
     const [error, setError] = useState('');
     const [notificationsOpen, setNotificationsOpen] = useState(false);
-    const [messageToast, setMessageToast] = useState(null);
     const [attachment, setAttachment] = useState(null);
     const [attachmentError, setAttachmentError] = useState('');
     const [liveAnnouncement, setLiveAnnouncement] = useState('');
@@ -2328,13 +2325,20 @@ export function AdminReviews() {
                       const toastPreview =
                         parsedInsert.text ||
                         (parsedInsert.attachment
-                          ? `📎 ${parsedInsert.attachment.name}`
+                          ? `Attachment: ${parsedInsert.attachment.name}`
                           : 'Sent a new message.');
-                      setMessageToast({
-                        id: inserted.id,
-                        orderId: order.id,
-                        clientName: profilesRef.current[order.user_id]?.name || 'Client',
-                        preview: toastPreview
+                      const clientName = profilesRef.current[order.user_id]?.name || 'Client';
+                      showToast(`Order #${order.id} · ${toastPreview}`, {
+                        type: 'info',
+                        title: `New message from ${clientName}`,
+                        duration: 6000,
+                        action: {
+                          label: 'Open conversation',
+                          onClick: () => {
+                            selectOrder(order.id);
+                            setNotificationsOpen(false);
+                          }
+                        }
                       });
                     }
                   }
@@ -2460,13 +2464,7 @@ export function AdminReviews() {
         removeRecoveryListeners?.();
         if (channel) supabase?.removeChannel(channel);
       };
-    }, [location.search]);
-
-    useEffect(() => {
-      if (!messageToast) return undefined;
-      const timer = window.setTimeout(() => setMessageToast(null), 6000);
-      return () => window.clearTimeout(timer);
-    }, [messageToast]);
+    }, [location.search, showToast]);
 
     useEffect(() => {
       const node = chatBodyRef.current || document.querySelector('.messages-chat-body') || document.querySelector('.admin-messages-thread-body');
@@ -3032,25 +3030,6 @@ export function AdminReviews() {
             </div>
           )}
 
-          {messageToast && (
-            <button
-              type="button"
-              className="messages-toast admin-messages-toast"
-              onClick={() => {
-                selectOrder(messageToast.orderId);
-                setNotificationsOpen(false);
-                setMessageToast(null);
-              }}
-            >
-              <span className="admin-messages-toast-icon">●</span>
-              <span className="messages-toast-copy admin-messages-toast-copy">
-                <strong>New message from {messageToast.clientName}</strong>
-                <small>Order #{messageToast.orderId} · {messageToast.preview}</small>
-              </span>
-              <span className="messages-toast-close admin-messages-toast-close" aria-hidden="true">×</span>
-            </button>
-          )}
-
           <div className={`messages-chat-shell ${mobileView === 'chat' ? 'mobile-view-chat' : 'mobile-view-list'}`}>
             <aside className="messages-inbox-sidebar">
               <div className="messages-inbox-header">
@@ -3111,9 +3090,7 @@ export function AdminReviews() {
 
               <div className="messages-inbox-list">
                 {loading ? (
-                  <div className="messages-empty-state">
-                    <p>Loading clients…</p>
-                  </div>
+                  <div className="messages-empty-state"><SkeletonState label="Loading client conversations" variant="messages" count={4} /></div>
                 ) : !groupedClients.length ? (
                   <div className="messages-empty-state">
                     <div className="messages-empty-state-icon">
@@ -3322,7 +3299,7 @@ export function AdminReviews() {
                         <button type="button" className="btn dark" onClick={() => void loadAdminThread(selectedOrder.id)}>Retry</button>
                       </div>
                     ) : loadingThread ? (
-                      <div className="messages-empty-state"><p>Loading messages…</p></div>
+                      <div className="messages-empty-state"><SkeletonState label="Loading messages" variant="thread" count={4} /></div>
                     ) : !selectedMessages.length ? (
                       <div className="messages-empty-state">
                         <div className="messages-empty-state-icon">✉️</div>
@@ -4053,7 +4030,10 @@ function AdminFilesManager() {
   const [attachmentRowsLoaded, setAttachmentRowsLoaded] = useState(0);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
+  const hasLoadedFilesRef = useRef(false);
 
   const [query, setQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
@@ -4080,7 +4060,9 @@ function AdminFilesManager() {
       return;
     }
 
-    setLoading(true);
+    if (append) setLoadingMore(true);
+    else if (hasLoadedFilesRef.current) setRefreshing(true);
+    else setLoading(true);
     setError('');
 
     try {
@@ -4108,6 +4090,7 @@ function AdminFilesManager() {
         setFiles([]);
         setHasMoreFiles(false);
         setAttachmentRowsLoaded(0);
+        hasLoadedFilesRef.current = true;
         return;
       }
 
@@ -4214,12 +4197,17 @@ function AdminFilesManager() {
         : extracted);
       setAttachmentRowsLoaded((current) => append ? current + (messageData || []).length : (messageData || []).length);
       setHasMoreFiles((messageData || []).length === 100);
+      if (!append) hasLoadedFilesRef.current = true;
 
     } catch (loadError) {
       console.error('Admin files load error:', loadError);
       setError(loadError?.message || 'Files could not be loaded.');
     } finally {
-      setLoading(false);
+      if (append) setLoadingMore(false);
+      else {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }
 
@@ -4558,7 +4546,7 @@ function AdminFilesManager() {
         <div className="dash-head admin-files-head">
           <div>
             <p className="eyebrow">ADMIN / FILES</p>
-            <h1>File management.</h1>
+            <h1>File management</h1>
             <p>
               Manage files shared through Formant client conversations,
               inspect storage usage, and send new files to orders.
@@ -4586,9 +4574,9 @@ function AdminFilesManager() {
               type="button"
               className="admin-files-btn"
               onClick={() => void loadFiles()}
-              disabled={loading}
+              disabled={loading || refreshing}
             >
-              {loading ? 'Refreshing…' : 'Refresh'}
+              {loading || refreshing ? 'Refreshing…' : 'Refresh'}
             </button>
           </div>
         </div>
@@ -4758,12 +4746,7 @@ function AdminFilesManager() {
             </section>
 
             {loading ? (
-              <section className="admin-files-panel">
-                <div className="admin-files-empty">
-                  <strong>Loading file library…</strong>
-                  <span>Reading attachment records from Supabase.</span>
-                </div>
-              </section>
+              <section className="admin-files-panel"><SkeletonState label="Loading the file library" variant="rows" count={5} /></section>
             ) : !filteredFiles.length ? (
               <section className="admin-files-panel">
                 <div className="admin-files-empty">
@@ -4903,8 +4886,8 @@ function AdminFilesManager() {
             )}
             {!loading && hasMoreFiles && (
               <div className="admin-files-load-more">
-                <button type="button" className="admin-files-btn" onClick={() => void loadFiles({ append: true })}>
-                  Load more files
+                <button type="button" className="admin-files-btn" onClick={() => void loadFiles({ append: true })} disabled={loadingMore}>
+                  {loadingMore ? 'Loading…' : 'Load more files'}
                 </button>
               </div>
             )}
@@ -4970,11 +4953,7 @@ function AdminFilesManager() {
               {title}
             </h3>
 
-            <p>
-              This module is wired into the admin
-              navigation and ready for your production
-              database.
-            </p>
+            <p>This section is not available yet.</p>
 
           </div>
 
@@ -5207,7 +5186,7 @@ function AdminFilesManager() {
                 onChange={(e) =>
                   setEmail(e.target.value)
                 }
-                placeholder="you@careerlyst.com"
+                placeholder="you@example.com"
                 autoComplete="email"
                 disabled={loading}
                 style={{

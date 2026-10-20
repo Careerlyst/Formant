@@ -2,9 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import PublicNav from '../components/PublicNav';
 import Footer from '../components/Footer';
+import SkeletonState from '../components/SkeletonState';
 import { PageNotFound, RequestProblem } from '../components/ErrorExperience';
 import { classifyRequestFailure } from '../lib/requestFailure';
 import { services as fallbackServices } from '../lib/store';
+import { applySeoMetadata, normalizePath } from '../lib/seo';
 import { supabase } from '../lib/supabase';
 import './service-detail.css';
 
@@ -109,27 +111,27 @@ function getSlugAliases(slug) {
 const SERVICE_PROFILES = {
   github: {
     category: 'TECHNICAL PRESENCE',
-    tagline: 'Make your technical work easier to understand, evaluate, and trust.'
+    tagline: 'Curate your repositories and README files so visitors can find and assess your work.'
   },
   linkedin: {
     category: 'EXECUTIVE PRESENCE',
-    tagline: 'Build a profile that communicates your value before the first conversation.'
+    tagline: 'Refine your headline, About section and experience for the roles you want.'
   },
   resume: {
     category: 'CORE ASSET',
-    tagline: 'A focused, role-specific resume built for clarity, relevance, and ATS readability.'
+    tagline: 'Rework your CV for a target role, with clearer structure and relevant experience.'
   },
   portfolio: {
     category: 'CREATIVE CRAFT',
-    tagline: 'Show your work with structure, depth, and visual confidence.'
+    tagline: 'Plan case studies that explain your role, decisions and project work.'
   },
   cover: {
     category: 'WRITTEN ARTIFACT',
-    tagline: 'A concise, specific letter tailored to the exact opportunity you want.'
+    tagline: 'Connect your experience to the requirements of a specific opportunity.'
   },
   interview: {
     category: 'PERFORMANCE',
-    tagline: 'Targeted preparation, practice, and feedback for the conversation ahead.'
+    tagline: 'Practice role-specific answers and get feedback before the interview.'
   }
 };
 
@@ -172,11 +174,27 @@ export default function ServiceDetail() {
 
   useEffect(() => {
     if (service?.name) {
-      document.title = `Formant — ${service.name}`;
+      const currentSlug = (service.slug || service.id || id || '').toLowerCase();
+      const canonicalSlug = [
+        ['resume', 'resume-cv', 'cv'],
+        ['linkedin', 'linkedin-profile'],
+        ['github', 'github-profile'],
+        ['portfolio'],
+        ['cover', 'cover-letter'],
+        ['interview', 'interview-preparation', 'interview-prep']
+      ].find((aliases) => aliases.includes(currentSlug))?.[0] || currentSlug;
+      const serviceDescription = service.description || getServiceProfile(service).tagline;
+
+      applySeoMetadata(normalizePath(`/services/${canonicalSlug}`), {
+        title: `${service.name} | Formant`,
+        description: serviceDescription,
+        canonical: `https://careerlyst-three.vercel.app/services/${canonicalSlug}`,
+        indexable: Boolean(service.active && service.show_on_services_page)
+      });
     } else if (!loading) {
-      document.title = 'Formant — Services';
+      applySeoMetadata(`/services/${id}`, { indexable: false });
     }
-  }, [service?.name, loading]);
+  }, [service, id, loading]);
 
   useEffect(() => {
     let mounted = true;
@@ -369,8 +387,7 @@ export default function ServiceDetail() {
           <section className="service-detail-hero">
             <div>
               <p className="service-detail-eyebrow">FORMANT SERVICE</p>
-              <h1 className="service-detail-hero-title">Loading…</h1>
-              <p className="service-detail-hero-desc">Preparing the service details for you.</p>
+              <SkeletonState label="Loading service details" variant="form" count={1} />
             </div>
           </section>
         </main>
@@ -412,7 +429,7 @@ export default function ServiceDetail() {
           <div className="service-detail-hero-left">
             <div className="service-detail-eyebrow-wrap">
               <span className="service-detail-eyebrow">{profile.category || 'FORMANT SERVICE'}</span>
-              <span className="service-detail-badge">BESPOKE</span>
+              <span className="service-detail-badge">ROLE-FOCUSED</span>
             </div>
 
             <h1 className="service-detail-hero-title">{service.name}</h1>
@@ -432,7 +449,7 @@ export default function ServiceDetail() {
               </button>
 
               <Link
-                to="/service-selection"
+                to="/services"
                 className="service-detail-btn-secondary"
               >
                 <span>All services</span>
@@ -445,13 +462,13 @@ export default function ServiceDetail() {
               <div className="service-detail-icon-box" aria-hidden="true">
                 {getServiceIcon(service)}
               </div>
-              <span className="service-detail-card-badge">EDITORIAL RIGOR</span>
+              <span className="service-detail-card-badge">HOW WE WORK</span>
             </div>
 
             <ul className="service-detail-card-highlights">
               <li>
                 <span className="service-detail-check-bullet" aria-hidden="true">✓</span>
-                <span>Target-role focused recommendations</span>
+                <span>Recommendations tied to your target role</span>
               </li>
               <li>
                 <span className="service-detail-check-bullet" aria-hidden="true">✓</span>
@@ -459,11 +476,11 @@ export default function ServiceDetail() {
               </li>
               <li>
                 <span className="service-detail-check-bullet" aria-hidden="true">✓</span>
-                <span>Clear revision and refinement process</span>
+                <span>A clear route to request revisions</span>
               </li>
               <li>
                 <span className="service-detail-check-bullet" aria-hidden="true">✓</span>
-                <span>Final files delivered directly to your dashboard</span>
+                <span>Receive final files in your dashboard</span>
               </li>
             </ul>
 
@@ -484,10 +501,10 @@ export default function ServiceDetail() {
           <div className="service-detail-section-head">
             <span className="service-detail-section-eyebrow">PACKAGES & PRICING</span>
             <h2 id="pricing-heading" className="service-detail-section-title">
-              Select your level of support.
+              Compare the available packages.
             </h2>
             <p className="service-detail-section-sub">
-              Every package includes dedicated human review, target-role calibration, and direct dashboard delivery.
+              Every package includes dedicated human review, recommendations for your target role, and delivery to your dashboard.
             </p>
           </div>
 
@@ -555,10 +572,10 @@ export default function ServiceDetail() {
           <div className="service-detail-final-inner">
             <span className="service-detail-final-kicker">READY TO GET STARTED?</span>
             <h2 className="service-detail-final-title">
-              Choose the package that fits what you need.
+              Choose the package that matches your needs.
             </h2>
             <p className="service-detail-final-desc">
-              Every engagement starts from the same high-standard, target-role focused approach.
+              Compare package details above, or return to the service list.
             </p>
 
             <div className="service-detail-final-actions">
@@ -571,7 +588,7 @@ export default function ServiceDetail() {
                 <span aria-hidden="true">→</span>
               </button>
 
-              <Link to="/service-selection" className="service-detail-final-back">
+              <Link to="/services" className="service-detail-final-back">
                 <span>← Back to Services</span>
               </Link>
             </div>

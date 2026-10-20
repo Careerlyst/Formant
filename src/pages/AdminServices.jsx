@@ -1,5 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import DashboardShell from '../components/DashboardShell';
+import { useToast } from '../components/ToastProvider';
+import SkeletonState from '../components/SkeletonState';
 import { supabase } from '../lib/supabase';
 
 const STAFF_ROLES = ['admin', 'expert', 'support', 'finance'];
@@ -183,6 +185,7 @@ const ADMIN_SERVICES_CSS = `
 .text-button.danger{color:var(--danger)}
 .admin-services-empty{text-align:center;padding:44px 18px;color:var(--muted)}
 .admin-services-empty h3{color:var(--ink);margin-bottom:6px}
+.admin-services-loading{padding:10px 18px}
 .admin-service-editor{display:grid;gap:16px}
 .admin-service-section{display:grid;gap:16px}
 .admin-service-grid{display:grid;gap:12px}
@@ -243,6 +246,7 @@ const ADMIN_SERVICES_CSS = `
 `;
 
 export function AdminServices() {
+  const { showToast } = useToast();
   const [services, setServices] = useState([]);
   const [orders, setOrders] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -256,10 +260,11 @@ export function AdminServices() {
   const [previewService, setPreviewService] = useState(null);
   const [performanceService, setPerformanceService] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [bulkSaving, setBulkSaving] = useState(false);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
+  const hasLoadedServicesRef = useRef(false);
 
   async function verifyStaff() {
     const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
@@ -286,11 +291,14 @@ export function AdminServices() {
       return;
     }
 
-    setLoading(true);
+    if (hasLoadedServicesRef.current) setRefreshing(true);
+    else setLoading(true);
     setError('');
+    let staffVerified = false;
 
     try {
       await verifyStaff();
+      staffVerified = true;
 
       const [servicesResult, ordersResult] = await Promise.all([
         supabase
@@ -311,11 +319,19 @@ export function AdminServices() {
       setServices(servicesResult.data || []);
       setOrders(ordersResult.data || []);
       setSelectedIds([]);
+      hasLoadedServicesRef.current = true;
     } catch (err) {
+      if (!staffVerified) {
+        setServices([]);
+        setOrders([]);
+        setSelectedIds([]);
+        hasLoadedServicesRef.current = false;
+      }
       console.error('Admin services load error:', err);
       setError(err?.message || 'Could not load services.');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }
 
@@ -386,14 +402,12 @@ export function AdminServices() {
     setForm({ ...EMPTY_FORM, features: [], requirements: [], faqs: [] });
     setMode('edit');
     setError('');
-    setNotice('');
   }
 
   function openEdit(service) {
     setForm(normalizeService(service));
     setMode('edit');
     setError('');
-    setNotice('');
   }
 
   function updateField(name, value) {
@@ -445,7 +459,6 @@ export function AdminServices() {
 
     setSaving(true);
     setError('');
-    setNotice('');
 
     try {
       await verifyStaff();
@@ -519,7 +532,7 @@ export function AdminServices() {
         if (updateError) throw updateError;
         setServices((current) => current.map((service) => service.id === data.id ? data : service));
         setForm(normalizeService(data));
-        setNotice('Service updated successfully.');
+        showToast('Service updated successfully.', { type: 'success' });
       } else {
         const { data, error: insertError } = await supabase
           .from('services')
@@ -530,7 +543,7 @@ export function AdminServices() {
         if (insertError) throw insertError;
         setServices((current) => [data, ...current]);
         setForm(normalizeService(data));
-        setNotice('Service created successfully.');
+        showToast('Service created successfully.', { type: 'success' });
       }
     } catch (err) {
       console.error('Admin service save error:', err);
@@ -543,7 +556,6 @@ export function AdminServices() {
   async function updateService(serviceId, patch, successMessage) {
     setSaving(true);
     setError('');
-    setNotice('');
 
     try {
       await verifyStaff();
@@ -556,7 +568,7 @@ export function AdminServices() {
 
       if (updateError) throw updateError;
       setServices((current) => current.map((service) => service.id === data.id ? data : service));
-      setNotice(successMessage);
+      showToast(successMessage, { type: 'success' });
     } catch (err) {
       setError(err?.message || 'Could not update service.');
     } finally {
@@ -576,7 +588,6 @@ export function AdminServices() {
     if (!window.confirm(`Delete "${service.name}"? This cannot be undone.`)) return;
 
     setError('');
-    setNotice('');
 
     try {
       await verifyStaff();
@@ -584,7 +595,7 @@ export function AdminServices() {
       if (deleteError) throw deleteError;
       setServices((current) => current.filter((item) => item.id !== service.id));
       setSelectedIds((current) => current.filter((id) => id !== service.id));
-      setNotice('Service deleted.');
+      showToast('Service deleted.', { type: 'success' });
     } catch (err) {
       setError(err?.message || 'Could not delete service.');
     }
@@ -593,7 +604,6 @@ export function AdminServices() {
   async function duplicateService(service) {
     setSaving(true);
     setError('');
-    setNotice('');
 
     try {
       await verifyStaff();
@@ -627,7 +637,7 @@ export function AdminServices() {
       const { data, error: insertError } = await supabase.from('services').insert(payload).select('*').single();
       if (insertError) throw insertError;
       setServices((current) => [data, ...current]);
-      setNotice('Service duplicated as an inactive draft copy.');
+      showToast('Service duplicated as an inactive draft copy.', { type: 'success' });
     } catch (err) {
       setError(err?.message || 'Could not duplicate service.');
     } finally {
@@ -654,7 +664,6 @@ export function AdminServices() {
 
     setBulkSaving(true);
     setError('');
-    setNotice('');
 
     try {
       await verifyStaff();
@@ -663,7 +672,7 @@ export function AdminServices() {
         const { error: deleteError } = await supabase.from('services').delete().in('id', selectedIds);
         if (deleteError) throw deleteError;
         setServices((current) => current.filter((service) => !selectedIds.includes(service.id)));
-        setNotice(`${selectedIds.length} service${selectedIds.length === 1 ? '' : 's'} deleted.`);
+        showToast(`${selectedIds.length} service${selectedIds.length === 1 ? '' : 's'} deleted.`, { type: 'success' });
       } else {
         const patch = {
           ...(action === 'publish' ? { active: true } : {}),
@@ -685,7 +694,7 @@ export function AdminServices() {
         if (updateError) throw updateError;
         const updatedMap = new Map((data || []).map((service) => [service.id, service]));
         setServices((current) => current.map((service) => updatedMap.get(service.id) || service));
-        setNotice(`${selectedIds.length} service${selectedIds.length === 1 ? '' : 's'} updated.`);
+        showToast(`${selectedIds.length} service${selectedIds.length === 1 ? '' : 's'} updated.`, { type: 'success' });
       }
 
       setSelectedIds([]);
@@ -702,7 +711,6 @@ export function AdminServices() {
 
     setBulkSaving(true);
     setError('');
-    setNotice('');
 
     try {
       await verifyStaff();
@@ -719,7 +727,7 @@ export function AdminServices() {
       const updatedMap = new Map((data || []).map((service) => [service.id, service]));
       setServices((current) => current.map((service) => updatedMap.get(service.id) || service));
       setCategoryDrafts((current) => ({ ...current, [category]: '' }));
-      setNotice(`Category renamed from "${category}" to "${nextCategory}".`);
+      showToast(`Category renamed from "${category}" to "${nextCategory}".`, { type: 'success' });
     } catch (err) {
       setError(err?.message || 'Could not rename category.');
     } finally {
@@ -756,14 +764,13 @@ export function AdminServices() {
           <div className="dash-head admin-services-head">
             <div>
               <p className="eyebrow">ADMIN · SERVICES</p>
-              <h1>{form.id ? 'Edit service.' : 'Add service.'}</h1>
+              <h1>{form.id ? 'Edit service' : 'Add service'}</h1>
               <p>Control pricing, delivery, features, requirements and visibility from one place.</p>
             </div>
             <button className="btn light" type="button" onClick={() => setMode('list')}>← All services</button>
           </div>
 
           {error && <div className="admin-services-alert error">{error}<button type="button" onClick={() => setError('')}>×</button></div>}
-          {notice && <div className="admin-services-alert success">{notice}</div>}
 
           <form className="admin-service-editor" onSubmit={saveService}>
             <section className="panel admin-service-section">
@@ -865,7 +872,7 @@ export function AdminServices() {
         <div className="dash-head admin-services-head">
           <div>
             <p className="eyebrow">ADMIN · SERVICES</p>
-            <h1>Services.</h1>
+            <h1>Services</h1>
             <p>Manage the catalog, publishing, capacity, performance, categories and client-facing visibility.</p>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -875,7 +882,6 @@ export function AdminServices() {
         </div>
 
         {error && <div className="admin-services-alert error">{error}<button type="button" onClick={() => setError('')}>×</button></div>}
-        {notice && <div className="admin-services-alert success">{notice}</div>}
 
         <section className="admin-services-stats">
           <div className="stat"><span>Total services</span><b>{loading ? '—' : overview.total}</b></div>
@@ -913,7 +919,7 @@ export function AdminServices() {
             <option value="all">All categories</option>
             {categories.map((category) => <option key={category} value={category}>{category}</option>)}
           </select>
-          <button className="btn light" type="button" onClick={loadServices} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh ↻'}</button>
+          <button className="btn light" type="button" onClick={loadServices} disabled={loading || refreshing}>{loading || refreshing ? 'Refreshing…' : 'Refresh ↻'}</button>
         </section>
 
         {selectedCount > 0 && (
@@ -948,7 +954,7 @@ export function AdminServices() {
           </div>
 
           {loading ? (
-            <div className="admin-services-empty"><h3>Loading services…</h3><p>Fetching the catalog and order analytics from Supabase.</p></div>
+            <div className="admin-services-loading"><SkeletonState label="Loading services and catalog data" variant="rows" count={5} /></div>
           ) : !filteredServices.length ? (
             <div className="admin-services-empty"><h3>No services found.</h3><p>Create your first service or change the filters.</p></div>
           ) : (

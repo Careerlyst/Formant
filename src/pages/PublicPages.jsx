@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import PublicNav from '../components/PublicNav';
 import Footer from '../components/Footer';
+import SkeletonState from '../components/SkeletonState';
 import { services as fallbackServices } from '../lib/store';
 import { supabase } from '../lib/supabase';
 
@@ -84,15 +85,15 @@ export function Services() {
               </p>
 
               <h1>
-                Build the professional
+                Career services for
                 <br />
-                profile your <span>role</span> expects.
+                the role you <span>are targeting.</span>
               </h1>
 
               <p className="services-hero-lede">
-                Choose what you need to move forward. Every service is
-                prepared around your target role, experience and goals —
-                not pulled from a template.
+                Choose support for your CV, LinkedIn, GitHub, portfolio,
+                cover letter or interview preparation. Each service page
+                explains what it includes.
               </p>
 
             </div>
@@ -105,9 +106,8 @@ export function Services() {
               </span>
 
               <p>
-                Core services designed to make your
-                professional profile clearer, stronger
-                and more consistent.
+                Choose one service or combine related work for the same
+                target role.
               </p>
 
             </div>
@@ -132,18 +132,16 @@ export function Services() {
               </p>
 
               <h2>
-                One profile.
+                Choose what
                 <br />
-                Every important piece.
+                to work on.
               </h2>
 
             </div>
 
 
             <p>
-              Start with one service or combine several.
-              We keep the work connected so your professional
-              story stays consistent across every platform.
+              Each listing shows the service scope and starting price.
             </p>
 
           </div>
@@ -151,11 +149,7 @@ export function Services() {
 
           {/* SERVICE LIST */}
 
-          {loading && (
-            <div className="services-loading" role="status">
-              Loading services…
-            </div>
-          )}
+          {loading && <div className="services-loading"><SkeletonState label="Loading services" variant="rows" count={3} /></div>}
 
           {!loading && error && (
             <div className="services-loading services-error" role="alert">
@@ -246,13 +240,13 @@ export function Services() {
             <div>
 
               <p className="eyebrow">
-                NOT SURE WHERE TO START?
+                NOT SURE WHICH SERVICE FITS?
               </p>
 
               <h2>
-                Tell us the role
+                Start with the role
                 <br />
-                you're <span>targeting.</span>
+                you are <span>targeting.</span>
               </h2>
 
             </div>
@@ -261,15 +255,14 @@ export function Services() {
             <div className="services-cta-action">
 
               <p>
-                We'll help you understand which services
-                make the most sense for your application.
+                Create an account, note the role you are preparing for, and choose services to discuss.
               </p>
 
               <Link
                 className="btn lime"
                 to="/signup"
               >
-                Start your profile
+                Create your account
                 <span>→</span>
               </Link>
 
@@ -353,9 +346,7 @@ export function Pricing() {
               </h1>
 
               <p className="pricing-hero-lede">
-                Start with the service you need, or build a more
-                complete professional profile across multiple services.
-                Every project is scoped around your goals.
+                Compare starting prices for individual services and bundles.
               </p>
 
             </div>
@@ -368,8 +359,7 @@ export function Pricing() {
               </span>
 
               <p>
-                Prices shown are starting points. Your final quote
-                depends on the service, scope and complexity of the work.
+                Prices are starting points. Final quotes depend on the service, scope and complexity; we confirm the scope before work begins.
               </p>
 
             </div>
@@ -400,9 +390,7 @@ export function Pricing() {
             </div>
 
             <p>
-              Not sure which option fits? Start your profile and
-              we'll help you choose the right combination for your
-              target role.
+              Review what each package includes before choosing.
             </p>
 
           </div>
@@ -429,12 +417,6 @@ export function Pricing() {
                     <span className="pricing-plan-tag">
                       {plan.tag}
                     </span>
-
-                    {plan.featured && (
-                      <span className="pricing-featured">
-                        MOST REQUESTED
-                      </span>
-                    )}
 
                   </div>
 
@@ -525,28 +507,6 @@ export function Pricing() {
         </section>
 
 
-        {/* =====================================================
-            PRICING NOTE
-            ===================================================== */}
-
-        <section className="pricing-note">
-
-          <div className="pricing-note-inner">
-
-            <span>
-              A NOTE ON SCOPE
-            </span>
-
-            <p>
-              Every project is different. Starting prices help you
-              understand the range, but the final scope is confirmed
-              before work begins.
-            </p>
-
-          </div>
-
-        </section>
-
       </main>
 
       <Footer />
@@ -559,23 +519,79 @@ export function Pricing() {
    ========================================================= */
 
 export function About() {
-  const principles = [
+  const [services, setServices] = useState([]);
+  const [servicesLoading, setServicesLoading] = useState(true);
+  const [servicesError, setServicesError] = useState('');
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadServices() {
+      if (!supabase) {
+        if (mounted) {
+          setServices(fallbackServices);
+          setServicesLoading(false);
+        }
+        return;
+      }
+
+      const { data, error: queryError } = await supabase
+        .from('services')
+        .select('id, slug, name, description, active, show_on_services_page')
+        .eq('active', true)
+        .eq('show_on_services_page', true)
+        .order('created_at', { ascending: true });
+
+      if (!mounted) return;
+
+      if (queryError) {
+        console.error('About services load error:', queryError);
+        setServicesError('We could not load services right now.');
+        setServices([]);
+      } else {
+        setServices(data || []);
+      }
+
+      setServicesLoading(false);
+    }
+
+    loadServices();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const approachPrinciples = [
     {
       number: '01',
-      title: 'Clarity over clutter',
-      text: 'Every part of your professional profile should have a reason to exist. We remove noise and make the strongest parts easier to see.'
+      title: 'Personalized support',
+      text: 'Guidance shaped around your needs and goals.'
     },
     {
       number: '02',
-      title: 'Built around the role',
-      text: 'A strong profile is not generic. We shape the work around the role, opportunity and direction you are actually pursuing.'
+      title: 'Practical feedback',
+      text: 'Clear, useful input to help you improve how you present your experience.'
     },
     {
       number: '03',
-      title: 'One coherent story',
-      text: 'Your resume, LinkedIn, GitHub, portfolio and interview preparation should feel connected — not like separate pieces made at different times.'
+      title: 'Open communication',
+      text: 'A welcoming space to ask questions and talk through what feels unclear.'
+    },
+    {
+      number: '04',
+      title: 'Transparent expectations',
+      text: 'Clear information about what a service includes and what to expect.'
     }
   ];
+
+  const displayServices = services
+    .map((service) => ({
+      ...service,
+      routeId: service.slug || (!supabase ? service.id : ''),
+      description: service.description || service.desc || ''
+    }))
+    .filter((service) => service.routeId && service.name);
 
   return (
     <>
@@ -591,24 +607,29 @@ export function About() {
               <p className="eyebrow">ABOUT FORMANT</p>
 
               <h1>
-                Your career deserves
+                You have the experience.
                 <br />
-                <span>better preparation.</span>
+                <span>Let’s help you show it.</span>
               </h1>
 
               <p className="about-hero-lede">
-                Formant helps students, job seekers and professionals
-                build a clearer, stronger and more credible professional
-                profile — before the opportunity arrives.
+                Your CV, portfolio, and professional profiles should reflect what you can
+                actually do. Formant helps you present your experience more clearly, work
+                through the things you’re unsure about, and take your next step with greater
+                confidence.
               </p>
+
+              <Link className="btn lime about-hero-cta" to="/services">
+                Explore our services <span aria-hidden="true">↗</span>
+              </Link>
             </div>
 
-            <div className="about-hero-meta">
-              <span>OUR APPROACH</span>
-              <p>
-                Thoughtful strategy. Sharp positioning.
-                Human review. No unnecessary complexity.
-              </p>
+            <div className="about-hero-art" aria-hidden="true">
+              <img
+                className="about-hero-art-image"
+                src="/assets/Friendly%20Team%20Workspace%20Illustration.png"
+                alt=""
+              />
             </div>
 
           </div>
@@ -624,79 +645,56 @@ export function About() {
 
           <div className="about-intro-content">
             <h2>
-              Good experience isn't enough
-              <span> if nobody can see it.</span>
+              Doing the work is one thing.
+              <span> Showing it is another.</span>
             </h2>
 
             <div className="about-intro-text">
               <p>
-                You can have the skills, the education and the ambition —
-                and still struggle to communicate what makes you valuable.
+                You might have skills but struggle to put them into a strong CV. You might
+                want a portfolio but not know where to start. Or perhaps you’re unsure
+                whether your LinkedIn or GitHub profile really represents you.
               </p>
 
               <p>
-                Formant exists to solve that gap. We turn scattered
-                experience into a professional profile that is easier to
-                understand, easier to trust and better aligned with the
-                opportunity you want.
+                And when an interview comes around, that uncertainty can follow you into
+                the room. You don’t need to have everything figured out before asking for help.
               </p>
             </div>
           </div>
         </section>
 
 
-        {/* DARK STATEMENT */}
+        {/* OUR PURPOSE */}
         <section className="about-statement">
           <div className="about-statement-inner">
-            <p className="eyebrow">THE FORMANT STANDARD</p>
+            <div className="about-purpose-content">
+              <p className="eyebrow">THE FORMANT STANDARD</p>
 
-            <h2>
-              Less noise.
-              <br />
-              More <span>signal.</span>
-            </h2>
-
-            <p>
-              We believe career documents should not simply look polished.
-              They should make the right information impossible to miss.
-            </p>
-          </div>
-        </section>
-
-
-        {/* PRINCIPLES */}
-        <section className="about-principles">
-          <div className="about-section-head">
-            <div>
-              <p className="eyebrow">WHAT WE BELIEVE</p>
               <h2>
-                A better way to
+                A clearer way to present
                 <br />
-                prepare.
+                your <span>professional self.</span>
               </h2>
-            </div>
 
-            <p>
-              Our work is guided by a few simple principles.
-              They keep every project focused on what actually matters.
-            </p>
-          </div>
-
-          <div className="about-principles-list">
-            {principles.map((item) => (
-              <div className="about-principle" key={item.number}>
-                <span className="about-principle-number">
-                  {item.number}
-                </span>
-
-                <div className="about-principle-content">
-                  <h3>{item.title}</h3>
-                  <p>{item.text}</p>
-                </div>
-
-                <span className="about-principle-arrow">↗</span>
+              <div className="about-purpose-copy">
+                <p>
+                  A CV, profile or portfolio should do more than list titles and dates. It
+                  should make your skills, decisions and contribution easier to understand.
+                </p>
+                <p>
+                  We help you decide what to emphasize and organize it for the role or
+                  opportunity you are preparing for.
+                </p>
               </div>
-            ))}
+            </div>
+            <img
+              className="about-purpose-illustration"
+              src="/assets/Confident%20Professional%20Portfolio%20Illustration.png"
+              alt="A professional holding a portfolio, surrounded by examples of career documents and creative work."
+              loading="lazy"
+              decoding="async"
+            />
           </div>
         </section>
 
@@ -706,38 +704,56 @@ export function About() {
           <div className="about-work-inner">
 
             <div className="about-work-label">
-              <p className="eyebrow">WHAT WE WORK ON</p>
+              <p className="eyebrow">SERVICES</p>
               <span>02</span>
             </div>
 
             <div className="about-work-content">
               <h2>
-                From the first impression
+                Support for the parts
                 <br />
-                to the <span>final conversation.</span>
+                you’re <span>figuring out.</span>
               </h2>
 
               <p>
-                Formant brings the important parts of your professional
-                presence into one direction — from your resume and LinkedIn
-                profile to GitHub, portfolio and interview preparation.
+                You don’t need the same kind of help at every stage. Start with the area
+                you want to improve.
               </p>
 
-              <div className="about-work-tags">
-                <span>Resume / CV</span>
-                <span>LinkedIn</span>
-                <span>GitHub</span>
-                <span>Portfolio</span>
-                <span>Cover Letter</span>
-                <span>Interview Prep</span>
-              </div>
+              {servicesLoading ? (
+                <SkeletonState label="Loading services" variant="services" count={3} className="about-services-status" />
+              ) : servicesError ? (
+                <p className="about-services-status" role="status">
+                  We could not load the service list. <Link to="/services">View services</Link>
+                </p>
+              ) : displayServices.length === 0 ? (
+                <p className="about-services-status" role="status">
+                  No services are available to display right now. <Link to="/services">View services</Link>
+                </p>
+              ) : (
+                <div className="about-services-list">
+                  {displayServices.map((service) => (
+                    <Link
+                      className="about-service-link"
+                      key={service.id || service.routeId}
+                      to={`/services/${service.routeId}`}
+                    >
+                      <span className="about-service-link-copy">
+                        <strong>{service.name}</strong>
+                        {service.description && <span>{service.description}</span>}
+                      </span>
+                      <span className="about-service-link-arrow" aria-hidden="true">↗</span>
+                    </Link>
+                  ))}
+                </div>
+              )}
             </div>
 
           </div>
         </section>
 
 
-        {/* TEAM */}
+        {/* APPROACH */}
         <section className="about-team">
           <div className="about-team-inner">
 
@@ -745,27 +761,48 @@ export function About() {
               <p className="eyebrow">HOW WE WORK</p>
 
               <h2>
-                Small team.
+                Good support starts
                 <br />
-                <span>Serious attention.</span>
+                <span>with a conversation.</span>
               </h2>
             </div>
 
             <div className="about-team-text">
               <p>
-                Formant is intentionally focused. Rather than treating
-                career preparation like a high-volume template service,
-                we keep the work selective and hands-on.
+                We start with the role or opportunity you have in mind, then agree which
+                materials and services to focus on.
               </p>
 
-              <p>
-                That means each project gets thoughtful attention,
-                clear communication and a professional standard from
-                beginning to delivery.
-              </p>
+              <ul className="about-approach-list">
+                {approachPrinciples.map((item) => (
+                  <li key={item.number}>
+                    <strong>{item.title}</strong>
+                    <span>{item.text}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
 
           </div>
+        </section>
+
+
+        {/* PRINCIPLES */}
+        <section className="about-principles">
+          <div className="about-section-head">
+            <div>
+              <p className="eyebrow">OUR PRINCIPLES</p>
+              <h2>Honest about the work.<br /><span>Serious about the quality.</span></h2>
+            </div>
+
+            <p>
+              We won’t promise you a guaranteed job, a perfect interview, or an overnight
+              transformation. What we can focus on is helping you present yourself more
+              clearly, providing practical support, and being transparent about what our
+              services include.
+            </p>
+          </div>
+
         </section>
 
 
@@ -777,20 +814,19 @@ export function About() {
               <p className="eyebrow">READY WHEN YOU ARE</p>
 
               <h2>
-                Build a profile
+                Want to compare
                 <br />
-                that <span>moves you forward.</span>
+                the <span>options?</span>
               </h2>
             </div>
 
             <div className="about-cta-action">
               <p>
-                Tell us where you want to go.
-                We'll help you prepare for it.
+                Review each service’s scope and starting price, then choose what you want to discuss.
               </p>
 
-              <Link className="btn light" to="/signup">
-                Start your profile <span>→</span>
+              <Link className="btn light" to="/services">
+                Explore services <span>→</span>
               </Link>
             </div>
 
@@ -870,22 +906,21 @@ export function Contact() {
               <p className="eyebrow">CONTACT</p>
 
               <h1>
-                Have a goal?
+                Preparing for a role?
                 <br />
-                <span>Let’s work towards it.</span>
+                <span>Tell us what you need.</span>
               </h1>
 
               <p className="contact-hero-lede">
-                Tell us what you are working towards and where you need help.
-                We’ll take a look and guide you towards the right service.
+                Send a short enquiry about your target role and the support you need.
+                Select any services you would like to discuss.
               </p>
             </div>
 
             <div className="contact-hero-meta">
               <span>01</span>
               <p>
-                Start with a short project enquiry.
-                No commitment required.
+                Send an enquiry; we’ll follow up about your request.
               </p>
             </div>
 
@@ -901,15 +936,14 @@ export function Contact() {
               <p className="eyebrow">PROJECT ENQUIRY</p>
 
               <h2>
-                Let’s understand
+                Tell us about
                 <br />
-                what you need.
+                your project.
               </h2>
             </div>
 
             <p>
-              Choose everything you would like help with.
-              You can select more than one service.
+              Select one or more services. Add context in the message field below.
             </p>
           </div>
 
@@ -940,9 +974,7 @@ export function Contact() {
                 <span>NOT SURE?</span>
 
                 <p>
-                  That’s okay. Tell us about your
-                  situation and we’ll help you figure
-                  out where to start.
+                  Describe what you are preparing for and what kind of support you need.
                 </p>
               </div>
 
@@ -1157,9 +1189,9 @@ export function Contact() {
               <p className="eyebrow">READY WHEN YOU ARE</p>
 
               <h2>
-                Build a profile
+                Choose the support
                 <br />
-                that moves you <span>forward.</span>
+                for your <span>next role.</span>
               </h2>
             </div>
 
@@ -1167,7 +1199,7 @@ export function Contact() {
               className="btn light"
               to="/signup"
             >
-              Start your profile
+              Create your account
               <span>→</span>
             </Link>
 

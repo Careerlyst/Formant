@@ -1,0 +1,76 @@
+.formant-toast-viewport {
+  position: fixed;
+  z-index: 1100;
+  top: calc(24px + env(safe-area-inset-top, 0px));
+  right: calc(24px + env(safe-area-inset-right, 0px));
+  display: grid;
+  width: min(420px, calc(100vw - 48px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
+  max-height: calc(100dvh - 48px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  gap: 10px;
+  overflow-y: auto;
+  pointer-events: none;
+  scrollbar-width: thin;
+}
+
+.formant-toast-viewport.is-bottom-right {
+  top: auto;
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+}
+
+.formant-toast {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 24px minmax(0, 1fr) 32px;
+  align-items: start;
+  gap: 10px;
+  padding: 13px 12px 13px 14px;
+  border: 1px solid var(--line, #deded5);
+  border-left: 3px solid var(--ink, #11120f);
+  border-radius: 10px;
+  background: var(--paper, #fff);
+  color: var(--ink, #11120f);
+  box-shadow: 0 8px 26px rgba(17, 18, 15, .13);
+  pointer-events: auto;
+  animation: formant-toast-enter 180ms ease-out both;
+}
+
+.formant-toast.is-success { border-left-color: #678800; background: #f5fbe9; }
+.formant-toast.is-error { border-left-color: #a52b24; background: #fff5f3; }
+.formant-toast.is-warning { border-left-color: #8a5a13; background: #fff8e8; }
+.formant-toast.is-info { border-left-color: var(--ink, #11120f); background: var(--paper, #fff); }
+.formant-toast-icon { display: grid; width: 24px; height: 24px; place-items: center; color: var(--ink, #11120f); }
+.formant-toast.is-success .formant-toast-icon { color: #486400; }
+.formant-toast.is-error .formant-toast-icon { color: #922c26; }
+.formant-toast.is-warning .formant-toast-icon { color: #76500d; }
+.formant-toast-copy { display: grid; min-width: 0; gap: 3px; padding-top: 1px; }
+.formant-toast-copy strong { font-size: 13px; font-weight: 750; line-height: 1.35; }
+.formant-toast-copy > span { overflow-wrap: anywhere; color: #3f413b; font-size: 12px; line-height: 1.5; }
+.formant-toast-action { width: fit-content; min-height: 32px; margin-top: 3px; padding: 0 9px; border: 1px solid var(--line, #deded5); border-radius: 6px; background: rgba(255, 255, 255, .58); color: var(--ink, #11120f); font: 700 11px 'DM Sans', sans-serif; cursor: pointer; }
+.formant-toast-action:hover { border-color: var(--ink, #11120f); background: var(--paper, #fff); }
+.formant-toast-action:focus-visible { outline: 2px solid var(--ink, #11120f); outline-offset: 2px; }
+.formant-toast-dismiss { display: grid; width: 32px; height: 32px; place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--muted, #6d7069); cursor: pointer; }
+.formant-toast-dismiss:hover { background: rgba(17, 18, 15, .07); color: var(--ink, #11120f); }
+.formant-toast-dismiss:focus-visible { outline: 2px solid var(--ink, #11120f); outline-offset: 1px; }
+.formant-toast-dismiss svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+
+@keyframes formant-toast-enter {
+  from { opacity: 0; transform: translate3d(8px, -3px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@media (max-width: 600px) {
+  .formant-toast-viewport {
+    top: calc(12px + env(safe-area-inset-top, 0px));
+    right: calc(12px + env(safe-area-inset-right, 0px));
+    width: calc(100vw - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
+    max-height: calc(100dvh - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  }
+
+  .formant-toast-viewport.is-bottom-right {
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .formant-toast { animation: none; }
+}

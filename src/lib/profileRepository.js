@@ -15,8 +15,7 @@ export async function fetchProfile(userId) {
     .eq('id', userId)
     .maybeSingle();
   if (error) throw error;
-  if (!data) throw new Error('Your profile record is not available yet. Please refresh or contact support.');
-  return data;
+  return data || null;
 }
 
 export async function saveProfile(userId, values) {

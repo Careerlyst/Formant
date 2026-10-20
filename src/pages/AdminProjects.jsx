@@ -4,6 +4,8 @@ import DashboardShell from '../components/DashboardShell';
 import MessageActions from '../components/MessageActions';
 import { supabase } from '../lib/supabase';
 import AdminProfileContext from '../components/AdminProfileContext';
+import { useToast } from '../components/ToastProvider';
+import SkeletonState from '../components/SkeletonState';
 
 const STAFF_ROLES = ['admin', 'expert', 'support', 'finance'];
 const ACTIVE_STATUSES = ['pending', 'information_required', 'queued', 'in_progress', 'internal_review', 'client_review', 'revision'];
@@ -290,9 +292,7 @@ function TeamConversationDrawer({
             </div>
 
             {loading ? (
-              <div className="team-chat-empty">
-                Loading conversation…
-              </div>
+              <div className="team-chat-empty"><SkeletonState label="Loading project conversation" variant="messages" count={4} /></div>
             ) : !messages.length ? (
               <div className="team-chat-empty">
                 <strong>No messages yet.</strong>
@@ -368,6 +368,7 @@ function TeamConversationDrawer({
 }
 
 export default function AdminProjects() {
+  const { showToast } = useToast();
   const [authorized, setAuthorized] = useState(null);
   const [role, setRole] = useState('');
   const [orders, setOrders] = useState([]);
@@ -380,9 +381,9 @@ export default function AdminProjects() {
   const [viewMode, setViewMode] = useState('board');
   const [attentionOnly, setAttentionOnly] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [savingId, setSavingId] = useState(null);
-  const [toast, setToast] = useState('');
   const [lastUpdated, setLastUpdated] = useState(null);
   const [staffUserId, setStaffUserId] = useState('');
   const [conversationOrder, setConversationOrder] = useState(null);
@@ -399,30 +400,31 @@ export default function AdminProjects() {
   const [conversationHighlightedMessageId, setConversationHighlightedMessageId] = useState(null);
   const conversationBodyRef = useRef(null);
   const conversationTextareaRef = useRef(null);
-
-  const showToast = useCallback((message) => {
-    setToast(message);
-    window.setTimeout(() => setToast(''), 2600);
-  }, []);
+  const workspaceLoadSequenceRef = useRef(0);
 
   const loadWorkspace = useCallback(async (silent = false) => {
+    const requestId = ++workspaceLoadSequenceRef.current;
+    const isCurrentRequest = () => requestId === workspaceLoadSequenceRef.current;
     if (!supabase) {
       setError('Supabase is not configured.');
       setLoading(false);
       return;
     }
-    if (!silent) setLoading(true);
+    if (silent) setRefreshing(true);
+    else setLoading(true);
     setError('');
 
     try {
       const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
       if (sessionError) throw sessionError;
+      if (!isCurrentRequest()) return;
       const user = sessionData?.session?.user;
       if (!user) { setAuthorized(false); return; }
 
       const { data: roleRow, error: roleError } = await supabase
         .from('user_roles').select('role').eq('user_id', user.id).maybeSingle();
       if (roleError) throw roleError;
+      if (!isCurrentRequest()) return;
       const currentRole = roleRow?.role || '';
       if (!STAFF_ROLES.includes(currentRole)) { setAuthorized(false); return; }
       setRole(currentRole);
@@ -435,31 +437,46 @@ export default function AdminProjects() {
         .order('created_at', { ascending: false });
       if (orderError) throw orderError;
       const nextOrders = orderData || [];
-      setOrders(nextOrders);
+      if (!isCurrentRequest()) return;
 
       const userIds = [...new Set(nextOrders.map((o) => o.user_id).filter(Boolean))];
+      let nextProfiles = {};
       if (userIds.length) {
         const { data: profileData, error: profileError } = await supabase.from('profiles').select('id, name, email, phone, location, target_role, experience, education, skills, certifications, linkedin, github, portfolio, bio, preferences, lead_assessment, lead_score, lead_status, lead_assessment_completed_at').in('id', userIds);
         if (profileError) throw profileError;
-        setProfiles(Object.fromEntries((profileData || []).map((p) => [p.id, p])));
-      } else setProfiles({});
+        nextProfiles = Object.fromEntries((profileData || []).map((p) => [p.id, p]));
+        if (!isCurrentRequest()) return;
+      }
 
       const orderIds = nextOrders.map((o) => o.id).filter(Boolean);
+      let nextBriefs = {};
       if (orderIds.length) {
         const { data: briefData, error: briefError } = await supabase.from('project_briefs').select('*').in('order_id', orderIds);
         if (briefError) throw briefError;
-        setBriefs(Object.fromEntries((briefData || []).map((b) => [b.order_id, b])));
-      } else setBriefs({});
+        nextBriefs = Object.fromEntries((briefData || []).map((b) => [b.order_id, b]));
+      }
+      if (!isCurrentRequest()) return;
+      setOrders(nextOrders);
+      setProfiles(nextProfiles);
+      setBriefs(nextBriefs);
       setLastUpdated(new Date());
     } catch (err) {
-      console.error('Team workspace load error:', err);
-      setError(err?.message || 'Could not load the operations workspace.');
+      if (isCurrentRequest()) {
+        console.error('Team workspace load error:', err);
+        setError(err?.message || 'Could not load the operations workspace.');
+      }
     } finally {
-      setLoading(false);
+      if (isCurrentRequest()) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, []);
 
-  useEffect(() => { loadWorkspace(); }, [loadWorkspace]);
+  useEffect(() => {
+    void loadWorkspace();
+    return () => { workspaceLoadSequenceRef.current += 1; };
+  }, [loadWorkspace]);
 
   useEffect(() => {
     if (!supabase || authorized !== true) return undefined;
@@ -903,7 +920,7 @@ export default function AdminProjects() {
       setOrders((current) => current.map((item) => item.id === data.id ? data : item));
       setSelectedOrder((current) => current?.id === data.id ? data : current);
       setEditingOrder(null);
-      showToast(`Order #${data.id} updated.`);
+      showToast(`Order #${data.id} updated.`, { type: 'success' });
     } catch (err) {
       console.error('Order update error:', err);
       setError(err?.message || 'Could not update the order.');
@@ -934,7 +951,7 @@ export default function AdminProjects() {
     a.download = `formant-orders-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast('Order CSV exported.');
+    showToast('Order CSV exported.', { type: 'success' });
   }
 
   if (authorized === false) return <Navigate to="/dashboard" replace />;
@@ -949,12 +966,12 @@ export default function AdminProjects() {
               <p className="eyebrow">PROJECT OPERATIONS · {role.toUpperCase() || 'STAFF'}</p>
               <span className="team-live-badge"><i /> Live workspace</span>
             </div>
-            <h1>Projects.</h1>
-            <p>Run delivery from paid order to final handoff without losing the client context.</p>
+            <h1>Projects</h1>
+            <p>Manage active orders, assigned staff, milestones and client handoffs.</p>
           </div>
           <div className="team-head-actions">
             <button type="button" className="btn" onClick={exportOrders} disabled={!filteredOrders.length}>Export CSV</button>
-            <button type="button" className="btn dark" onClick={() => loadWorkspace()} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh ↻'}</button>
+            <button type="button" className="btn dark" onClick={() => loadWorkspace(true)} disabled={loading || refreshing}>{loading || refreshing ? 'Refreshing…' : 'Refresh ↻'}</button>
           </div>
         </div>
 
@@ -990,10 +1007,8 @@ export default function AdminProjects() {
         </section>
 
         {error && <div className="team-error"><strong>Workspace error</strong><span>{error}</span><button type="button" onClick={() => setError('')}>×</button></div>}
-        {toast && <div className="team-toast">{toast}</div>}
-
         {loading ? (
-          <section className="panel team-empty team-projects-loading"><h3>Loading projects…</h3><p>Fetching live orders, client profiles and project briefs.</p></section>
+          <section className="panel team-empty team-projects-loading"><SkeletonState label="Loading projects" variant="cards" count={4} /></section>
         ) : !filteredOrders.length ? (
           <section className="panel team-empty team-projects-loading"><h3>No matching projects.</h3><p>Try another status, search term, or turn off the attention filter.</p></section>
         ) : viewMode === 'board' ? (

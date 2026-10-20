@@ -100,7 +100,7 @@ export default function MessageActions({ active = null, contextual = false, canR
       {active && <span className="sr-only" role="status">Message selected. Reply and available message actions are shown.</span>}
       {canReply && (
         <button className="message-actions-reply" type="button" onClick={() => choose(onReply)}>
-          <span aria-hidden="true">↩</span> Reply
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><path d="m9 17-5-5 5-5M4 12h9a6 6 0 0 1 6 6v1" /></svg> Reply
         </button>
       )}
       {moreAvailable && (
@@ -114,7 +114,7 @@ export default function MessageActions({ active = null, contextual = false, canR
             aria-expanded={open}
             onClick={() => setOpen((value) => !value)}
           >
-            <span aria-hidden="true">⋮</span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><circle cx="12" cy="5" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="12" cy="19" r="1.6" /></svg>
           </button>
           {open && createPortal(
             <div className="message-actions-menu-portal" role="menu" ref={menuRef} style={menuStyle || undefined}>

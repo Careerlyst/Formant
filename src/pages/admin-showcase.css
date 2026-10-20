@@ -117,7 +117,7 @@
 .admin-showcase-preview-upload-fields label { display: grid; gap: 5px; min-width: 0; color: var(--ink); font-size: 10px; font-weight: 700; }
 .admin-showcase-preview-upload-fields input { width: 100%; min-width: 0; min-height: 38px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); color: var(--ink); font: 500 12px/1.4 'DM Sans', sans-serif; }
 .admin-showcase-preview-upload-error { margin: 0; color: #922d25; font-size: 12px; line-height: 1.45; }
-.admin-showcase-preview-upload :is(input, button):focus-visible, .admin-showcase-preview-replacing button:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.admin-showcase-preview-upload :is(input, button):focus-visible, .admin-showcase-preview-replacing button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 .admin-showcase-preview-upload button:disabled { opacity: .5; cursor: not-allowed; }
 .admin-showcase-publishing { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
 .admin-showcase-publishing .admin-showcase-form-grid { margin-top: 12px; }
@@ -134,7 +134,7 @@
 .admin-showcase-editor-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; flex-wrap: wrap; width: 100%; min-width: 0; margin-top: 18px; padding: 14px 0 0; border-top: 1px solid var(--line); background: transparent; color: inherit; }
 .admin-showcase-editor-actions > .btn { flex: 0 1 auto; min-width: 142px; min-height: 42px; padding: 10px 15px; border-radius: 2px; line-height: 1.25; white-space: nowrap; }
 .admin-showcase-editor-actions > .btn:hover:not(:disabled), .admin-showcase-item-actions button:hover:not(:disabled), .admin-showcase-image-actions button:hover:not(:disabled), .admin-showcase-close:hover { border-color: var(--ink); }
-.admin-showcase-editor-actions > .btn:focus-visible, .admin-showcase-item-actions button:focus-visible, .admin-showcase-image-actions button:focus-visible, .admin-showcase-close:focus-visible, .admin-showcase-list-tools :is(input, select):focus-visible, .admin-showcase-form-grid :is(input, select, textarea):focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.admin-showcase-editor-actions > .btn:focus-visible, .admin-showcase-item-actions button:focus-visible, .admin-showcase-image-actions button:focus-visible, .admin-showcase-close:focus-visible, .admin-showcase-list-tools :is(input, select):focus-visible, .admin-showcase-form-grid :is(input, select, textarea):focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 .admin-showcase-editor-actions > .btn:active { transform: translateY(1px); }
 .admin-showcase-editor-actions > .btn:disabled { opacity: .5; cursor: not-allowed; }
 .admin-showcase-alert { padding: 11px 13px; border: 1px solid #c9d9a5; border-radius: 9px; background: #f4f8e9; color: #3e5420; font-size: 13px; line-height: 1.5; }

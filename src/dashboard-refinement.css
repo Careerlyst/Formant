@@ -1,0 +1,387 @@
+/* Shared dashboard polish. Keep this scoped away from public and auth pages. */
+.app-shell {
+  --dashboard-title-size: clamp(28px, 2.5vw, 36px);
+  --dashboard-section-size: clamp(18px, 1.5vw, 21px);
+  --dashboard-card-radius: 12px;
+  --dashboard-control-radius: 6px;
+  --dashboard-control-height: 42px;
+}
+
+.app-shell .app-main :is(
+  .dash-head h1,
+  .overview-header-copy h1,
+  .admin-notifications-title,
+  .admin-reviews-head h1,
+  .admin-settings-header h1,
+  .admin-showcase-header h1,
+  .client360-page-head h1
+) {
+  color: var(--ink) !important;
+  font-family: 'Manrope', sans-serif !important;
+  font-size: var(--dashboard-title-size) !important;
+  font-weight: 700 !important;
+  line-height: 1.12 !important;
+  letter-spacing: -.045em !important;
+  text-wrap: balance;
+}
+
+.app-shell:not(.client-dashboard-shell) .app-main .dash-head {
+  margin-bottom: 26px !important;
+  padding-bottom: 18px !important;
+  border-bottom-color: var(--line) !important;
+}
+
+.app-shell:not(.client-dashboard-shell) .app-main .dash-head p:not(.eyebrow) {
+  margin-top: 7px !important;
+  color: var(--muted) !important;
+  font-size: 14px !important;
+  line-height: 1.55 !important;
+}
+
+.app-shell .app-main :is(
+  .panel-head h2,
+  .workspace-panel-head h2,
+  .admin-settings-content-head h2
+) {
+  font-family: 'Manrope', sans-serif;
+  font-size: var(--dashboard-section-size);
+  line-height: 1.3;
+  letter-spacing: -.025em;
+}
+
+.app-shell:not(.client-dashboard-shell) .app-main .stat {
+  padding: 18px !important;
+  border-radius: var(--dashboard-card-radius) !important;
+}
+
+.app-shell:not(.client-dashboard-shell) .app-main .stat b {
+  font-size: clamp(24px, 2vw, 30px) !important;
+  line-height: 1.1;
+}
+
+.app-shell:not(.client-dashboard-shell) .app-main .panel:not(.orders-list-panel):not(.chat) {
+  border-radius: var(--dashboard-card-radius) !important;
+}
+
+.app-shell .app-main .overview-header {
+  border-bottom-color: var(--line) !important;
+}
+
+.app-shell .app-main .overview-stats {
+  border-bottom-color: var(--line) !important;
+}
+
+.app-shell .app-main .overview-stat strong {
+  font-size: clamp(30px, 3vw, 38px) !important;
+  line-height: 1.05;
+}
+
+.app-shell:not(.client-dashboard-shell) .app-main .overview-panel {
+  border-radius: var(--dashboard-card-radius) !important;
+  padding: clamp(18px, 2vw, 25px) !important;
+}
+
+.app-shell:not(.client-dashboard-shell) .app-main .overview-cta {
+  border-radius: 8px !important;
+}
+
+.app-shell .app-main .admin-notifications-page,
+.app-shell .app-main .admin-reviews-page {
+  color: var(--ink);
+}
+
+.app-shell .app-main :is(.admin-notifications-head, .admin-reviews-head) {
+  min-height: 0;
+  margin-bottom: 24px;
+  padding-bottom: 18px;
+  border-bottom-color: var(--line);
+}
+
+.app-shell .app-main .admin-notifications-eyebrow {
+  color: var(--muted);
+}
+
+.app-shell .app-main :is(.admin-notifications-live, .admin-reviews-live) {
+  border-color: var(--line);
+  background: var(--soft);
+  color: var(--muted);
+}
+
+.app-shell .app-main .admin-notifications-live-dot,
+.app-shell .app-main .admin-reviews-live::before {
+  background: var(--green);
+}
+
+@media (max-width: 900px) {
+  .app-shell .app-main :is(.dash-head, .admin-notifications-head, .admin-reviews-head) {
+    gap: 14px;
+  }
+}
+
+@media (max-width: 600px) {
+  .app-shell {
+    --dashboard-title-size: clamp(26px, 7vw, 32px);
+    --dashboard-section-size: 18px;
+    --dashboard-control-height: 44px;
+  }
+
+  .app-shell:not(.client-dashboard-shell) .app-main .dash-head {
+    margin-bottom: 20px !important;
+    padding-bottom: 14px !important;
+  }
+}
+
+/* Buttons: compact admin actions, comfortable client actions, clear variants. */
+.app-shell .app-main .btn {
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: var(--dashboard-control-radius) !important;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.2;
+  transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease;
+}
+
+.app-shell .app-main .btn:not(.dark):not(.lime):not(.danger) {
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.app-shell .app-main .btn.dark:hover:not(:disabled) {
+  background: #252622 !important;
+}
+
+.app-shell .app-main .btn.lime:hover:not(:disabled) {
+  background: #b7e927 !important;
+}
+
+.app-shell .app-main .btn:not(.dark):not(.lime):not(.danger):hover:not(:disabled) {
+  border-color: var(--ink);
+  background: var(--soft);
+}
+
+.app-shell .app-main .btn:hover:not(:disabled) {
+  transform: none;
+}
+
+.app-shell .app-main .btn:focus-visible,
+.app-shell .app-main :is(
+  .admin-service-section button,
+  .admin-notifications-btn,
+  .admin-notifications-btn-mini,
+  .admin-notifications-filter,
+  .admin-review-primary-btn,
+  .admin-review-secondary-btn,
+  .admin-review-clear-btn,
+  .admin-settings-save,
+  .admin-settings-secondary,
+  .admin-settings-danger-actions button,
+  .team-close,
+  .settings-password-v2 button
+):focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.app-shell .app-main :is(
+  .admin-notifications-btn,
+  .admin-review-primary-btn,
+  .admin-review-secondary-btn,
+  .admin-review-clear-btn,
+  .admin-settings-save,
+  .admin-settings-secondary
+) {
+  min-height: 40px;
+  padding-inline: 15px;
+  border-radius: var(--dashboard-control-radius);
+  font: 600 13px/1.2 'DM Sans', sans-serif;
+  transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease;
+}
+
+.app-shell .app-main .admin-notifications-btn-mini {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 600 12px/1.2 'DM Sans', sans-serif;
+}
+
+.app-shell .app-main .admin-notifications-filter {
+  min-height: 38px;
+  border-color: var(--line);
+  border-radius: var(--dashboard-control-radius);
+  background: var(--paper);
+  color: var(--ink);
+  font: 600 12px/1.2 'DM Sans', sans-serif;
+}
+
+.app-shell .app-main .admin-notifications-filter:hover:not(.active) {
+  border-color: var(--ink);
+  background: var(--soft);
+}
+
+.app-shell .app-main .admin-notifications-filter.active {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.app-shell .app-main :is(.admin-notifications-btn-primary, .admin-review-primary-btn) {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.app-shell .app-main :is(.admin-notifications-btn-primary, .admin-review-primary-btn):hover:not(:disabled) {
+  border-color: #252622;
+  background: #252622;
+}
+
+.app-shell .app-main :is(.admin-notifications-btn, .admin-review-secondary-btn, .admin-review-clear-btn, .admin-settings-secondary) {
+  border-color: var(--line);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.app-shell .app-main :is(.admin-notifications-btn, .admin-review-secondary-btn, .admin-review-clear-btn, .admin-settings-secondary):hover:not(:disabled) {
+  border-color: var(--ink);
+  background: var(--soft);
+}
+
+.app-shell .app-main :is(.btn, .admin-notifications-btn, .admin-notifications-btn-mini, .admin-review-primary-btn, .admin-review-secondary-btn, .admin-review-clear-btn, .admin-settings-save, .admin-settings-secondary):disabled {
+  cursor: not-allowed;
+  opacity: .55;
+  transform: none;
+}
+
+.app-shell .app-main :is(.btn, .admin-notifications-btn, .admin-review-primary-btn, .admin-review-secondary-btn, .admin-review-clear-btn, .admin-settings-save, .admin-settings-secondary) > svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 600px) {
+  .app-shell .app-main .btn,
+  .app-shell .app-main :is(.admin-notifications-btn, .admin-review-primary-btn, .admin-review-secondary-btn, .admin-review-clear-btn, .admin-settings-save, .admin-settings-secondary) {
+    min-height: var(--dashboard-control-height);
+  }
+}
+
+/* Toggles share one track/thumb geometry while native inputs remain in control. */
+.app-shell .app-main :is(.settings-switch-v2, .admin-settings-toggle, .admin-service-switch i) {
+  box-sizing: border-box;
+  width: 44px;
+  height: 24px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--soft);
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+.app-shell .app-main .settings-switch-v2 i,
+.app-shell .app-main .admin-settings-toggle > span,
+.app-shell .app-main .admin-service-switch i::after {
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--paper);
+  box-shadow: none;
+  transition: transform 160ms ease, background-color 160ms ease;
+}
+
+.app-shell .app-main .admin-settings-toggle > span {
+  display: block;
+  transform: translateX(0);
+}
+
+.app-shell .app-main .admin-settings-toggle.is-on,
+.app-shell .app-main .admin-service-switch input:checked ~ i,
+.app-shell .app-main .settings-toggle-v2 input:checked + .settings-switch-v2 {
+  border-color: var(--lime);
+  background: var(--lime);
+}
+
+.app-shell .app-main .admin-settings-toggle.is-on > span,
+.app-shell .app-main .admin-service-switch input:checked ~ i::after {
+  transform: translateX(20px);
+  background: var(--ink);
+}
+
+.app-shell .app-main .admin-settings-toggle:focus-visible,
+.app-shell .app-main .admin-service-switch input:focus-visible ~ i,
+.app-shell .app-main .settings-toggle-v2 input:focus-visible + .settings-switch-v2 {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+
+.app-shell .app-main :is(.admin-settings-toggle:disabled, .settings-toggle-v2 input:disabled + .settings-switch-v2, .admin-service-switch input:disabled ~ i) {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
+.app-shell .app-main .settings-toggle-v2:has(input:disabled),
+.app-shell .app-main .settings-select-v2:has(select:disabled),
+.app-shell .app-main .admin-service-switch:has(input:disabled) {
+  cursor: not-allowed;
+}
+
+.app-shell .app-main .settings-toggle-v2:has(input:disabled) .settings-option-copy,
+.app-shell .app-main .settings-select-v2:has(select:disabled) .settings-option-copy {
+  opacity: .65;
+}
+
+/* Closed select/input states. Native select menus and keyboard behavior are retained. */
+.app-shell .app-main :is(
+  .admin-settings-field input,
+  .admin-settings-field select,
+  .admin-service-section input:not([type='checkbox']):not([type='radio']),
+  .admin-service-section select,
+  .admin-service-section textarea,
+  .settings-select-v2 select,
+  .settings-password-v2 input,
+  .admin-notifications-filter-select,
+  .admin-notification-multiselect-search,
+  .team-toolbar select,
+  .team-order-actions select
+) {
+  min-height: var(--dashboard-control-height);
+  border: 1px solid var(--line);
+  border-radius: var(--dashboard-control-radius);
+  color: var(--ink);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+}
+
+.app-shell .app-main :is(.admin-settings-field input, .admin-settings-field select, .admin-service-section input:not([type='checkbox']):not([type='radio']), .admin-service-section select, .admin-service-section textarea, .settings-select-v2 select, .settings-password-v2 input, .admin-notifications-filter-select, .admin-notification-multiselect-search, .team-toolbar select, .team-order-actions select):focus-visible {
+  border-color: var(--green);
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+.app-shell .app-main :is(.admin-settings-field input, .admin-settings-field select, .admin-service-section input, .admin-service-section select, .admin-service-section textarea, .settings-select-v2 select, .settings-password-v2 input, .admin-notifications-filter-select, .admin-notification-multiselect-search):disabled {
+  cursor: not-allowed;
+  opacity: .6;
+}
+
+.app-shell .app-main input[type='checkbox'],
+.app-shell .app-main input[type='radio'] {
+  accent-color: var(--green);
+}
+
+.app-shell .app-main input[aria-invalid='true'],
+.app-shell .app-main select[aria-invalid='true'],
+.app-shell .app-main textarea[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.app-shell .app-main :is(.admin-settings-page, .admin-service-section, .admin-notifications-page, .admin-reviews-page, .settings-page-v2) button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}

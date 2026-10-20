@@ -427,13 +427,6 @@
 }
 
 .admin-notifications-empty,
-.admin-notifications-loading {
-  padding: 70px 25px;
-  border: 1px solid #dedede;
-  background: #fff;
-  text-align: center;
-}
-
 .admin-notifications-empty-icon {
   margin-bottom: 10px;
   font-size: 30px;
@@ -446,11 +439,6 @@
 
 .admin-notifications-empty p {
   margin: 0;
-  color: #777;
-  font-size: 13px;
-}
-
-.admin-notifications-loading {
   color: #777;
   font-size: 13px;
 }

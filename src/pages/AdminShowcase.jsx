@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import DashboardShell from '../components/DashboardShell';
+import SkeletonState from '../components/SkeletonState';
 import { supabase } from '../lib/supabase';
 import { SHOWCASE_TABS, SHOWCASE_MEDIA_PRESENTATIONS, SHOWCASE_DOCUMENT_PRESENTATIONS, categoryLabel, projectTypeLabel, safeShowcaseUrl, slugify } from '../lib/showcase';
 import { ProjectGallery, ShowcaseDocument, ShowcaseImage } from './Showcase';
@@ -310,6 +311,7 @@ export default function AdminShowcase() {
   const [projects, setProjects] = useState([]);
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -341,18 +343,21 @@ export default function AdminShowcase() {
   const previewImageUploadRequest = useRef(null);
   const projectImageUploadRequest = useRef(null);
   const projectBaseline = useRef(null);
+  const hasLoadedProjectsRef = useRef(false);
   const currentEditorProjectId = useRef(null);
   currentEditorProjectId.current = project?.id || null;
 
-  const loadProjects = useCallback(async () => {
+  const loadProjects = useCallback(async (silent = false) => {
     if (!supabase) {
       setAccess('unavailable');
       setLoading(false);
       return;
     }
-    setLoading(true);
+    if (silent && hasLoadedProjectsRef.current) setRefreshing(true);
+    else setLoading(true);
     setError('');
     let failedRequest = 'checking the signed-in account';
+    let staffVerified = false;
     try {
       const { data: authData, error: authError } = await supabase.auth.getUser();
       if (authError) throw authError;
@@ -373,6 +378,7 @@ export default function AdminShowcase() {
         setLoading(false);
         return;
       }
+      staffVerified = true;
       setAccess(EDITOR_ROLES.includes(currentRole) ? 'editor' : 'readonly');
       failedRequest = 'loading Showcase projects from public.showcase_projects with related public.showcase_project_images';
       const { data, error: listError } = await supabase.from('showcase_projects')
@@ -381,11 +387,13 @@ export default function AdminShowcase() {
         .order('updated_at', { ascending: false });
       if (listError) throw listError;
       setProjects((data || []).map((row) => ({ ...row, showcase_project_images: [...(row.showcase_project_images || [])].sort((a, b) => a.sort_order - b.sort_order) })).sort((a, b) => Number(b.is_featured) - Number(a.is_featured) || Number(a.is_featured ? a.featured_order : a.display_order) - Number(b.is_featured ? b.featured_order : b.display_order) || new Date(b.updated_at) - new Date(a.updated_at)));
+      hasLoadedProjectsRef.current = true;
     } catch (loadError) {
-      setAccess('error');
+      if (!(silent && hasLoadedProjectsRef.current && staffVerified)) setAccess('error');
       setError(messageFor(loadError, 'Showcase access could not be checked.', failedRequest));
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -625,7 +633,7 @@ export default function AdminShowcase() {
       try {
         await Promise.race([
           (async () => {
-            await loadProjects();
+            await loadProjects(true);
             const refreshed = await refreshProject(projectId);
             const uploadVerified = savedMedia?.id && refreshed.showcase_project_images?.some((image) => image.id === savedMedia.id);
             if (!uploadVerified) throw new Error('The saved preview was not found in the authorized media list.');
@@ -705,7 +713,7 @@ export default function AdminShowcase() {
       };
       projectBaseline.current = nextProject;
       setProject(nextProject);
-      await loadProjects();
+      await loadProjects(true);
       setNotice(forceDraft ? 'Draft saved. It is not available to public visitors.' : (wasPublished && !result.data.is_published) || approvalWasCleared ? 'Public content changed. Publication approval was cleared; review and confirm it again before publishing.' : 'Project changes saved.');
       return nextProject;
     } catch (saveError) {
@@ -760,7 +768,7 @@ export default function AdminShowcase() {
       setProject((current) => ({ ...current, is_published: nextPublished, published_at: nextPublished ? (current.published_at || new Date().toISOString()) : null }));
       projectBaseline.current = { ...project, is_published: nextPublished, published_at: nextPublished ? (project.published_at || new Date().toISOString()) : null };
       setNotice(nextPublished ? 'Project published.' : 'Project unpublished. Public image delivery is now blocked.');
-      await loadProjects();
+      await loadProjects(true);
     } catch (publishError) {
       setError(messageFor(publishError, 'Publication status could not be changed.'));
     } finally {
@@ -844,7 +852,7 @@ export default function AdminShowcase() {
       try {
         await Promise.race([
           (async () => {
-            await loadProjects();
+            await loadProjects(true);
             await refreshProject(uploadedProjectId);
           })(),
           new Promise((_, reject) => setTimeout(() => reject(new Error('Project refresh timed out.')), 15000))
@@ -888,7 +896,7 @@ export default function AdminShowcase() {
         message: `${data.previewCount} private preview${data.previewCount === 1 ? '' : 's'} generated. Each remains unapproved until staff review.`,
         overview: data.overview,
       });
-      await loadProjects();
+      await loadProjects(true);
       await refreshProject(project.id);
     } catch (generationError) {
       const failure = ['PreviewInvocationError', 'PreviewGenerationError'].includes(generationError?.name)
@@ -926,7 +934,7 @@ export default function AdminShowcase() {
       setError('The saved preview details could not be confirmed. Refresh the project and check its saved media status before continuing.');
     }
     else {
-      await loadProjects();
+      await loadProjects(true);
       try {
         const refreshed = await refreshProject(projectId);
         const refreshedImage = (refreshed.showcase_project_images || []).find((row) => row.id === image.id);
@@ -971,7 +979,7 @@ export default function AdminShowcase() {
       try { await refreshProject(project.id); } catch (error) { setError(`${messageFor(secondError, 'Image order could not be changed.')} ${messageFor(error, 'Updated project could not be reloaded.')}`); }
       return;
     }
-    await loadProjects();
+    await loadProjects(true);
     try { await refreshProject(project.id); } catch (error) { setError(messageFor(error, 'Updated project could not be reloaded.')); }
   }
 
@@ -990,7 +998,7 @@ export default function AdminShowcase() {
     const cleanupNotice = storageError
       ? 'Image removed from the project, but private Storage cleanup could not be confirmed. Ask an administrator to review the cleanup operation.'
       : 'Image removed.';
-    await loadProjects();
+    await loadProjects(true);
     try {
       await refreshProject(project.id);
       const reviewNotice = project.is_published || project.public_content_review_confirmed || project.client_consent_confirmed
@@ -1021,7 +1029,7 @@ export default function AdminShowcase() {
       ? 'Project and metadata were deleted, but private Storage cleanup could not be confirmed. Ask an administrator to review the cleanup operation.'
       : 'Project and associated images deleted.');
     if (project?.id === row.id) setProject(null);
-    await loadProjects();
+    await loadProjects(true);
   }
 
   async function openPreview() {
@@ -1043,10 +1051,10 @@ export default function AdminShowcase() {
     ordered.splice(target, 0, moved);
     for (const [nextOrder, item] of ordered.entries()) {
       const { error: orderError } = await supabase.from('showcase_projects').update({ [key]: nextOrder, updated_by: userId }).eq('id', item.id);
-      if (orderError) { setError(messageFor(orderError, 'Project order could not be changed.')); await loadProjects(); return; }
+      if (orderError) { setError(messageFor(orderError, 'Project order could not be changed.')); await loadProjects(true); return; }
     }
     setNotice(row.is_featured ? 'Featured project order updated.' : 'Project display order updated.');
-    await loadProjects();
+    await loadProjects(true);
   }
 
   function projectMoveDisabled(row, direction) {
@@ -1081,8 +1089,8 @@ export default function AdminShowcase() {
           {[['Total projects', projects.length], ['Published', projects.filter((row) => row.is_published).length], ['Drafts', projects.filter((row) => !row.is_published).length], ['Featured', projects.filter((row) => row.is_featured).length]].map(([label, count]) => <article key={label}><span>{label}</span><strong>{count}</strong></article>)}
         </section>
         <div className="admin-showcase-layout">
-          <section className="admin-showcase-list-panel" aria-label="Showcase projects">
-            <header className="admin-showcase-list-heading"><div><p className="eyebrow">STEP 1 · SELECT PROJECT</p><h2>Projects</h2></div><span>{visibleProjects.length} shown</span></header>
+          <section className="admin-showcase-list-panel" aria-label="Showcase projects" aria-busy={loading || refreshing}>
+            <header className="admin-showcase-list-heading"><div><p className="eyebrow">STEP 1 · SELECT PROJECT</p><h2>Projects</h2></div><span aria-live="polite">{refreshing ? 'Refreshing…' : `${visibleProjects.length} shown`}</span></header>
             <div className="admin-showcase-list-tools">
               <label className="span-two"><span className="sr-only">Search Showcase projects</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search projects" /></label>
               <label><span className="sr-only">Filter by publication</span><select value={filter} onChange={(event) => setFilter(event.target.value)}><option value="all">All statuses</option><option value="draft">Drafts</option><option value="published">Published</option></select></label>
@@ -1090,7 +1098,7 @@ export default function AdminShowcase() {
               <label><span className="sr-only">Filter by project type</span><select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}><option value="all">All project types</option><option value="client_work">Client Work</option><option value="sample_project">Sample Project</option></select></label>
               <label><span className="sr-only">Filter by featured state</span><select value={featuredFilter} onChange={(event) => setFeaturedFilter(event.target.value)}><option value="all">Featured and unfeatured</option><option value="featured">Featured</option><option value="not-featured">Not featured</option></select></label>
             </div>
-            {loading ? <div className="admin-showcase-state" role="status">Loading projects…</div> : !visibleProjects.length ? <div className="admin-showcase-state"><strong>No projects found.</strong><p>Create a draft when verified work or approved sample assets are ready.</p></div> : <div className="admin-showcase-list">{visibleProjects.map((row) => { const images = row.showcase_project_images || []; const thumb = images.find((image) => image.presentation === 'thumbnail' && IMAGE_TYPES.includes(image.content_type)) || images.find((image) => IMAGE_TYPES.includes(image.content_type)); const readiness = previewReadiness(row); return <article className={`admin-showcase-list-item${project?.id === row.id ? ' is-selected' : ''}`} key={row.id}><div className="admin-showcase-list-thumb">{thumb ? <ShowcaseImage image={thumb} authorized /> : <span aria-hidden="true">◌</span>}</div><div className="admin-showcase-list-copy"><div className="admin-showcase-item-meta"><span className={`admin-showcase-status${row.is_published ? ' is-published' : ''}`}>{row.is_published ? 'Published' : 'Draft'}</span><span>{projectTypeLabel(row.project_type)}</span></div><h2>{row.title}</h2><p>{categoryLabel(row.service_category)} · {row.showcase_project_images?.length || 0} media{row.is_featured ? ` · Featured #${row.featured_order + 1}` : ''}</p><span className={`admin-showcase-preview-status is-${readiness.tone}`}>{readiness.label}</span></div><div className="admin-showcase-item-actions"><button type="button" onClick={() => beginEdit(row)} aria-pressed={project?.id === row.id}>{project?.id === row.id ? 'Selected' : 'Edit'}</button><button type="button" onClick={() => void moveProject(row, -1)} disabled={!canEdit || projectMoveDisabled(row, -1)} aria-label={`Move ${row.title} earlier`}>↑</button><button type="button" onClick={() => void moveProject(row, 1)} disabled={!canEdit || projectMoveDisabled(row, 1)} aria-label={`Move ${row.title} later`}>↓</button><button type="button" onClick={() => deleteProject(row)} disabled={!canEdit}>Delete</button></div></article>; })}</div>}
+            {loading ? <div className="admin-showcase-state"><SkeletonState label="Loading showcase projects" variant="rows" count={4} /></div> : !visibleProjects.length ? <div className="admin-showcase-state"><strong>No projects found.</strong><p>Create a draft when verified work or approved sample assets are ready.</p></div> : <div className="admin-showcase-list">{visibleProjects.map((row) => { const images = row.showcase_project_images || []; const thumb = images.find((image) => image.presentation === 'thumbnail' && IMAGE_TYPES.includes(image.content_type)) || images.find((image) => IMAGE_TYPES.includes(image.content_type)); const readiness = previewReadiness(row); return <article className={`admin-showcase-list-item${project?.id === row.id ? ' is-selected' : ''}`} key={row.id}><div className="admin-showcase-list-thumb">{thumb ? <ShowcaseImage image={thumb} authorized /> : <span aria-hidden="true">◌</span>}</div><div className="admin-showcase-list-copy"><div className="admin-showcase-item-meta"><span className={`admin-showcase-status${row.is_published ? ' is-published' : ''}`}>{row.is_published ? 'Published' : 'Draft'}</span><span>{projectTypeLabel(row.project_type)}</span></div><h2>{row.title}</h2><p>{categoryLabel(row.service_category)} · {row.showcase_project_images?.length || 0} media{row.is_featured ? ` · Featured #${row.featured_order + 1}` : ''}</p><span className={`admin-showcase-preview-status is-${readiness.tone}`}>{readiness.label}</span></div><div className="admin-showcase-item-actions"><button type="button" onClick={() => beginEdit(row)} aria-pressed={project?.id === row.id}>{project?.id === row.id ? 'Selected' : 'Edit'}</button><button type="button" onClick={() => void moveProject(row, -1)} disabled={!canEdit || projectMoveDisabled(row, -1)} aria-label={`Move ${row.title} earlier`}>↑</button><button type="button" onClick={() => void moveProject(row, 1)} disabled={!canEdit || projectMoveDisabled(row, 1)} aria-label={`Move ${row.title} later`}>↓</button><button type="button" onClick={() => deleteProject(row)} disabled={!canEdit}>Delete</button></div></article>; })}</div>}
           </section>
 
           <section className="admin-showcase-editor" aria-label="Showcase project editor">
