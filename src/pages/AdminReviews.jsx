@@ -1138,10 +1138,11 @@ function AdminReviewsPage() {
         updateError
       );
 
-      setError(
+      const msg =
         updateError?.message ||
-          'The review could not be updated.'
-      );
+        'The review could not be updated.';
+      setError(msg);
+      showToast.error(msg, { title: 'Review update failed' });
     } finally {
       setSavingId(null);
     }
@@ -1256,10 +1257,11 @@ function AdminReviewsPage() {
         deleteError
       );
 
-      setError(
+      const msg =
         deleteError?.message ||
-          'The review could not be deleted.'
-      );
+        'The review could not be deleted.';
+      setError(msg);
+      showToast.error(msg, { title: 'Review delete failed' });
     } finally {
       setSavingId(null);
     }

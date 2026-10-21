@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import Logo from '../components/Logo'
 import SkeletonState from '../components/SkeletonState'
+import { useToast } from '../components/ToastProvider'
 import { demoLogin, patch } from '../lib/store'
 import { supabase } from '../lib/supabase'
 
@@ -10,6 +11,7 @@ import { supabase } from '../lib/supabase'
 ========================================================= */
 
 function ResendLink({ email }) {
+  const { showToast } = useToast();
   const [timeLeft, setTimeLeft] = useState(30);
   const [canResend, setCanResend] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -36,8 +38,11 @@ function ResendLink({ email }) {
 
     if (error) {
       setStatus({ text: error.message, type: "error" });
+      showToast.error(error.message, { title: 'Resend failed' });
     } else {
-      setStatus({ text: "Confirmation link resent successfully!", type: "success" });
+      const successMsg = "Confirmation link resent successfully! Check your inbox.";
+      setStatus({ text: successMsg, type: "success" });
+      showToast.success(successMsg, { title: 'Link resent' });
       setCanResend(false);
       setTimeLeft(30);
     }
@@ -156,6 +161,7 @@ function getPostAuthPath(user) {
 }
 
 export default function Auth({ signup = false }) {
+  const { showToast } = useToast()
   const nav = useNavigate()
   const location = useLocation()
 
@@ -225,6 +231,7 @@ export default function Auth({ signup = false }) {
     if (location.state?.error) {
       setMessage(location.state.error)
       setMessageType('error')
+      showToast.error(location.state.error, { title: 'Authentication notice' })
       return
     }
 
@@ -250,6 +257,7 @@ export default function Auth({ signup = false }) {
       }
       setMessage(friendlyMsg)
       setMessageType('error')
+      showToast.error(friendlyMsg, { title: 'Google sign-in error' })
     }
   }, [location.state])
 
@@ -301,8 +309,10 @@ export default function Auth({ signup = false }) {
 
     try {
       if (!supabase) {
-        setMessage('Google authentication requires Supabase to be configured.')
+        const msg = 'Google authentication requires Supabase to be configured.'
+        setMessage(msg)
         setMessageType('error')
+        showToast.warning(msg, { title: 'Configuration notice' })
         setGoogleLoading(false)
         return
       }
@@ -325,14 +335,18 @@ export default function Auth({ signup = false }) {
       })
 
       if (error) {
-        setMessage(error.message || 'Failed to initiate Google sign-in.')
+        const msg = error.message || 'Failed to initiate Google sign-in.'
+        setMessage(msg)
         setMessageType('error')
+        showToast.error(msg, { title: 'Google sign-in failed' })
         setGoogleLoading(false)
       }
     } catch (err) {
       console.error('Google sign-in error:', err)
-      setMessage(err?.message || 'Something went wrong with Google sign-in.')
+      const msg = err?.message || 'Something went wrong with Google sign-in.'
+      setMessage(msg)
       setMessageType('error')
+      showToast.error(msg, { title: 'Google sign-in error' })
       setGoogleLoading(false)
     }
   }
@@ -397,33 +411,43 @@ export default function Auth({ signup = false }) {
 
     // Validate inputs
     if (!cleanEmail || !emailRegex.test(cleanEmail)) {
-      setMessage('Please enter a valid email address.')
+      const msg = 'Please enter a valid email address.'
+      setMessage(msg)
       setMessageType('error')
+      showToast.warning(msg, { title: 'Invalid email' })
       return
     }
 
     if (password.length < 6) {
-      setMessage('Password must be at least 6 characters.')
+      const msg = 'Password must be at least 6 characters.'
+      setMessage(msg)
       setMessageType('error')
+      showToast.warning(msg, { title: 'Password too short' })
       return
     }
 
     if (signup) {
       if (!cleanName) {
-        setMessage('Please enter your full name.')
+        const msg = 'Please enter your full name.'
+        setMessage(msg)
         setMessageType('error')
+        showToast.warning(msg, { title: 'Name required' })
         return
       }
 
       if (password !== confirmPassword) {
-        setMessage('Passwords do not match.')
+        const msg = 'Passwords do not match.'
+        setMessage(msg)
         setMessageType('error')
+        showToast.warning(msg, { title: 'Passwords mismatch' })
         return
       }
 
       if (!termsAccepted) {
-        setMessage('Please agree to the Terms & Conditions and Privacy Policy.')
+        const msg = 'Please agree to the Terms & Conditions and Privacy Policy.'
+        setMessage(msg)
         setMessageType('error')
+        showToast.warning(msg, { title: 'Terms agreement required' })
         return
       }
     }
@@ -451,14 +475,15 @@ export default function Auth({ signup = false }) {
           if (error) {
             setMessage(error.message)
             setMessageType('error')
+            showToast.error(error.message, { title: 'Account creation failed' })
             return
           }
 
           if (!data?.session) {
-            setMessage(
-              'Account created successfully. Please check your email to activate your account.'
-            )
+            const msg = 'Account created successfully. Please check your email to activate your account.'
+            setMessage(msg)
             setMessageType('success')
+            showToast.info(msg, { title: 'Verification email sent', duration: 8000 })
             setUnverifiedEmail(cleanEmail)
             return
           }
@@ -498,27 +523,33 @@ export default function Auth({ signup = false }) {
           const errorMessage = String(error.message || '')
           const errorCode = String(error.code || '')
           if (errorMessage.includes('Email not confirmed')) {
-            setMessage('Please confirm your email address before logging in.')
+            const msg = 'Please confirm your email address before logging in.'
+            setMessage(msg)
             setMessageType('error')
+            showToast.warning(msg, { title: 'Email unconfirmed' })
             setUnverifiedEmail(cleanEmail)
           } else if (
             errorCode === 'invalid_credentials' ||
             errorMessage.toLowerCase().includes('invalid login credentials')
           ) {
-            setMessage('Invalid login credentials — check your email or password.')
+            const msg = 'Invalid login credentials — check your email or password.'
+            setMessage(msg)
             setMessageType('error')
+            showToast.error(msg, { title: 'Sign-in failed' })
           } else {
-            setMessage(
-              errorMessage || 'Login could not be completed. Check your connection and try again.'
-            )
+            const msg = errorMessage || 'Login could not be completed. Check your connection and try again.'
+            setMessage(msg)
             setMessageType('error')
+            showToast.error(msg, { title: 'Sign-in failed' })
           }
           return
         }
 
         if (!data?.session) {
-          setMessage('Login could not be completed. Please try again.')
+          const msg = 'Login could not be completed. Please try again.'
+          setMessage(msg)
           setMessageType('error')
+          showToast.error(msg, { title: 'Sign-in failed' })
           return
         }
 
@@ -572,10 +603,10 @@ export default function Auth({ signup = false }) {
 
     } catch (error) {
       console.error('Authentication error:', error)
-      setMessage(
-        error?.message || 'Something went wrong. Please try again.'
-      )
+      const msg = error?.message || 'Something went wrong. Please try again.'
+      setMessage(msg)
       setMessageType('error')
+      showToast.error(msg, { title: 'Authentication error' })
     } finally {
       setLoading(false)
     }
@@ -1156,7 +1187,7 @@ export default function Auth({ signup = false }) {
 ========================================================= */
 
 export function Forgot() {
-
+  const { showToast } = useToast()
   const nav = useNavigate()
 
   const [email, setEmail] = useState('')
@@ -1203,6 +1234,7 @@ export function Forgot() {
 
         if (error) {
           setMessage(error.message)
+          showToast.error(error.message, { title: 'Reset request failed' })
           return
         }
 
@@ -1211,9 +1243,9 @@ export function Forgot() {
            SUCCESS
         ----------------------------------------------- */
 
-        setMessage(
-          'If an account exists for this email, a password reset link has been sent. Please check your inbox.'
-        )
+        const successMsg = 'If an account exists for this email, a password reset link has been sent. Please check your inbox.'
+        setMessage(successMsg)
+        showToast.success(successMsg, { title: 'Reset link sent', duration: 8000 })
 
         return
       }
@@ -1223,9 +1255,9 @@ export function Forgot() {
          DEMO MODE
       ===================================================== */
 
-      setMessage(
-        'Supabase is not connected. Please check your VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY settings.'
-      )
+      const demoMsg = 'Supabase is not connected. Please check your VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY settings.'
+      setMessage(demoMsg)
+      showToast.warning('Password recovery requires Supabase to be connected.', { title: 'Service unavailable' })
 
     } catch (error) {
 
@@ -1234,10 +1266,9 @@ export function Forgot() {
         error
       )
 
-      setMessage(
-        error?.message ||
-        'Something went wrong. Please try again.'
-      )
+      const errMsg = error?.message || 'Something went wrong. Please try again.'
+      setMessage(errMsg)
+      showToast.error(errMsg, { title: 'Reset request error' })
 
     } finally {
 
@@ -1421,6 +1452,7 @@ export function Forgot() {
   )
 }
 export function ResetPassword() {
+  const { showToast } = useToast()
   const nav = useNavigate()
 
   const [password, setPassword] = useState('')
@@ -1648,11 +1680,9 @@ export function ResetPassword() {
     ------------------------------------------------------- */
 
     if (!sessionReady) {
-
-      setError(
-        'This password reset link is invalid or has expired. Please request a new one.'
-      )
-
+      const msg = 'This password reset link is invalid or has expired. Please request a new one.'
+      setError(msg)
+      showToast.warning(msg, { title: 'Invalid reset link' })
       return
     }
 
@@ -1662,11 +1692,9 @@ export function ResetPassword() {
     ------------------------------------------------------- */
 
     if (password.length < 6) {
-
-      setError(
-        'Password must be at least 6 characters.'
-      )
-
+      const msg = 'Password must be at least 6 characters.'
+      setError(msg)
+      showToast.warning(msg, { title: 'Password too short' })
       return
     }
 
@@ -1676,21 +1704,17 @@ export function ResetPassword() {
     ------------------------------------------------------- */
 
     if (password !== confirmPassword) {
-
-      setError(
-        'Passwords do not match.'
-      )
-
+      const msg = 'Passwords do not match.'
+      setError(msg)
+      showToast.warning(msg, { title: 'Passwords mismatch' })
       return
     }
 
 
     if (!supabase) {
-
-      setError(
-        'Password recovery is currently unavailable. Please try again later.'
-      )
-
+      const msg = 'Password recovery is currently unavailable. Please try again later.'
+      setError(msg)
+      showToast.warning(msg, { title: 'Service unavailable' })
       return
     }
 
@@ -1708,9 +1732,8 @@ export function ResetPassword() {
 
 
       if (updateError) {
-
         setError(updateError.message)
-
+        showToast.error(updateError.message, { title: 'Password update failed' })
         return
       }
 
@@ -1720,6 +1743,7 @@ export function ResetPassword() {
       ----------------------------------------------------- */
 
       setSuccess(true)
+      showToast.success('Password updated successfully. You can now sign in with your new password.', { title: 'Password updated', duration: 7000 })
 
 
       /*
@@ -1736,10 +1760,9 @@ export function ResetPassword() {
         err
       )
 
-      setError(
-        err?.message ||
-        'Something went wrong. Please try again.'
-      )
+      const errMsg = err?.message || 'Something went wrong. Please try again.'
+      setError(errMsg)
+      showToast.error(errMsg, { title: 'Password update error' })
 
     } finally {
 

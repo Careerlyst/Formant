@@ -6,7 +6,8 @@ import SkeletonState from '../components/SkeletonState';
 import { PageNotFound, RequestProblem } from '../components/ErrorExperience';
 import { classifyRequestFailure } from '../lib/requestFailure';
 import { services as fallbackServices } from '../lib/store';
-import { applySeoMetadata, normalizePath } from '../lib/seo';
+import { applySeoMetadata, normalizePath, SITE_ORIGIN } from '../lib/seo';
+import { useToast } from '../components/ToastProvider';
 import { supabase } from '../lib/supabase';
 import './service-detail.css';
 
@@ -159,6 +160,7 @@ function getServiceProfile(service) {
    ========================================================= */
 
 export default function ServiceDetail() {
+  const { showToast } = useToast();
   const { id } = useParams();
 
   const [service, setService] = useState(null);
@@ -188,7 +190,7 @@ export default function ServiceDetail() {
       applySeoMetadata(normalizePath(`/services/${canonicalSlug}`), {
         title: `${service.name} | Formant`,
         description: serviceDescription,
-        canonical: `https://careerlyst-three.vercel.app/services/${canonicalSlug}`,
+        canonical: `${SITE_ORIGIN}/services/${canonicalSlug}`,
         indexable: Boolean(service.active && service.show_on_services_page)
       });
     } else if (!loading) {
@@ -337,15 +339,19 @@ export default function ServiceDetail() {
       console.error('Service detail request failed:', classifyRequestFailure(requestError));
       setFailureKind(classifyRequestFailure(requestError));
       setLoading(false);
+      showToast('Service details could not be loaded.', 'error');
     });
 
     return () => {
       mounted = false;
     };
-  }, [id, retryCount]);
+  }, [id, retryCount, showToast]);
 
   function openPackage(pkg) {
-    if (!service?.accept_orders) return;
+    if (!service?.accept_orders) {
+      showToast('This service is not accepting orders right now.', 'warning');
+      return;
+    }
     setOrderError('');
     setOrderNotes('');
     setSelectedPackage(pkg);
@@ -360,7 +366,9 @@ export default function ServiceDetail() {
   function continueToCheckout() {
     if (!selectedPackage || !service) return;
     if (!service.accept_orders) {
-      setOrderError('This service is not accepting orders right now.');
+      const msg = 'This service is not accepting orders right now.';
+      setOrderError(msg);
+      showToast(msg, 'warning');
       return;
     }
     setOrderError('');

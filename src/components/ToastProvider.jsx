@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import './toast.css';
 
 const ToastContext = createContext(null);
@@ -58,20 +58,24 @@ export function ToastProvider({ children }) {
     }
   }, [dismissToast]);
 
-  const showToast = useCallback((message, options = {}) => {
+  const showToast = useCallback((message, typeOrOptions = {}) => {
     const text = String(message || '').trim();
     if (!text) return;
 
-    const type = TOAST_TYPES.has(options.type) ? options.type : 'info';
-    const title = String(options.title || TOAST_TITLES[type]);
-    const action = options.action && typeof options.action.onClick === 'function'
-      ? { label: String(options.action.label || 'Open'), onClick: options.action.onClick }
+    const opts = typeof typeOrOptions === 'string'
+      ? { type: typeOrOptions }
+      : (typeOrOptions || {});
+
+    const type = TOAST_TYPES.has(opts.type) ? opts.type : 'info';
+    const title = String(opts.title || TOAST_TITLES[type]);
+    const action = opts.action && typeof opts.action.onClick === 'function'
+      ? { label: String(opts.action.label || 'Open'), onClick: opts.action.onClick }
       : null;
-    const placement = options.placement === 'bottom-right' ? 'bottom-right' : 'top-right';
-    const duration = Number.isFinite(options.duration)
-      ? Math.max(0, options.duration)
+    const placement = 'bottom-right';
+    const duration = Number.isFinite(opts.duration)
+      ? Math.max(0, opts.duration)
       : (type === 'error' ? 9000 : 5000);
-    const duplicate = toastsRef.current.find((toast) => toast.type === type && toast.message === text && toast.placement === placement);
+    const duplicate = toastsRef.current.find((toast) => toast.type === type && toast.message === text);
 
     if (duplicate) {
       toastsRef.current = toastsRef.current.map((toast) => toast.id === duplicate.id ? { ...toast, title, action } : toast);
@@ -103,16 +107,16 @@ export function ToastProvider({ children }) {
     };
   }, []);
 
-  function renderToastViewport(placement) {
-    const placementToasts = toasts.filter((toast) => toast.placement === placement);
-    if (!placementToasts.length) return null;
+  function renderToastViewport() {
+    if (!toasts.length) return null;
 
     return (
       <div
-        className={`formant-toast-viewport${placement === 'bottom-right' ? ' is-bottom-right' : ''}`}
+        className="formant-toast-viewport is-bottom-right"
+        role="region"
         aria-label="Notifications"
       >
-        {placementToasts.map((toast) => (
+        {toasts.map((toast) => (
           <div
             key={toast.id}
             className={`formant-toast is-${toast.type}`}
@@ -154,11 +158,19 @@ export function ToastProvider({ children }) {
     );
   }
 
+  const toastApi = useMemo(() => {
+    const fn = (message, options) => showToast(message, options);
+    fn.success = (message, options) => showToast(message, { ...options, type: 'success' });
+    fn.error = (message, options) => showToast(message, { ...options, type: 'error' });
+    fn.warning = (message, options) => showToast(message, { ...options, type: 'warning' });
+    fn.info = (message, options) => showToast(message, { ...options, type: 'info' });
+    return fn;
+  }, [showToast]);
+
   return (
-    <ToastContext.Provider value={{ showToast, dismissToast }}>
+    <ToastContext.Provider value={{ showToast: toastApi, dismissToast, toast: toastApi }}>
       {children}
-      {renderToastViewport('top-right')}
-      {renderToastViewport('bottom-right')}
+      {renderToastViewport()}
     </ToastContext.Provider>
   );
 }

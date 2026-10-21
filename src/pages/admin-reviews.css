@@ -443,7 +443,7 @@
   height: 100%;
   overflow-y: auto;
   background: #fff;
-  box-shadow: -12px 0 40px rgba(0, 0, 0, 0.12);
+  box-shadow: -4px 0 16px rgba(17, 18, 15, 0.05), -18px 0 45px rgba(17, 18, 15, 0.12);
 }
 
 .admin-review-drawer-head {

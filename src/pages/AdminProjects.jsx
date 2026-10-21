@@ -739,8 +739,11 @@ export default function AdminProjects() {
         if (updated) appendConversationMessage(updated);
         setConversationText(conversationEditing.draft);
         setConversationEditing(null);
+        showToast.success('Message updated.', { title: 'Message edited' });
       } catch (editError) {
-        setConversationError(editError?.message || 'Could not edit this message.');
+        const msg = editError?.message || 'Could not edit this message.';
+        setConversationError(msg);
+        showToast.error(msg, { title: 'Message edit failed' });
       } finally { setConversationSending(false); }
       return;
     }
@@ -772,9 +775,9 @@ export default function AdminProjects() {
       });
     } catch (sendError) {
       console.error('Admin conversation send error:', sendError);
-      setConversationError(
-        sendError?.message || 'Could not send this message.'
-      );
+      const msg = sendError?.message || 'Could not send this message.';
+      setConversationError(msg);
+      showToast.error(msg, { title: 'Message send failed' });
     } finally {
       setConversationSending(false);
     }
@@ -813,7 +816,12 @@ export default function AdminProjects() {
         const { error: storageError } = await supabase.storage.from('message-attachments').remove([deleted.storage_path]);
         if (storageError) setConversationError('Message deleted, but its attachment could not be removed. Contact support to clean up the stored file.');
       }
-    } catch (deleteError) { setConversationError(deleteError?.message || 'Could not delete this message.'); }
+      showToast.success('Message deleted.', { title: 'Message deleted' });
+    } catch (deleteError) {
+      const msg = deleteError?.message || 'Could not delete this message.';
+      setConversationError(msg);
+      showToast.error(msg, { title: 'Delete failed' });
+    }
   }
 
   async function jumpToConversationMessage(messageId) {
@@ -923,7 +931,9 @@ export default function AdminProjects() {
       showToast(`Order #${data.id} updated.`, { type: 'success' });
     } catch (err) {
       console.error('Order update error:', err);
-      setError(err?.message || 'Could not update the order.');
+      const msg = err?.message || 'Could not update the order.';
+      setError(msg);
+      showToast.error(msg, { title: 'Order update failed' });
     } finally { setSavingId(null); }
   }
 

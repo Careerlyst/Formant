@@ -110,6 +110,10 @@ function PublicHome({ user = null, profileName = '' }) {
               <img
                 src={heroIllustration}
                 alt="Formant career preparation illustration"
+                width="1405"
+                height="1120"
+                fetchPriority="high"
+                decoding="async"
               />
             </div>
 
@@ -299,7 +303,7 @@ function PublicHome({ user = null, profileName = '' }) {
               <span className="career-card-cta">Learn more <span aria-hidden="true">↗</span></span>
             </Link>
 
-            <Link to="/services/cover-letter" className="career-service-card light-card is-text-led">
+            <Link to="/services/cover" className="career-service-card light-card is-text-led">
               <div className="career-card-top"><span aria-hidden="true">05</span></div>
               <div className="career-card-main is-text-led">
                 <div className="career-card-copy">
@@ -310,7 +314,7 @@ function PublicHome({ user = null, profileName = '' }) {
               <span className="career-card-cta">Learn more <span aria-hidden="true">↗</span></span>
             </Link>
 
-            <Link to="/services/interview-preparation" className="career-service-card light-card">
+            <Link to="/services/interview" className="career-service-card light-card">
               <div className="career-card-top"><span aria-hidden="true">06</span></div>
               <div className="career-card-main">
                 <div className="career-card-copy">

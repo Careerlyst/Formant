@@ -9,6 +9,7 @@ import { Navigate } from 'react-router-dom';
 import SkeletonState from '../components/SkeletonState';
 
 import DashboardShell from '../components/DashboardShell';
+import { useToast } from '../components/ToastProvider';
 import { supabase } from '../lib/supabase';
 import { formatFormantBrandText } from '../lib/brand-copy';
 
@@ -227,6 +228,7 @@ export default function AdminNotifications() {
 }
 
 function AdminNotificationsPage() {
+  const { showToast } = useToast();
   const [notifications, setNotifications] = useState([]);
   const [users, setUsers] = useState([]);
 
@@ -310,7 +312,9 @@ function AdminNotificationsPage() {
     } catch (loadError) {
       if (requestId === notificationsLoadRequestRef.current) {
         console.error('Admin notifications load error:', loadError);
-        setLoadError(loadError?.message || 'Notifications could not be loaded.');
+        const msg = loadError?.message || 'Notifications could not be loaded.';
+        setLoadError(msg);
+        showToast(msg, 'error');
       }
     } finally {
       if (requestId === notificationsLoadRequestRef.current) {
@@ -318,7 +322,7 @@ function AdminNotificationsPage() {
         setRefreshing(false);
       }
     }
-  }, []);
+  }, [showToast]);
 
 
   const loadUsers = useCallback(async () => {
@@ -390,12 +394,14 @@ function AdminNotificationsPage() {
 
       setUsers(clientUsers);
     } catch (err) {
-      setUsersError(err.message || 'Failed to load clients directory.');
+      const msg = err.message || 'Failed to load clients directory.';
+      setUsersError(msg);
+      showToast(msg, 'error');
       setUsers([]);
     } finally {
       setUsersLoading(false);
     }
-  }, []);
+  }, [showToast]);
 
 
   useEffect(() => {
@@ -586,6 +592,9 @@ function AdminNotificationsPage() {
 
     if (updateError) {
       setError(updateError.message);
+      showToast.error(updateError.message, { title: 'Update failed' });
+    } else {
+      showToast.success('Notification marked as read.', { title: 'Status updated' });
     }
 
     setBusyId(null);
@@ -607,6 +616,9 @@ function AdminNotificationsPage() {
 
     if (updateError) {
       setError(updateError.message);
+      showToast.error(updateError.message, { title: 'Update failed' });
+    } else {
+      showToast.success('Notification marked as unread.', { title: 'Status updated' });
     }
 
     setBusyId(null);
@@ -614,7 +626,10 @@ function AdminNotificationsPage() {
 
 
   const markAllAsRead = async () => {
-    if (!unreadCount) return;
+    if (!unreadCount) {
+      showToast.info('All notifications are already marked as read.', { title: 'Up to date' });
+      return;
+    }
 
     setBusyId('all');
     setError('');
@@ -630,10 +645,12 @@ function AdminNotificationsPage() {
 
     if (updateError) {
       setError(updateError.message);
+      showToast.error(updateError.message, { title: 'Update failed' });
     } else {
       setSuccessMessage(
         'All notifications marked as read.'
       );
+      showToast.success('All notifications marked as read.', { title: 'Notifications updated' });
     }
 
     setBusyId(null);
@@ -659,10 +676,12 @@ function AdminNotificationsPage() {
 
     if (deleteError) {
       setError(deleteError.message);
+      showToast.error(deleteError.message, { title: 'Delete failed' });
     } else {
       setSuccessMessage(
         'Notification deleted.'
       );
+      showToast.success('Notification deleted.', { title: 'Notification deleted' });
     }
 
     setBusyId(null);
@@ -733,32 +752,42 @@ function AdminNotificationsPage() {
     event.preventDefault();
 
     if (!form.title.trim()) {
-      setError('Please enter a notification title.');
+      const msg = 'Please enter a notification title.';
+      setError(msg);
+      showToast(msg, 'warning');
       return;
     }
 
     if (!sendInApp && !sendPush) {
-      setError('Please select at least one delivery channel (In-App or Browser Push).');
+      const msg = 'Please select at least one delivery channel (In-App or Browser Push).';
+      setError(msg);
+      showToast(msg, 'warning');
       return;
     }
 
     let targetRecipients = [];
     if (form.recipientMode === 'user') {
       if (!form.userId) {
-        setError('Please select a recipient.');
+        const msg = 'Please select a recipient.';
+        setError(msg);
+        showToast(msg, 'warning');
         return;
       }
       targetRecipients = [form.userId];
     } else if (form.recipientMode === 'selected') {
       if (!selectedUserIds.length) {
-        setError('Please select at least one client.');
+        const msg = 'Please select at least one client.';
+        setError(msg);
+        showToast(msg, 'warning');
         return;
       }
       targetRecipients = selectedUserIds;
     } else if (form.recipientMode === 'all') {
       targetRecipients = users.map((item) => item.id);
       if (!targetRecipients.length) {
-        setError('No clients are available in the directory.');
+        const msg = 'No clients are available in the directory.';
+        setError(msg);
+        showToast(msg, 'warning');
         return;
       }
     }
@@ -840,7 +869,9 @@ function AdminNotificationsPage() {
     setSending(false);
 
     if (inAppErrorMsg && !pushResult) {
-      setError(`Failed to create notifications: ${inAppErrorMsg}`);
+      const msg = `Failed to create notifications: ${inAppErrorMsg}`;
+      setError(msg);
+      showToast(msg, 'error');
       return;
     }
 
@@ -877,7 +908,9 @@ function AdminNotificationsPage() {
       summaryText += ` (In-app notice: ${inAppErrorMsg})`;
     }
 
-    setSuccessMessage(summaryText.trim() || 'Notification dispatched.');
+    const finalMsg = summaryText.trim() || 'Notification dispatched.';
+    setSuccessMessage(finalMsg);
+    showToast(finalMsg, 'success');
     resetForm();
     setComposeOpen(false);
   };

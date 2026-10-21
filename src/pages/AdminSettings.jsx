@@ -263,7 +263,9 @@ export default function AdminSettings() {
         .limit(50);
       if (!logsError) setAuditLogs(logs || []);
     } catch (err) {
-      setError(err?.message || 'Unable to load admin settings.');
+      const msg = err?.message || 'Unable to load admin settings.';
+      setError(msg);
+      showToast(msg, 'error');
     } finally {
       setLoading(false);
     }
@@ -286,7 +288,9 @@ export default function AdminSettings() {
 
   async function saveSettings() {
     if (!canEdit) {
-      setError('Only admin staff can change platform settings.');
+      const msg = 'Only admin staff can change platform settings.';
+      setError(msg);
+      showToast(msg, 'warning');
       return;
     }
     setSaving(true);
@@ -311,7 +315,7 @@ export default function AdminSettings() {
       });
 
       setUpdatedAt(data?.updated_at || new Date().toISOString());
-      showToast(`${currentSection[1]} settings saved successfully.`, { type: 'success' });
+      showToast(`${currentSection[1]} settings saved successfully.`, 'success');
       const { data: logs } = await supabase
         .from('admin_audit_logs')
         .select('id, actor_id, action, resource, created_at, details')
@@ -319,7 +323,9 @@ export default function AdminSettings() {
         .limit(50);
       setAuditLogs(logs || []);
     } catch (err) {
-      setError(err?.message || 'Unable to save settings.');
+      const msg = err?.message || 'Unable to save settings.';
+      setError(msg);
+      showToast(msg, 'error');
     } finally {
       setSaving(false);
     }
@@ -341,9 +347,13 @@ export default function AdminSettings() {
       if (action === 'disableOrders') update('orders', 'acceptNewOrders', false);
       if (action === 'maintenance') update('general', 'maintenanceMode', true);
       await writeAudit(`danger.${action}`, 'platform', { action });
-      setNotice('The change is ready. Click Save Changes to persist it.');
+      const msg = 'The change is ready. Click Save Changes to persist it.';
+      setNotice(msg);
+      showToast('Action queued. Click Save Changes to persist.', 'info');
     } catch (err) {
-      setError(err?.message || 'Unable to record the action.');
+      const msg = err?.message || 'Unable to record the action.';
+      setError(msg);
+      showToast(msg, 'error');
     } finally {
       setDangerBusy(false);
     }
@@ -486,7 +496,14 @@ export default function AdminSettings() {
                 </div>
                 <SettingRow title="Transactional email" description="Enable the platform's transactional email workflows."><Toggle checked={settings.email.enabled} onChange={(v) => update('email', 'enabled', v)} disabled={!canEdit} /></SettingRow>
                 {[['orderConfirmation', 'Order confirmation'], ['paymentConfirmation', 'Payment confirmation'], ['paymentFailed', 'Payment failed'], ['projectUpdates', 'Project updates'], ['messageNotifications', 'Message notifications'], ['reviewRequests', 'Review requests']].map(([key, label]) => <SettingRow key={key} title={label} description={`Send ${label.toLowerCase()} emails.`}><Toggle checked={settings.email[key]} onChange={(v) => update('email', key, v)} disabled={!canEdit} /></SettingRow>)}
-                <button type="button" className="admin-settings-secondary" disabled={!canEdit}>Send Test Email</button>
+                <button
+                  type="button"
+                  className="admin-settings-secondary"
+                  disabled={!canEdit}
+                  onClick={() => showToast('Test email functionality requires configuring the SMTP provider.', 'info')}
+                >
+                  Send Test Email
+                </button>
               </section>
             )}
 

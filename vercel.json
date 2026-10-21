@@ -44,23 +44,16 @@
     {
       "source": "/admin",
       "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow, noarchive" }]
-    },
-    {
-      "source": "/privacy",
-      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow, noarchive" }]
-    },
-    {
-      "source": "/privacy-policy",
-      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow, noarchive" }]
-    },
-    {
-      "source": "/terms",
-      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow, noarchive" }]
-    },
-    {
-      "source": "/refund",
-      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow, noarchive" }]
     }
+  ],
+  "redirects": [
+    { "source": "/services/cover-letter", "destination": "/services/cover", "permanent": true },
+    { "source": "/services/interview-preparation", "destination": "/services/interview", "permanent": true },
+    { "source": "/services/resume-cv", "destination": "/services/resume", "permanent": true },
+    { "source": "/services/cv", "destination": "/services/resume", "permanent": true },
+    { "source": "/services/linkedin-profile", "destination": "/services/linkedin", "permanent": true },
+    { "source": "/services/github-profile", "destination": "/services/github", "permanent": true },
+    { "source": "/privacy-policy", "destination": "/privacy", "permanent": true }
   ],
   "rewrites": [
     { "source": "/services", "destination": "/seo/services.html" },
@@ -74,6 +67,9 @@
     { "source": "/services/portfolio", "destination": "/seo/services-portfolio.html" },
     { "source": "/services/cover", "destination": "/seo/services-cover.html" },
     { "source": "/services/interview", "destination": "/seo/services-interview.html" },
+    { "source": "/privacy", "destination": "/seo/privacy.html" },
+    { "source": "/terms", "destination": "/seo/terms.html" },
+    { "source": "/refund", "destination": "/seo/refund.html" },
     {
       "source": "/(.*)",
       "destination": "/index.html"

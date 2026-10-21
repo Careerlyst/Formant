@@ -5,6 +5,7 @@ import Footer from '../components/Footer';
 import SkeletonState from '../components/SkeletonState';
 import { services as fallbackServices } from '../lib/store';
 import { supabase } from '../lib/supabase';
+import { useToast } from '../components/ToastProvider';
 
 
 /* =========================================================
@@ -628,7 +629,11 @@ export function About() {
               <img
                 className="about-hero-art-image"
                 src="/assets/Friendly%20Team%20Workspace%20Illustration.png"
-                alt=""
+                alt="Formant team collaborating in a workspace"
+                width="1254"
+                height="1254"
+                loading="lazy"
+                decoding="async"
               />
             </div>
 
@@ -692,6 +697,8 @@ export function About() {
               className="about-purpose-illustration"
               src="/assets/Confident%20Professional%20Portfolio%20Illustration.png"
               alt="A professional holding a portfolio, surrounded by examples of career documents and creative work."
+              width="1254"
+              height="1254"
               loading="lazy"
               decoding="async"
             />
@@ -856,8 +863,14 @@ const SERVICE_OPTIONS = [
 ];
 
 export function Contact() {
+  const { showToast } = useToast();
   const [selectedServices, setSelectedServices] = useState([]);
   const [serviceOpen, setServiceOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [message, setMessage] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const serviceRef = useRef(null);
 
   useEffect(() => {
@@ -883,6 +896,53 @@ export function Contact() {
         ? current.filter((item) => item !== service)
         : [...current, service]
     );
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (submitting) return;
+
+    const trimmedName = name.trim();
+    const trimmedEmail = email.trim();
+    const trimmedMessage = message.trim();
+
+    if (!trimmedName) {
+      showToast.warning('Please enter your full name.', { title: 'Name required' });
+      document.getElementById('contact-name')?.focus();
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!trimmedEmail || !emailRegex.test(trimmedEmail)) {
+      showToast.warning('Please enter a valid email address.', { title: 'Valid email required' });
+      document.getElementById('contact-email')?.focus();
+      return;
+    }
+
+    if (!trimmedMessage) {
+      showToast.warning('Please tell us a little about your project or career goals.', { title: 'Message required' });
+      document.getElementById('contact-message')?.focus();
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      setSubmitted(true);
+      setName('');
+      setEmail('');
+      setMessage('');
+      setSelectedServices([]);
+      showToast.success('Thank you for reaching out! We’ve received your enquiry and will respond within 1–2 business days.', {
+        title: 'Enquiry received',
+        duration: 7000
+      });
+    } catch (err) {
+      showToast.error('We could not send your enquiry right now. Please try again in a few moments.', {
+        title: 'Enquiry failed'
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const serviceLabel =
@@ -956,9 +1016,9 @@ export function Contact() {
               <div className="contact-detail-block">
                 <span>GENERAL ENQUIRIES</span>
 
-                <a href="mailto:hello@careerlyst.com">
-                  hello@careerlyst.com
-                </a>
+                <p>
+                  Submit your details through our online enquiry form, and our team will review your project goals.
+                </p>
               </div>
 
               <div className="contact-detail-block">
@@ -989,190 +1049,215 @@ export function Contact() {
                 <p>YOUR PROJECT</p>
               </div>
 
-              <form>
-
-                {/* NAME */}
-                <div className="contact-field">
-                  <label htmlFor="contact-name">
-                    Your name
-                  </label>
-
-                  <input
-                    id="contact-name"
-                    type="text"
-                    name="name"
-                    placeholder="Your full name"
-                    required
-                  />
+              {submitted ? (
+                <div style={{ padding: '32px 24px', textAlign: 'center' }}>
+                  <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#f5fbe9', border: '1px solid #84cc16', color: '#486400', display: 'grid', placeItems: 'center', margin: '0 auto 16px', fontSize: 20 }}>✓</div>
+                  <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700 }}>Enquiry received</h3>
+                  <p style={{ margin: '0 0 20px', color: 'var(--muted, #6d7069)', fontSize: 14, lineHeight: 1.5 }}>
+                    Thank you for reaching out. We have received your project details and will follow up within 1–2 business days.
+                  </p>
+                  <button
+                    type="button"
+                    className="contact-submit"
+                    onClick={() => setSubmitted(false)}
+                    style={{ margin: '0 auto' }}
+                  >
+                    <span>Send another message</span>
+                  </button>
                 </div>
+              ) : (
+                <form onSubmit={handleSubmit} noValidate>
 
+                  {/* NAME */}
+                  <div className="contact-field">
+                    <label htmlFor="contact-name">
+                      Your name
+                    </label>
 
-                {/* EMAIL */}
-                <div className="contact-field">
-                  <label htmlFor="contact-email">
-                    Email address
-                  </label>
-
-                  <input
-                    id="contact-email"
-                    type="email"
-                    name="email"
-                    placeholder="you@example.com"
-                    required
-                  />
-                </div>
-
-
-                {/* CUSTOM MULTI SELECT */}
-                <div
-                  className="contact-field"
-                  ref={serviceRef}
-                >
-                  <label>
-                    What can we help with?
-                  </label>
-
-                  <div className="service-select">
-
-                    <button
-                      type="button"
-                      className={`service-select-trigger ${
-                        serviceOpen ? 'is-open' : ''
-                      } ${
-                        selectedServices.length
-                          ? 'has-value'
-                          : ''
-                      }`}
-                      onClick={() =>
-                        setServiceOpen((open) => !open)
-                      }
-                      aria-expanded={serviceOpen}
-                    >
-                      <span>
-                        {serviceLabel}
-                      </span>
-
-                      <span
-                        className={`service-select-chevron ${
-                          serviceOpen ? 'rotate' : ''
-                        }`}
-                      >
-                        ↓
-                      </span>
-                    </button>
-
-
-                    {serviceOpen && (
-                      <div className="service-select-menu">
-
-                        <div className="service-select-heading">
-                          <span>
-                            SELECT SERVICES
-                          </span>
-
-                          {selectedServices.length > 0 && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setSelectedServices([])
-                              }
-                            >
-                              Clear
-                            </button>
-                          )}
-                        </div>
-
-
-                        <div className="service-options">
-
-                          {SERVICE_OPTIONS.map(
-                            (service, index) => {
-
-                              const selected =
-                                selectedServices.includes(
-                                  service
-                                );
-
-                              return (
-                                <button
-                                  type="button"
-                                  key={service}
-                                  className={`service-option ${
-                                    selected
-                                      ? 'selected'
-                                      : ''
-                                  }`}
-                                  onClick={() =>
-                                    toggleService(service)
-                                  }
-                                >
-
-                                  <span className="service-option-number">
-                                    {String(index + 1).padStart(
-                                      2,
-                                      '0'
-                                    )}
-                                  </span>
-
-                                  <span className="service-option-name">
-                                    {service}
-                                  </span>
-
-                                  <span className="service-option-check">
-                                    {selected ? '✓' : ''}
-                                  </span>
-
-                                </button>
-                              );
-                            }
-                          )}
-
-                        </div>
-
-                      </div>
-                    )}
-
+                    <input
+                      id="contact-name"
+                      type="text"
+                      name="name"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="Your full name"
+                      required
+                    />
                   </div>
 
 
-                  {/* Hidden field for form submission */}
-                  <input
-                    type="hidden"
-                    name="services"
-                    value={selectedServices.join(', ')}
-                  />
+                  {/* EMAIL */}
+                  <div className="contact-field">
+                    <label htmlFor="contact-email">
+                      Email address
+                    </label>
 
-                  <p className="contact-field-hint">
-                    Select one or more services.
-                  </p>
-                </div>
-
-
-                {/* MESSAGE */}
-                <div className="contact-field">
-                  <label htmlFor="contact-message">
-                    Tell us about your project
-                  </label>
-
-                  <textarea
-                    id="contact-message"
-                    name="message"
-                    rows="6"
-                    placeholder="What are you working towards?"
-                  />
-                </div>
+                    <input
+                      id="contact-email"
+                      type="email"
+                      name="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      required
+                    />
+                  </div>
 
 
-                {/* SUBMIT */}
-                <button
-                  type="submit"
-                  className="contact-submit"
-                >
-                  <span>Send enquiry</span>
-                  <span>→</span>
-                </button>
+                  {/* CUSTOM MULTI SELECT */}
+                  <div
+                    className="contact-field"
+                    ref={serviceRef}
+                  >
+                    <label>
+                      What can we help with?
+                    </label>
 
-              </form>
+                    <div className="service-select">
+
+                      <button
+                        type="button"
+                        className={`service-select-trigger ${
+                          serviceOpen ? 'is-open' : ''
+                        } ${
+                          selectedServices.length
+                            ? 'has-value'
+                            : ''
+                        }`}
+                        onClick={() =>
+                          setServiceOpen((open) => !open)
+                        }
+                        aria-expanded={serviceOpen}
+                      >
+                        <span>
+                          {serviceLabel}
+                        </span>
+
+                        <span
+                          className={`service-select-chevron ${
+                            serviceOpen ? 'rotate' : ''
+                          }`}
+                        >
+                          ↓
+                        </span>
+                      </button>
+
+
+                      {serviceOpen && (
+                        <div className="service-select-menu">
+
+                          <div className="service-select-heading">
+                            <span>
+                              SELECT SERVICES
+                            </span>
+
+                            {selectedServices.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setSelectedServices([])
+                                }
+                              >
+                                Clear
+                              </button>
+                            )}
+                          </div>
+
+
+                          <div className="service-options">
+
+                            {SERVICE_OPTIONS.map(
+                              (service, index) => {
+
+                                const selected =
+                                  selectedServices.includes(
+                                    service
+                                  );
+
+                                return (
+                                  <button
+                                    type="button"
+                                    key={service}
+                                    className={`service-option ${
+                                      selected
+                                        ? 'selected'
+                                        : ''
+                                    }`}
+                                    onClick={() =>
+                                      toggleService(service)
+                                    }
+                                  >
+
+                                    <span className="service-option-number">
+                                      {String(index + 1).padStart(
+                                        2,
+                                        '0'
+                                      )}
+                                    </span>
+
+                                    <span className="service-option-name">
+                                      {service}
+                                    </span>
+
+                                    <span className="service-option-check">
+                                      {selected ? '✓' : ''}
+                                    </span>
+
+                                  </button>
+                                );
+                              }
+                            )}
+
+                          </div>
+
+                        </div>
+                      )}
+
+                    </div>
+
+
+                    {/* Hidden field for form submission */}
+                    <input
+                      type="hidden"
+                      name="services"
+                      value={selectedServices.join(', ')}
+                    />
+
+                    <p className="contact-field-hint">
+                      Select one or more services.
+                    </p>
+                  </div>
+
+
+                  {/* MESSAGE */}
+                  <div className="contact-field">
+                    <label htmlFor="contact-message">
+                      Tell us about your project
+                    </label>
+
+                    <textarea
+                      id="contact-message"
+                      name="message"
+                      rows="6"
+                      value={message}
+                      onChange={(e) => setMessage(e.target.value)}
+                      placeholder="What are you working towards?"
+                    />
+                  </div>
+
+
+                  {/* SUBMIT */}
+                  <button
+                    type="submit"
+                    className="contact-submit"
+                    disabled={submitting}
+                  >
+                    <span>{submitting ? 'Sending…' : 'Send enquiry'}</span>
+                    <span>→</span>
+                  </button>
+
+                </form>
+              )}
 
             </div>
 
@@ -1217,72 +1302,109 @@ export function Contact() {
    ========================================================= */
 
 export function Legal({ type }) {
+  const isTerms = type === 'terms';
+  const isRefund = type === 'refund';
 
-  const title =
-    type === 'privacy'
-      ? 'Privacy Policy'
-      : type === 'terms'
-        ? 'Terms of Service'
-        : 'Refund Policy';
-
+  const title = isTerms ? 'Terms of Service' : isRefund ? 'Refund Policy' : 'Privacy Policy';
+  const eyebrow = isTerms ? 'LEGAL TERMS' : isRefund ? 'SATISFACTION & CANCELLATION' : 'PRIVACY';
+  const lede = isTerms
+    ? 'These Terms of Service govern your access to Formant, our career documentation services, and client engagements.'
+    : isRefund
+      ? 'We are committed to delivering rigorous, tailored career materials. Learn how cancellations and revision requests are handled.'
+      : 'Review how we protect your personal data.';
 
   return (
     <>
       <PublicNav />
 
-      <main>
-
+      <main className="legal-page">
         <section className="page-hero">
-
-          <p className="eyebrow">
-            FORMANT
-          </p>
-
-          <h1>
-            {title}
-          </h1>
-
-          <p>
-            Starter policy page. Replace this with your final
-            jurisdiction-specific legal text before launch.
-          </p>
-
+          <p className="eyebrow">{eyebrow}</p>
+          <h1>{title}</h1>
+          <p className="page-hero-lede">{lede}</p>
         </section>
 
+        <section className="section legal" style={{ maxWidth: 840, margin: '0 auto', padding: '40px 24px 80px', lineHeight: 1.7 }}>
+          {isTerms && (
+            <>
+              <h2>1. Agreement to Terms</h2>
+              <p>
+                By creating an account, engaging our services, or accessing the Formant platform, you agree to be bound by these Terms of Service. If you disagree with any part of these terms, you should not access the platform or purchase services.
+              </p>
 
-        <section className="section legal">
+              <h2>2. Description of Services</h2>
+              <p>
+                Formant provides tailored career advancement support, including executive resume and CV writing, LinkedIn profile optimization, GitHub repository and README curation, portfolio architecture, cover letter preparation, and mock interview coaching. Specific deliverables, milestones, and inclusions are defined on the respective service pages and confirmed during order intake.
+              </p>
 
-          <h2>
-            Overview
-          </h2>
+              <h2>3. Client Responsibilities &amp; Information Accuracy</h2>
+              <p>
+                To provide accurate and compelling career documents, Formant relies on the truthfulness and accuracy of the career history, qualifications, and project details you provide. You warrant that all information submitted during intake, assessments, and message exchanges represents your genuine professional background.
+              </p>
 
-          <p>
-            This page is a product placeholder and should be reviewed
-            by a qualified professional before public launch.
-          </p>
+              <h2>4. Collaborative Revision Process</h2>
+              <p>
+                Our editorial process is collaborative. Following the delivery of an initial draft through your Formant account, you are entitled to request revisions based on the agreed project scope. Prompt feedback via account messaging ensures timely final delivery.
+              </p>
 
+              <h2>5. Intellectual Property &amp; Deliverables Ownership</h2>
+              <p>
+                Upon receipt of full payment, all completed career documents, copy, and tailored materials delivered to you become your sole personal property. Formant retains ownership of its underlying templates, editorial frameworks, and proprietary assessment tools.
+              </p>
 
-          <h2>
-            Information and communication
-          </h2>
+              <h2>6. Professional Outcomes Disclaimer</h2>
+              <p>
+                Formant provides editorial, strategic, and presentation support designed to maximize the clarity and impact of your professional trajectory. However, hiring decisions depend on independent employer criteria, market conditions, and personal interview performance. Formant does not guarantee specific interview offers, employment placement, or salary outcomes.
+              </p>
 
-          <p>
-            Formant may collect account, project, payment and
-            communication information necessary to provide purchased
-            services.
-          </p>
+              <h2>7. Contact Information</h2>
+              <p>
+                For questions regarding these Terms of Service or your engagement with Formant, please reach out through our website contact form or contact your assigned team via account messaging.
+              </p>
 
+              <div className="privacy-callout" style={{ marginTop: '2rem', padding: '1rem', borderLeft: '3px solid var(--accent, #6366f1)', background: 'var(--surface-subtle, rgba(255,255,255,0.03))' }}>
+                <p>
+                  <strong>Working Draft Advisory:</strong> These Terms of Service represent an operational framework. Specific commercial parameters, statutory clauses, and registered business entity details will be formalized with legal counsel prior to public launch.
+                </p>
+              </div>
+            </>
+          )}
 
-          <h2>
-            Contact
-          </h2>
+          {isRefund && (
+            <>
+              <h2>1. Quality Commitment</h2>
+              <p>
+                At Formant, we take pride in high-craft, tailored career documents. We limit active client projects to ensure focused attention and thorough editorial review for every engagement.
+              </p>
 
-          <p>
-            For questions about this policy, contact your Formant team.
-          </p>
+              <h2>2. Project Cancellation Before Work Begins</h2>
+              <p>
+                If you purchase a service and decide to cancel before our editorial team begins reviewing your intake materials or drafting, you may request a project cancellation by contacting your assigned team.
+              </p>
 
+              <h2>3. Work in Progress &amp; Revision Commitment</h2>
+              <p>
+                Because our services involve bespoke creative and consultative labor tailored specifically to your background, completed drafting work is generally non-refundable once intake review has commenced. However, if a draft requires refinement, structured revision rounds are provided through your account messages to ensure deliverables align with your career goals.
+              </p>
+
+              <h2>4. Cancellation of Mock Interview Sessions</h2>
+              <p>
+                Scheduled interview coaching sessions may be rescheduled in advance through account messaging to ensure coach availability. Session scheduling and rescheduling arrangements should be coordinated promptly with your assigned coach.
+              </p>
+
+              <h2>5. Contacting Support</h2>
+              <p>
+                To discuss a project concern, revision request, or refund inquiry, please reach out directly to your project manager via your Formant account messages or submit an enquiry through our website contact form.
+              </p>
+
+              <div className="privacy-callout" style={{ marginTop: '2rem', padding: '1rem', borderLeft: '3px solid var(--accent, #6366f1)', background: 'var(--surface-subtle, rgba(255,255,255,0.03))' }}>
+                <p>
+                  <strong>Working Draft Advisory:</strong> This Refund Policy outlines general service handling. Final transaction processing terms and dispute procedures will be formalized with our payment processor upon commercial launch.
+                </p>
+              </div>
+            </>
+          )}
         </section>
-
       </main>
 
       <Footer />

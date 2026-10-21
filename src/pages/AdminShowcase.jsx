@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom';
 import DashboardShell from '../components/DashboardShell';
 import SkeletonState from '../components/SkeletonState';
+import { useToast } from '../components/ToastProvider';
 import { supabase } from '../lib/supabase';
 import { SHOWCASE_TABS, SHOWCASE_MEDIA_PRESENTATIONS, SHOWCASE_DOCUMENT_PRESENTATIONS, categoryLabel, projectTypeLabel, safeShowcaseUrl, slugify } from '../lib/showcase';
 import { ProjectGallery, ShowcaseDocument, ShowcaseImage } from './Showcase';
@@ -305,6 +306,7 @@ function AdminPreview({ project, images, onClose }) {
 }
 
 export default function AdminShowcase() {
+  const { showToast } = useToast();
   const [access, setAccess] = useState('checking');
   const [role, setRole] = useState('');
   const [userId, setUserId] = useState('');
@@ -390,7 +392,9 @@ export default function AdminShowcase() {
       hasLoadedProjectsRef.current = true;
     } catch (loadError) {
       if (!(silent && hasLoadedProjectsRef.current && staffVerified)) setAccess('error');
-      setError(messageFor(loadError, 'Showcase access could not be checked.', failedRequest));
+      const msg = messageFor(loadError, 'Showcase access could not be checked.', failedRequest);
+      setError(msg);
+      if (!silent) showToast(msg, 'error');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -492,20 +496,28 @@ export default function AdminShowcase() {
     setPreviewImageError('');
     if (!file) return;
     if (file.type !== 'image/png') {
-      setPreviewImageError('Choose a PNG preview image.');
+      const msg = 'Choose a PNG preview image.';
+      setPreviewImageError(msg);
+      showToast(msg, 'warning');
       return;
     }
     if (file.size < 1 || file.size > MAX_IMAGE_BYTES) {
-      setPreviewImageError('Preview images must be no larger than 8 MB.');
+      const msg = 'Preview images must be no larger than 8 MB.';
+      setPreviewImageError(msg);
+      showToast(msg, 'warning');
       return;
     }
     try {
       if (!(await hasSupportedFileSignature(file))) {
-        setPreviewImageError('The file contents do not match the selected PNG type.');
+        const msg = 'The file contents do not match the selected PNG type.';
+        setPreviewImageError(msg);
+        showToast(msg, 'warning');
         return;
       }
     } catch {
-      setPreviewImageError('The selected image could not be inspected. Choose it again and retry.');
+      const msg = 'The selected image could not be inspected. Choose it again and retry.';
+      setPreviewImageError(msg);
+      showToast(msg, 'error');
       return;
     }
     if (currentEditorProjectId.current !== targetProjectId) return;
@@ -515,15 +527,21 @@ export default function AdminShowcase() {
   async function uploadManualPreviewImage(event) {
     event.preventDefault();
     if (!project?.id) {
-      setPreviewImageError('Save the project as a draft before adding a preview image.');
+      const msg = 'Save the project as a draft before adding a preview image.';
+      setPreviewImageError(msg);
+      showToast(msg, 'warning');
       return;
     }
     if (!previewImageFile) {
-      setPreviewImageError('Choose a PNG image first.');
+      const msg = 'Choose a PNG image first.';
+      setPreviewImageError(msg);
+      showToast(msg, 'warning');
       return;
     }
     if (!previewImageAlt.trim()) {
-      setPreviewImageError('Add descriptive alt text before uploading this preview.');
+      const msg = 'Add descriptive alt text before uploading this preview.';
+      setPreviewImageError(msg);
+      showToast(msg, 'warning');
       return;
     }
     setPreviewImageUploading(true);
@@ -626,6 +644,7 @@ export default function AdminShowcase() {
       setPreviewImageCaption('');
       setPreviewImageTargetId('');
       setNotice('PNG uploaded unchanged to private storage and left unapproved. Review it before marking it for public preview.');
+      showToast('PNG preview uploaded to private storage.', 'success');
       // A completed upload is terminal for the button state. Refreshes are
       // secondary and bounded so a slow list query cannot leave it disabled.
       setPreviewImageUploading(false);
@@ -646,7 +665,9 @@ export default function AdminShowcase() {
         setNotice('Preview image upload succeeded and remains private/unapproved. The project list did not refresh; refresh the project before attempting another upload.');
       }
     } catch (uploadError) {
-      setPreviewImageError(messageFor(uploadError, 'PNG preview upload failed.'));
+      const msg = messageFor(uploadError, 'PNG preview upload failed.');
+      setPreviewImageError(msg);
+      showToast(msg, 'error');
     } finally {
       setPreviewImageSaving(false);
       setPreviewImageUploading(false);
@@ -662,15 +683,27 @@ export default function AdminShowcase() {
     try {
       const title = String(project.title || '').trim();
       const slug = String(project.slug || slugify(title)).trim().toLowerCase();
-      if (!title || !slug) throw new Error('Add a title and a URL-friendly slug before saving.');
+      if (!title || !slug) {
+        const msg = 'Add a title and a URL-friendly slug before saving.';
+        showToast(msg, 'warning');
+        throw new Error(msg);
+      }
       const isPortfolio = project.service_category === 'portfolio_website_demo';
       const isProfile = ['linkedin_before_after', 'github_before_after'].includes(project.service_category);
       const isGithub = project.service_category === 'github_before_after';
       for (const [label, value] of [['Website URL', isPortfolio ? project.portfolio_url : ''], ['Before website URL', isPortfolio ? project.portfolio_before_url : ''], ['Profile URL', isProfile ? project.public_profile_url : '']]) {
-        if (String(value || '').trim() && !safeShowcaseUrl(value)) throw new Error(`${label} must start with http:// or https://.`);
+        if (String(value || '').trim() && !safeShowcaseUrl(value)) {
+          const msg = `${label} must start with http:// or https://.`;
+          showToast(msg, 'warning');
+          throw new Error(msg);
+        }
       }
       const repositoryUrls = isGithub ? (Array.isArray(project.public_repository_urls) ? project.public_repository_urls : String(project.public_repository_urls || '').split('\n')).map((value) => String(value || '').trim()).filter(Boolean) : [];
-      if (repositoryUrls.some((value) => !safeShowcaseUrl(value))) throw new Error('Every repository URL must start with http:// or https://.');
+      if (repositoryUrls.some((value) => !safeShowcaseUrl(value))) {
+        const msg = 'Every repository URL must start with http:// or https://.';
+        showToast(msg, 'warning');
+        throw new Error(msg);
+      }
       const payload = {
         title,
         slug,
@@ -714,10 +747,14 @@ export default function AdminShowcase() {
       projectBaseline.current = nextProject;
       setProject(nextProject);
       await loadProjects(true);
-      setNotice(forceDraft ? 'Draft saved. It is not available to public visitors.' : (wasPublished && !result.data.is_published) || approvalWasCleared ? 'Public content changed. Publication approval was cleared; review and confirm it again before publishing.' : 'Project changes saved.');
+      const savedNotice = forceDraft ? 'Draft saved. It is not available to public visitors.' : (wasPublished && !result.data.is_published) || approvalWasCleared ? 'Public content changed. Publication approval was cleared; review and confirm it again before publishing.' : 'Project changes saved.';
+      setNotice(savedNotice);
+      showToast(forceDraft ? 'Draft saved.' : 'Project changes saved.', 'success');
       return nextProject;
     } catch (saveError) {
-      setError(messageFor(saveError, 'Project could not be saved.'));
+      const msg = messageFor(saveError, 'Project could not be saved.');
+      setError(msg);
+      showToast(msg, 'error');
       return null;
     } finally {
       setSaving(false);
@@ -731,11 +768,15 @@ export default function AdminShowcase() {
       ? 'Publish this Showcase project? Approved public previews will become visible to visitors.'
       : 'Unpublish this Showcase project? Public preview delivery will stop.')) return;
     if (nextPublished && !project.public_content_review_confirmed) {
-      setError('Confirm the public-content privacy review before publishing.');
+      const msg = 'Confirm the public-content privacy review before publishing.';
+      setError(msg);
+      showToast(msg, 'warning');
       return;
     }
     if (nextPublished && project.project_type === 'client_work' && !project.client_consent_confirmed) {
-      setError('Confirm that permission to publish this client work has been obtained before publishing.');
+      const msg = 'Confirm that permission to publish this client work has been obtained before publishing.';
+      setError(msg);
+      showToast(msg, 'warning');
       return;
     }
 
@@ -747,11 +788,15 @@ export default function AdminShowcase() {
       const savedProject = await persistProject();
       if (!savedProject) return;
       if (!savedProject.public_content_review_confirmed) {
-        setError('The privacy review was not saved. Review the current public content and confirm it again before publishing.');
+        const msg = 'The privacy review was not saved. Review the current public content and confirm it again before publishing.';
+        setError(msg);
+        showToast(msg, 'warning');
         return;
       }
       if (savedProject.project_type === 'client_work' && !savedProject.client_consent_confirmed) {
-        setError('Client publication permission was not saved. Confirm the permission again before publishing.');
+        const msg = 'Client publication permission was not saved. Confirm the permission again before publishing.';
+        setError(msg);
+        showToast(msg, 'warning');
         return;
       }
     }
@@ -767,10 +812,14 @@ export default function AdminShowcase() {
       if (publishError) throw publishError;
       setProject((current) => ({ ...current, is_published: nextPublished, published_at: nextPublished ? (current.published_at || new Date().toISOString()) : null }));
       projectBaseline.current = { ...project, is_published: nextPublished, published_at: nextPublished ? (project.published_at || new Date().toISOString()) : null };
-      setNotice(nextPublished ? 'Project published.' : 'Project unpublished. Public image delivery is now blocked.');
+      const pubNotice = nextPublished ? 'Project published.' : 'Project unpublished. Public image delivery is now blocked.';
+      setNotice(pubNotice);
+      showToast(nextPublished ? 'Project published.' : 'Project unpublished.', 'success');
       await loadProjects(true);
     } catch (publishError) {
-      setError(messageFor(publishError, 'Publication status could not be changed.'));
+      const msg = messageFor(publishError, 'Publication status could not be changed.');
+      setError(msg);
+      showToast(msg, 'error');
     } finally {
       setSaving(false);
     }
@@ -782,32 +831,44 @@ export default function AdminShowcase() {
     const uploadForm = event.currentTarget;
     const file = uploadForm.elements.namedItem('showcase-file')?.files?.[0];
     if (!project?.id) {
-      setError('Save the project as a draft before adding images.');
+      const msg = 'Save the project as a draft before adding images.';
+      setError(msg);
+      showToast(msg, 'warning');
       return;
     }
     if (!file) return;
     if (uploadPresentation === 'thumbnail') {
-      setError('Use the dedicated finished PNG preview uploader for project covers.');
+      const msg = 'Use the dedicated finished PNG preview uploader for project covers.';
+      setError(msg);
+      showToast(msg, 'warning');
       return;
     }
     const isDocument = SHOWCASE_DOCUMENT_PRESENTATIONS.includes(uploadPresentation);
     const validType = isDocument ? file.type === 'application/pdf' : IMAGE_TYPES.includes(file.type);
     const maxBytes = isDocument ? MAX_PDF_BYTES : MAX_IMAGE_BYTES;
     if (!validType || file.size > maxBytes) {
-      setError(isDocument ? 'Choose a PDF document up to 15 MB.' : 'Choose a JPEG, PNG or WebP image up to 8 MB.');
+      const msg = isDocument ? 'Choose a PDF document up to 15 MB.' : 'Choose a JPEG, PNG or WebP image up to 8 MB.';
+      setError(msg);
+      showToast(msg, 'warning');
       return;
     }
     try {
       if (!(await hasSupportedFileSignature(file))) {
-        setError('The file contents do not match the selected PDF or image type. Choose a valid PDF, JPEG, PNG or WebP file.');
+        const msg = 'The file contents do not match the selected PDF or image type. Choose a valid PDF, JPEG, PNG or WebP file.';
+        setError(msg);
+        showToast(msg, 'warning');
         return;
       }
     } catch {
-      setError('The selected file could not be inspected. Choose it again and retry.');
+      const msg = 'The selected file could not be inspected. Choose it again and retry.';
+      setError(msg);
+      showToast(msg, 'error');
       return;
     }
     if (!String(uploadAlt || '').trim()) {
-      setError('Add descriptive alt text before uploading this image.');
+      const msg = 'Add descriptive alt text before uploading this image.';
+      setError(msg);
+      showToast(msg, 'warning');
       return;
     }
     const extension = file.type === 'application/pdf' ? 'pdf' : file.type === 'image/jpeg' ? 'jpg' : file.type.split('/')[1];
@@ -847,6 +908,7 @@ export default function AdminShowcase() {
       setNotice(isDocument
         ? (needsFreshReview ? 'PDF uploaded privately. Publication approval was cleared; review the updated public content before publishing again.' : 'PDF uploaded to private Showcase storage.')
         : (needsFreshReview ? 'Image resized and logo-watermarked by the private renderer, then stored privately and left unapproved. Publication review was cleared.' : 'Image resized and logo-watermarked by the private renderer, then stored privately and left unapproved. Review it before marking it as a public preview.'));
+      showToast(isDocument ? 'PDF document uploaded.' : 'Image uploaded successfully.', 'success');
       setUploading(false);
       const uploadedProjectId = project.id;
       try {
@@ -862,7 +924,9 @@ export default function AdminShowcase() {
         setNotice('Upload succeeded. The project list did not refresh; refresh the project before attempting another upload.');
       }
     } catch (uploadError) {
-      setError(messageFor(uploadError, 'Image upload failed.'));
+      const msg = messageFor(uploadError, 'Image upload failed.');
+      setError(msg);
+      showToast(msg, 'error');
     } finally {
       setUploading(false);
     }
@@ -896,6 +960,7 @@ export default function AdminShowcase() {
         message: `${data.previewCount} private preview${data.previewCount === 1 ? '' : 's'} generated. Each remains unapproved until staff review.`,
         overview: data.overview,
       });
+      showToast(`${data.previewCount} private preview${data.previewCount === 1 ? '' : 's'} generated.`, 'success');
       await loadProjects(true);
       await refreshProject(project.id);
     } catch (generationError) {
@@ -904,6 +969,7 @@ export default function AdminShowcase() {
         : messageFor(generationError, 'Preview generation failed.', 'generating a private Showcase preview');
       setPreviewGeneration({ projectId: project.id, sourceMediaId: sourceMedia?.id || null, status: 'failed', message: failure });
       setError(failure);
+      showToast(failure, 'error');
     } finally {
       previewRequestLock.current = false;
       setPreviewRequestActive(false);
@@ -913,7 +979,9 @@ export default function AdminShowcase() {
   async function saveImageMetadata(image) {
     const edit = imageEdits[image.id] || image;
     if (!String(edit.alt_text || '').trim()) {
-      setError('Every public image needs descriptive alt text.');
+      const msg = 'Every public image needs descriptive alt text.';
+      setError(msg);
+      showToast(msg, 'warning');
       return;
     }
     setError('');
@@ -926,12 +994,18 @@ export default function AdminShowcase() {
       is_public_preview: desiredPreviewFlag
     }).eq('id', image.id).eq('project_id', projectId)
       .select('id,project_id,alt_text,caption,is_public_preview').single();
-    if (updateError) setError(messageFor(updateError, 'Image details could not be saved.'));
+    if (updateError) {
+      const msg = messageFor(updateError, 'Image details could not be saved.');
+      setError(msg);
+      showToast(msg, 'error');
+    }
     else if (!savedImage || savedImage.id !== image.id || savedImage.project_id !== projectId
       || savedImage.alt_text !== edit.alt_text.trim()
       || savedImage.caption !== String(edit.caption || '').trim()
       || savedImage.is_public_preview !== desiredPreviewFlag) {
-      setError('The saved preview details could not be confirmed. Refresh the project and check its saved media status before continuing.');
+      const msg = 'The saved preview details could not be confirmed. Refresh the project and check its saved media status before continuing.';
+      setError(msg);
+      showToast(msg, 'error');
     }
     else {
       await loadProjects(true);
@@ -945,7 +1019,9 @@ export default function AdminShowcase() {
         }])));
         if (!refreshedImage || refreshedImage.is_public_preview !== desiredPreviewFlag
           || refreshedImage.alt_text !== savedImage.alt_text || refreshedImage.caption !== savedImage.caption) {
-          setError('The preview update response succeeded, but the refreshed project does not match it. Check the saved media row before continuing.');
+          const msg = 'The preview update response succeeded, but the refreshed project does not match it. Check the saved media row before continuing.';
+          setError(msg);
+          showToast(msg, 'error');
           return;
         }
         const projectPubliclyEligible = refreshed.is_published && refreshed.public_content_review_confirmed
@@ -957,8 +1033,11 @@ export default function AdminShowcase() {
         } else {
           setNotice('Media details saved. This image remains private and is not included in public previews.');
         }
+        showToast('Media details saved.', 'success');
       } catch (error) {
-        setError(messageFor(error, 'Updated project could not be reloaded.'));
+        const msg = messageFor(error, 'Updated project could not be reloaded.');
+        setError(msg);
+        showToast(msg, 'error');
         return;
       }
     }
@@ -972,10 +1051,17 @@ export default function AdminShowcase() {
     const first = rows[index];
     const second = rows[target];
     const { error: firstError } = await supabase.from('showcase_project_images').update({ sort_order: second.sort_order }).eq('id', first.id);
-    if (firstError) { setError(messageFor(firstError, 'Image order could not be changed.')); return; }
+    if (firstError) {
+      const msg = messageFor(firstError, 'Image order could not be changed.');
+      setError(msg);
+      showToast(msg, 'error');
+      return;
+    }
     const { error: secondError } = await supabase.from('showcase_project_images').update({ sort_order: first.sort_order }).eq('id', second.id);
     if (secondError) {
-      setError(messageFor(secondError, 'Image order could not be changed.'));
+      const msg = messageFor(secondError, 'Image order could not be changed.');
+      setError(msg);
+      showToast(msg, 'error');
       try { await refreshProject(project.id); } catch (error) { setError(`${messageFor(secondError, 'Image order could not be changed.')} ${messageFor(error, 'Updated project could not be reloaded.')}`); }
       return;
     }
@@ -987,7 +1073,12 @@ export default function AdminShowcase() {
     if (!window.confirm(`Remove this ${image.presentation} image from the project?`)) return;
     setError('');
     const { error: rowError } = await supabase.from('showcase_project_images').delete().eq('id', image.id);
-    if (rowError) { setError(messageFor(rowError, 'Image details could not be removed. The Storage object was left untouched.')); return; }
+    if (rowError) {
+      const msg = messageFor(rowError, 'Image details could not be removed. The Storage object was left untouched.');
+      setError(msg);
+      showToast(msg, 'error');
+      return;
+    }
 
     // Remove metadata first so the approval invalidation trigger runs before
     // touching Storage. If Storage cleanup fails, the unreferenced object is
@@ -1005,6 +1096,7 @@ export default function AdminShowcase() {
         ? ' Publication approval was cleared and must be renewed.'
         : '';
       setNotice(`${cleanupNotice}${reviewNotice}`);
+      showToast('Image removed.', 'success');
     } catch (error) { setError(messageFor(error, 'Updated project could not be reloaded.')); }
   }
 
@@ -1013,7 +1105,12 @@ export default function AdminShowcase() {
     setError('');
     const images = row.showcase_project_images || [];
     const { error: deleteError } = await supabase.from('showcase_projects').delete().eq('id', row.id);
-    if (deleteError) { setError(messageFor(deleteError, 'Project could not be deleted. Its Storage objects were left untouched.')); return; }
+    if (deleteError) {
+      const msg = messageFor(deleteError, 'Project could not be deleted. Its Storage objects were left untouched.');
+      setError(msg);
+      showToast(msg, 'error');
+      return;
+    }
 
     // Database deletion is atomic and cascades image metadata. Only after it
     // succeeds do we clean up private Storage objects. Failed cleanup leaves
@@ -1028,6 +1125,7 @@ export default function AdminShowcase() {
     setNotice(storageError
       ? 'Project and metadata were deleted, but private Storage cleanup could not be confirmed. Ask an administrator to review the cleanup operation.'
       : 'Project and associated images deleted.');
+    showToast('Project deleted successfully.', 'success');
     if (project?.id === row.id) setProject(null);
     await loadProjects(true);
   }
@@ -1051,9 +1149,17 @@ export default function AdminShowcase() {
     ordered.splice(target, 0, moved);
     for (const [nextOrder, item] of ordered.entries()) {
       const { error: orderError } = await supabase.from('showcase_projects').update({ [key]: nextOrder, updated_by: userId }).eq('id', item.id);
-      if (orderError) { setError(messageFor(orderError, 'Project order could not be changed.')); await loadProjects(true); return; }
+      if (orderError) {
+        const msg = messageFor(orderError, 'Project order could not be changed.');
+        setError(msg);
+        showToast(msg, 'error');
+        await loadProjects(true);
+        return;
+      }
     }
-    setNotice(row.is_featured ? 'Featured project order updated.' : 'Project display order updated.');
+    const orderNotice = row.is_featured ? 'Featured project order updated.' : 'Project display order updated.';
+    setNotice(orderNotice);
+    showToast(orderNotice, 'info');
     await loadProjects(true);
   }
 

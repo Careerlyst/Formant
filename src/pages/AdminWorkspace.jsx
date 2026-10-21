@@ -315,7 +315,11 @@ export default function AdminWorkspace() {
   async function saveTask(event) {
     event.preventDefault();
     if (!selectedOrder || !EDIT_ROLES.includes(role)) return;
-    const values = { ...taskDraft, order_id: selectedOrder.id, due_at: taskDraft.due_at ? new Date(taskDraft.due_at).toISOString() : null, assigned_to: taskDraft.assigned_to || null, updated_at: new Date().toISOString() };
+    if (!taskDraft.title?.trim()) {
+      showToast.warning('Please enter a task title.', { title: 'Title required' });
+      return;
+    }
+    const values = { ...taskDraft, title: taskDraft.title.trim(), order_id: selectedOrder.id, due_at: taskDraft.due_at ? new Date(taskDraft.due_at).toISOString() : null, assigned_to: taskDraft.assigned_to || null, updated_at: new Date().toISOString() };
     if (values.status === 'done') values.completed_at = new Date().toISOString();
     else values.completed_at = null;
     try {
@@ -326,7 +330,11 @@ export default function AdminWorkspace() {
       if (saveError) throw saveError;
       setTaskDraft({ title: '', description: '', status: 'todo', priority: 'medium', due_at: '', assigned_to: '', client_visible: false });
       setEditingTaskId(''); setTaskOpen(false); await loadSelectedContext(selectedOrder); showToast(editingTaskId ? 'Task updated.' : 'Task added.', { type: 'success' });
-    } catch (saveError) { setSectionErrors((current) => ({ ...current, tasks: saveError?.message || 'Task could not be saved.' })); }
+    } catch (saveError) {
+      const msg = saveError?.message || 'Task could not be saved.';
+      setSectionErrors((current) => ({ ...current, tasks: msg }));
+      showToast.error(msg, { title: 'Task save failed' });
+    }
   }
 
   function editTask(task) {
@@ -342,7 +350,11 @@ export default function AdminWorkspace() {
       const { error: updateError } = await supabase.from('workspace_tasks').update({ ...changes, completed_at: nextStatus === 'done' ? new Date().toISOString() : null, updated_at: new Date().toISOString() }).eq('id', task.id).eq('order_id', selectedOrder.id);
       if (updateError) throw updateError;
       await loadSelectedContext(selectedOrder); showToast('Task status updated.', { type: 'success' });
-    } catch (updateError) { setSectionErrors((current) => ({ ...current, tasks: updateError?.message || 'Task could not be updated.' })); }
+    } catch (updateError) {
+      const msg = updateError?.message || 'Task could not be updated.';
+      setSectionErrors((current) => ({ ...current, tasks: msg }));
+      showToast.error(msg, { title: 'Task update failed' });
+    }
   }
 
   async function deleteTask(task) {
@@ -351,42 +363,74 @@ export default function AdminWorkspace() {
       const { error: deleteError } = await supabase.from('workspace_tasks').delete().eq('id', task.id).eq('order_id', selectedOrder.id);
       if (deleteError) throw deleteError;
       await loadSelectedContext(selectedOrder); showToast('Task deleted.', { type: 'success' });
-    } catch (deleteError) { setSectionErrors((current) => ({ ...current, tasks: deleteError?.message || 'Task could not be deleted.' })); }
+    } catch (deleteError) {
+      const msg = deleteError?.message || 'Task could not be deleted.';
+      setSectionErrors((current) => ({ ...current, tasks: msg }));
+      showToast.error(msg, { title: 'Task deletion failed' });
+    }
   }
 
   async function saveNote(event) {
     event.preventDefault();
     if (!selectedOrder || !EDIT_ROLES.includes(role)) return;
+    if (!noteDraft.body?.trim()) {
+      showToast.warning('Please enter a note body.', { title: 'Note content required' });
+      return;
+    }
     try {
       const { error: insertError } = await supabase.from('workspace_notes').insert({ order_id: selectedOrder.id, body: noteDraft.body.trim(), visibility: noteDraft.visibility, created_by: staffUserId });
       if (insertError) throw insertError;
       setNoteDraft({ body: '', visibility: 'internal' }); setNoteOpen(false); await loadSelectedContext(selectedOrder); showToast('Note added.', { type: 'success' });
-    } catch (insertError) { setSectionErrors((current) => ({ ...current, notes: insertError?.message || 'Note could not be saved.' })); }
+    } catch (insertError) {
+      const msg = insertError?.message || 'Note could not be saved.';
+      setSectionErrors((current) => ({ ...current, notes: msg }));
+      showToast.error(msg, { title: 'Note save failed' });
+    }
   }
 
   async function saveGoal(event) {
     event.preventDefault();
     if (!selectedOrder || !EDIT_ROLES.includes(role)) return;
+    if (!goalDraft.title?.trim()) {
+      showToast.warning('Please enter a goal title.', { title: 'Goal title required' });
+      return;
+    }
     try {
       const { error: insertError } = await supabase.from('workspace_goals').insert({ ...goalDraft, title: goalDraft.title.trim(), order_id: selectedOrder.id, target_date: goalDraft.target_date || null, created_by: staffUserId });
       if (insertError) throw insertError;
       setGoalDraft({ title: '', description: '', target_date: '', status: 'active', client_visible: false }); setGoalOpen(false); await loadSelectedContext(selectedOrder); showToast('Goal added.', { type: 'success' });
-    } catch (insertError) { setSectionErrors((current) => ({ ...current, goals: insertError?.message || 'Goal could not be saved.' })); }
+    } catch (insertError) {
+      const msg = insertError?.message || 'Goal could not be saved.';
+      setSectionErrors((current) => ({ ...current, goals: msg }));
+      showToast.error(msg, { title: 'Goal save failed' });
+    }
   }
 
   async function saveSession(event) {
     event.preventDefault();
     if (!selectedOrder || !EDIT_ROLES.includes(role)) return;
+    if (!sessionDraft.title?.trim() || !sessionDraft.starts_at) {
+      showToast.warning('Please enter a title and start date/time for the session.', { title: 'Session details required' });
+      return;
+    }
     try {
       const { error: insertError } = await supabase.from('workspace_sessions').insert({ ...sessionDraft, title: sessionDraft.title.trim(), order_id: selectedOrder.id, starts_at: new Date(sessionDraft.starts_at).toISOString(), assigned_to: sessionDraft.assigned_to || null, created_by: staffUserId });
       if (insertError) throw insertError;
       setSessionDraft({ title: '', starts_at: '', assigned_to: '', meeting_url: '', notes: '' }); setSessionOpen(false); await loadSelectedContext(selectedOrder); showToast('Session scheduled.', { type: 'success' });
-    } catch (insertError) { setSectionErrors((current) => ({ ...current, sessions: insertError?.message || 'Session could not be saved.' })); }
+    } catch (insertError) {
+      const msg = insertError?.message || 'Session could not be saved.';
+      setSectionErrors((current) => ({ ...current, sessions: msg }));
+      showToast.error(msg, { title: 'Session save failed' });
+    }
   }
 
   async function saveRoadmap(event) {
     event.preventDefault();
-    if (!selectedOrder || !canEdit || !roadmapDraft.stage_key) return;
+    if (!selectedOrder || !canEdit) return;
+    if (!roadmapDraft.stage_key) {
+      showToast.warning('Please select a stage for the roadmap.', { title: 'Stage required' });
+      return;
+    }
     setRoadmapSaving(true);
     setRoadmapError('');
     try {
@@ -405,7 +449,9 @@ export default function AdminWorkspace() {
       setRoadmapEditorOpen(false);
       showToast('Service roadmap updated.', { type: 'success' });
     } catch (updateError) {
-      setRoadmapError(updateError?.message || 'The service roadmap could not be updated.');
+      const msg = updateError?.message || 'The service roadmap could not be updated.';
+      setRoadmapError(msg);
+      showToast.error(msg, { title: 'Roadmap update failed' });
     } finally {
       setRoadmapSaving(false);
     }

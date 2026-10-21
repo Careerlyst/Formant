@@ -594,7 +594,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  box-shadow: 0 8px 24px rgba(17, 18, 15, 0.15);
+  box-shadow: var(--shadow-raised, 0 2px 4px rgba(17,18,15,.045), 0 10px 24px rgba(17,18,15,.07));
   cursor: pointer;
   transition: all var(--motion-standard, 180ms) ease;
   opacity: 0;
@@ -611,7 +611,7 @@
 .privacy-back-top:hover {
   background: #252723;
   transform: translateY(-2px);
-  box-shadow: 0 12px 28px rgba(17, 18, 15, 0.22);
+  box-shadow: var(--shadow-floating, 0 4px 10px rgba(17,18,15,.075), 0 18px 36px rgba(17,18,15,.10));
 }
 
 /* Responsiveness */

@@ -16,8 +16,6 @@ import { ToastProvider } from './components/ToastProvider';
 import { PageNotFound, RouteErrorBoundary } from './components/ErrorExperience';
 
 import Home from './pages/Home';
-import Showcase from './pages/Showcase';
-import AdminShowcase from './pages/AdminShowcase';
 
 import {
   Services,
@@ -28,8 +26,6 @@ import {
   Legal
 } from './pages/PublicPages';
 
-import LegalPrivacy from './pages/LegalPrivacy';
-
 import Auth, {
   Forgot,
   ResetPassword,
@@ -37,38 +33,43 @@ import Auth, {
 } from './pages/Auth';
 
 import Protected from './components/Protected';
-import LeadAssessment from './pages/LeadAssessment';
-import ServiceSelection from './pages/ServiceSelection';
-import AdminLeads from './pages/AdminLeads';
-import AdminSettings from './pages/AdminSettings';
 
-import {
-  Dashboard,
-  Profile,
-  Orders,
-  Messages,
-  Files,
-  Payments,
-  Notifications,
-  Settings
-} from './pages/Dashboard';
+// Code-split heavy routes for optimal Core Web Vitals (INP / TBT / FCP)
+const Showcase = React.lazy(() => import('./pages/Showcase'));
+const LegalPrivacy = React.lazy(() => import('./pages/LegalPrivacy'));
+const LeadAssessment = React.lazy(() => import('./pages/LeadAssessment'));
+const ServiceSelection = React.lazy(() => import('./pages/ServiceSelection'));
 
-import {
-  AdminGate,
-  AdminUsers,
-  AdminOrders,
-  AdminProjects,
-  AdminPayments,
-  AdminMessages,
-  AdminFiles,
-  AdminServices,
-  AdminReviews,
-  AdminNotifications,
-  AdminSimple,
-  AdminWorkspace
-} from './pages/Admin';
+const Dashboard = React.lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Dashboard })));
+const Profile = React.lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Profile })));
+const Orders = React.lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Orders })));
+const Messages = React.lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Messages })));
+const Files = React.lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Files })));
+const Payments = React.lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Payments })));
+const Notifications = React.lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Notifications })));
+const Settings = React.lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Settings })));
+
+const AdminGate = React.lazy(() => import('./pages/Admin').then((m) => ({ default: m.AdminGate })));
+const AdminUsers = React.lazy(() => import('./pages/Admin').then((m) => ({ default: m.AdminUsers })));
+const AdminOrders = React.lazy(() => import('./pages/Admin').then((m) => ({ default: m.AdminOrders })));
+const AdminProjects = React.lazy(() => import('./pages/Admin').then((m) => ({ default: m.AdminProjects })));
+const AdminPayments = React.lazy(() => import('./pages/Admin').then((m) => ({ default: m.AdminPayments })));
+const AdminMessages = React.lazy(() => import('./pages/Admin').then((m) => ({ default: m.AdminMessages })));
+const AdminFiles = React.lazy(() => import('./pages/Admin').then((m) => ({ default: m.AdminFiles })));
+const AdminServices = React.lazy(() => import('./pages/Admin').then((m) => ({ default: m.AdminServices })));
+const AdminReviews = React.lazy(() => import('./pages/Admin').then((m) => ({ default: m.AdminReviews })));
+const AdminNotifications = React.lazy(() => import('./pages/Admin').then((m) => ({ default: m.AdminNotifications })));
+const AdminSimple = React.lazy(() => import('./pages/Admin').then((m) => ({ default: m.AdminSimple })));
+const AdminWorkspace = React.lazy(() => import('./pages/AdminWorkspace'));
+const AdminShowcase = React.lazy(() => import('./pages/AdminShowcase'));
+const AdminLeads = React.lazy(() => import('./pages/AdminLeads'));
+const AdminSettings = React.lazy(() => import('./pages/AdminSettings'));
 
 import './dashboard-refinement.css';
+
+const DevShadowComparison = import.meta.env.DEV
+  ? React.lazy(() => import('./pages/DevShadowComparison'))
+  : null;
 
 // Apply the saved preference synchronously as soon as the app entry module executes.
 // This keeps startup theme initialization independent of the Settings route.
@@ -458,6 +459,17 @@ function App() {
         }
       />
 
+      {import.meta.env.DEV && DevShadowComparison && (
+        <Route
+          path="/dev/shadow-comparison"
+          element={
+            <React.Suspense fallback={<div style={{ padding: 40, fontFamily: 'sans-serif' }}>Loading Comparison...</div>}>
+              <DevShadowComparison />
+            </React.Suspense>
+          }
+        />
+      )}
+
       <Route
         path="*"
         element={<PageNotFound />}
@@ -481,7 +493,11 @@ createRoot(
       <ToastProvider>
         <ScrollManager />
         <TitleManager />
-        <RouteErrorBoundary><App /></RouteErrorBoundary>
+        <RouteErrorBoundary>
+          <React.Suspense fallback={<div style={{ minHeight: '60vh', display: 'grid', placeItems: 'center', color: 'var(--muted, #6d7069)', fontFamily: 'sans-serif', fontSize: '14px' }}>Loading…</div>}>
+            <App />
+          </React.Suspense>
+        </RouteErrorBoundary>
       </ToastProvider>
     </BrowserRouter>
   </>

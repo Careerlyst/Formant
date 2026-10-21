@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import DashboardShell from '../components/DashboardShell';
 import SkeletonState from '../components/SkeletonState';
+import { useToast } from '../components/ToastProvider';
 import { supabase } from '../lib/supabase';
 
 const QUESTIONS = [
@@ -121,6 +122,7 @@ function statusClass(status) {
 }
 
 export default function AdminLeads() {
+  const { showToast } = useToast();
   const [leads, setLeads] = useState([]);
   const [selectedLead, setSelectedLead] = useState(null);
 
@@ -130,9 +132,11 @@ export default function AdminLeads() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  async function loadLeads() {
+  async function loadLeads(isManual = false) {
     if (!supabase) {
-      setError('Supabase is not configured.');
+      const msg = 'Supabase is not configured.';
+      setError(msg);
+      showToast(msg, 'error');
       setLoading(false);
       return;
     }
@@ -215,6 +219,9 @@ export default function AdminLeads() {
       if (profileError) throw profileError;
 
       setLeads(profileRows || []);
+      if (isManual) {
+        showToast('Lead assessments refreshed.', 'info');
+      }
 
     } catch (loadError) {
       console.error(
@@ -222,10 +229,9 @@ export default function AdminLeads() {
         loadError
       );
 
-      setError(
-        loadError?.message ||
-        'Could not load lead assessments.'
-      );
+      const msg = loadError?.message || 'Could not load lead assessments.';
+      setError(msg);
+      showToast(msg, 'error');
     } finally {
       setLoading(false);
     }
@@ -327,7 +333,7 @@ export default function AdminLeads() {
         <button
           type="button"
           className="btn light"
-          onClick={loadLeads}
+          onClick={() => loadLeads(true)}
           disabled={loading}
         >
           {loading

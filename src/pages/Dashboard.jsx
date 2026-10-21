@@ -1000,7 +1000,9 @@ import SkeletonState from '../components/SkeletonState';
           console.error('Unexpected profile load exception:', loadErr);
           if (mounted) {
             setProfileLoadFailed(true);
-            setError('We could not load your saved profile from the server. Your saved details have not been confirmed; retry or contact Formant support if this continues.');
+            const msg = 'We could not load your saved profile from the server. Your saved details have not been confirmed; retry or contact Formant support if this continues.';
+            setError(msg);
+            showToast.error(msg, { title: 'Profile loading error' });
           }
         } finally {
           if (mounted) setLoading(false);
@@ -1018,6 +1020,7 @@ import SkeletonState from '../components/SkeletonState';
       setProfileLoadFailed(false);
       setError('');
       setLoading(true);
+      showToast.info('Retrying profile load...', { title: 'Reloading' });
       setProfileLoadAttempt((attempt) => attempt + 1);
     }
 
@@ -1193,11 +1196,16 @@ import SkeletonState from '../components/SkeletonState';
 
     function copyProfileSummary() {
       const summaryText = `Formant Profile — ${form.name || 'Client'}\nTarget Role: ${form.target_role || 'Not set'}\nLocation: ${form.location || 'Not set'}\nEmail: ${form.email}\nPhone: ${form.phone || 'Not set'}\nProfile Strength: ${completion}%\nLinkedIn: ${form.linkedin || 'Not set'}\nPortfolio: ${form.portfolio || 'Not set'}`;
-      if (navigator.clipboard) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(summaryText).then(() => {
           setCopiedLink(true);
           setTimeout(() => setCopiedLink(false), 2500);
-        }).catch(() => {});
+          showToast.success('Profile summary copied to clipboard.', { title: 'Copied' });
+        }).catch(() => {
+          showToast.error('Failed to copy profile summary to clipboard.', { title: 'Copy failed' });
+        });
+      } else {
+        showToast.warning('Clipboard access is not supported on this browser.', { title: 'Copy not available' });
       }
     }
 
@@ -1205,20 +1213,27 @@ import SkeletonState from '../components/SkeletonState';
       if (e && e.preventDefault) e.preventDefault();
       if (saving) return;
       if (supabase && profileLoadFailed) {
-        setError('The saved profile has not loaded. Refresh before editing so a stale cache cannot overwrite server data.');
+        const msg = 'The saved profile has not loaded. Refresh before editing so a stale cache cannot overwrite server data.';
+        setError(msg);
+        showToast.warning(msg, { title: 'Profile not ready' });
         return;
       }
 
       const cleanName = String(form.name || '').trim();
       if (!cleanName) {
         setFieldErrors((current) => ({ ...current, name: 'Full name is required.' }));
-        setError('Please fix the highlighted field before saving.');
+        const msg = 'Please enter your full name before saving.';
+        setError(msg);
+        showToast.warning(msg, { title: 'Required field missing' });
+        document.getElementById('field-name')?.focus();
         return;
       }
       const validatesRole = section === 'career' || section === 'all' || form.target_role !== savedForm.target_role;
       if (validatesRole && !String(form.target_role || '').trim()) {
         setFieldErrors((current) => ({ ...current, target_role: 'Choose or enter a target role.' }));
-        setError('Please fix the highlighted field before saving.');
+        const msg = 'Please choose or enter a target role before saving.';
+        setError(msg);
+        showToast.warning(msg, { title: 'Target role missing' });
         document.getElementById('field-target-role')?.focus();
         return;
       }
@@ -1231,7 +1246,9 @@ import SkeletonState from '../components/SkeletonState';
       setFieldErrors((current) => ({ ...current, ...nextFieldErrors }));
       const invalidLink = Object.values(nextFieldErrors).some(Boolean);
       if (invalidLink) {
-        setError('Please fix the highlighted links before saving.');
+        const msg = 'Please fix the highlighted links before saving.';
+        setError(msg);
+        showToast.warning(msg, { title: 'Invalid link URL' });
         return;
       }
 
@@ -2454,6 +2471,7 @@ import SkeletonState from '../components/SkeletonState';
   }
 
   export function Orders() {
+    const { showToast } = useToast();
     const localState = load();
     const location = useLocation();
     const [orders, setOrders] = useState([]);
@@ -2529,6 +2547,7 @@ import SkeletonState from '../components/SkeletonState';
         if (queryError) {
           console.error('Orders load error:', queryError);
           setError('We could not load your orders right now. Please try again.');
+          showToast.error('We could not load your orders right now. Please refresh or try again.', { title: 'Orders unavailable' });
           setOrders([]);
         } else {
           setOrders(data || []);
@@ -2767,6 +2786,7 @@ import SkeletonState from '../components/SkeletonState';
         setBriefMessage(
           'Brief saved. Your Formant team now has the information needed to start your project.'
         );
+        showToast.success('Brief saved. Your Formant team now has the information needed to start your project.', { title: 'Brief submitted' });
 
         setOrders((current) =>
           current.map((order) =>
@@ -2778,9 +2798,9 @@ import SkeletonState from '../components/SkeletonState';
         );
       } catch (err) {
         console.error('Project brief save error:', err);
-        setBriefError(
-          err?.message || 'We could not save your brief right now.'
-        );
+        const errorMsg = err?.message || 'We could not save your brief right now.';
+        setBriefError(errorMsg);
+        showToast.error(errorMsg, { title: 'Brief submission failed' });
       } finally {
         setBriefSaving(false);
       }
@@ -3441,6 +3461,7 @@ import SkeletonState from '../components/SkeletonState';
   }
 
   export function Messages() {
+    const { showToast } = useToast();
     const localState = load();
     const location = useLocation();
 
@@ -3767,8 +3788,11 @@ import SkeletonState from '../components/SkeletonState';
         setAttachment(editingMessage.draftAttachment || null);
         setEditingMessage(null);
         setLiveAnnouncement('Message edited');
+        showToast.success('Message updated.', { title: 'Message edited' });
       } catch (editError) {
-        setError(editError?.message || 'Could not edit this message.');
+        const msg = editError?.message || 'Could not edit this message.';
+        setError(msg);
+        showToast.error(msg, { title: 'Message edit failed' });
       } finally {
         setSending(false);
       }
@@ -3788,8 +3812,11 @@ import SkeletonState from '../components/SkeletonState';
           if (storageError) setError('Message deleted, but its attachment could not be removed. Contact support to clean up the stored file.');
         }
         setLiveAnnouncement('Message deleted');
+        showToast.success('Message deleted.', { title: 'Message removed' });
       } catch (deleteError) {
-        setError(deleteError?.message || 'Could not delete this message.');
+        const msg = deleteError?.message || 'Could not delete this message.';
+        setError(msg);
+        showToast.error(msg, { title: 'Message deletion failed' });
       }
     }
 
@@ -3832,7 +3859,9 @@ import SkeletonState from '../components/SkeletonState';
 
       if (file.size > MAX_ATTACHMENT_SIZE) {
         setAttachment(null);
-        setAttachmentError('File is too large. Maximum size is 10 MB.');
+        const msg = 'File is too large. Maximum size is 10 MB.';
+        setAttachmentError(msg);
+        showToast.warning(msg, { title: 'Attachment too large' });
         return;
       }
 
@@ -3854,7 +3883,9 @@ import SkeletonState from '../components/SkeletonState';
 
       if (file.type && !allowedTypes.includes(file.type)) {
         setAttachment(null);
-        setAttachmentError('This file type is not supported.');
+        const msg = 'This file type is not supported. Please choose a PDF, document, spreadsheet, or image.';
+        setAttachmentError(msg);
+        showToast.warning(msg, { title: 'Unsupported file type' });
         return;
       }
 
@@ -4058,6 +4089,7 @@ import SkeletonState from '../components/SkeletonState';
         if (attachment) {
           setAttachmentError(errMsg);
         }
+        showToast.error(errMsg, { title: 'Message send failed' });
       } finally {
         setSending(false);
       }
@@ -5059,6 +5091,7 @@ import SkeletonState from '../components/SkeletonState';
   }
 
   export function Files() {
+    const { showToast } = useToast();
     const [files, setFiles] = useState([]);
     const [loading, setLoading] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);
@@ -5098,7 +5131,9 @@ import SkeletonState from '../components/SkeletonState';
         setFiles((current) => [...current, ...nextFiles]);
         setHasMoreFiles((data || []).length === 100);
       } catch (pageError) {
-        setError(pageError?.message || 'More files could not be loaded.');
+        const msg = pageError?.message || 'More files could not be loaded.';
+        setError(msg);
+        showToast.error(msg, { title: 'File loading failed' });
       } finally {
         setLoadingMore(false);
       }
@@ -5181,7 +5216,11 @@ import SkeletonState from '../components/SkeletonState';
           }
         } catch (loadError) {
           console.error('Client files load error:', loadError);
-          if (mounted) setError(loadError?.message || 'Files could not be loaded.');
+          const msg = loadError?.message || 'Files could not be loaded.';
+          if (mounted) {
+            setError(msg);
+            showToast.error(msg, { title: 'Files unavailable' });
+          }
         } finally {
           if (mounted) setLoading(false);
         }
@@ -5287,7 +5326,7 @@ import SkeletonState from '../components/SkeletonState';
   ========================================================= */
 
   export function Notifications() {
-
+    const { showToast } = useToast();
     const localState = load();
     const [notifications, setNotifications] = useState([]);
     const [loading, setLoading] = useState(Boolean(supabase));
@@ -5541,7 +5580,10 @@ import SkeletonState from '../components/SkeletonState';
         .filter((item) => !item.read_at)
         .map((item) => item.id);
 
-      if (!unreadIds.length) return;
+      if (!unreadIds.length) {
+        showToast.info('All notifications are already marked as read.', { title: 'Up to date' });
+        return;
+      }
 
       if (!supabase) {
         setNotifications((current) =>
@@ -5550,6 +5592,7 @@ import SkeletonState from '../components/SkeletonState';
             read_at: item.read_at || new Date().toISOString()
           }))
         );
+        showToast.success('All notifications marked as read.', { title: 'Notifications updated' });
         return;
       }
 
@@ -5562,6 +5605,7 @@ import SkeletonState from '../components/SkeletonState';
 
       if (updateError) {
         console.error('Mark all notifications read error:', updateError);
+        showToast.error('Could not mark all notifications as read. Please try again.', { title: 'Update failed' });
         return;
       }
 
@@ -5571,6 +5615,7 @@ import SkeletonState from '../components/SkeletonState';
           read_at: item.read_at || readAt
         }))
       );
+      showToast.success('All notifications marked as read.', { title: 'Notifications updated' });
     }
 
     function notificationDestination(notification) {
@@ -5707,7 +5752,7 @@ import SkeletonState from '../components/SkeletonState';
   ========================================================= */
 
   export function Settings() {
-
+    const { showToast } = useToast();
     const s = load();
     const [emailNotifications, setEmailNotifications] = useState(
       s.settings?.emailNotifications ?? true
@@ -5792,11 +5837,15 @@ import SkeletonState from '../components/SkeletonState';
 
     async function handleTogglePush() {
       if (!pushSupported) {
-        setPushNotice('Browser push notifications are not supported by this browser.');
+        const msg = 'Browser push notifications are not supported by this browser.';
+        setPushNotice(msg);
+        showToast.warning(msg, { title: 'Not supported' });
         return;
       }
       if (!currentUserId) {
-        setPushNotice('Please sign in to configure browser push notifications.');
+        const msg = 'Please sign in to configure browser push notifications.';
+        setPushNotice(msg);
+        showToast.warning(msg, { title: 'Sign-in required' });
         return;
       }
 
@@ -5808,22 +5857,32 @@ import SkeletonState from '../components/SkeletonState';
           const res = await unsubscribeUserFromPush(currentUserId);
           if (res.success) {
             setPushSubscribed(false);
-            setPushNotice('Browser notifications turned off for this device.');
+            const msg = 'Browser notifications turned off for this device.';
+            setPushNotice(msg);
+            showToast.success(msg, { title: 'Notifications updated' });
           } else {
-            setPushNotice(res.error || 'Failed to turn off notifications.');
+            const msg = res.error || 'Failed to turn off notifications.';
+            setPushNotice(msg);
+            showToast.error(msg, { title: 'Update failed' });
           }
         } else {
           const res = await subscribeUserToPush(currentUserId);
           if (res.success) {
             setPushSubscribed(true);
             setPushPermission('granted');
-            setPushNotice('Browser push notifications enabled on this device.');
+            const msg = 'Browser push notifications enabled on this device.';
+            setPushNotice(msg);
+            showToast.success(msg, { title: 'Push enabled' });
           } else {
-            setPushNotice(res.error || 'Failed to enable notifications.');
+            const msg = res.error || 'Failed to enable notifications.';
+            setPushNotice(msg);
+            showToast.error(msg, { title: 'Setup failed' });
           }
         }
       } catch (err) {
-        setPushNotice(err.message || 'Notification setup failed.');
+        const msg = err.message || 'Notification setup failed.';
+        setPushNotice(msg);
+        showToast.error(msg, { title: 'Setup error' });
       } finally {
         setPushLoading(false);
       }
@@ -5867,9 +5926,12 @@ import SkeletonState from '../components/SkeletonState';
         }));
 
         setMessage('Preferences saved.');
+        showToast.success('Your preferences have been saved.', { title: 'Preferences saved' });
       } catch (saveError) {
         console.error('Settings save error:', saveError);
-        setError(saveError?.message || 'We could not save your settings.');
+        const msg = saveError?.message || 'We could not save your settings.';
+        setError(msg);
+        showToast.error(msg, { title: 'Preferences not saved' });
       } finally {
         setSavingPreferences(false);
       }
@@ -5881,22 +5943,30 @@ import SkeletonState from '../components/SkeletonState';
       setError('');
 
       if (!supabase) {
-        setError('Password changes are currently unavailable.');
+        const msg = 'Password changes are currently unavailable.';
+        setError(msg);
+        showToast.warning(msg, { title: 'Service unavailable' });
         return;
       }
 
       if (!currentPassword) {
-        setError('Enter your current password.');
+        const msg = 'Enter your current password.';
+        setError(msg);
+        showToast.warning(msg, { title: 'Current password required' });
         return;
       }
 
       if (newPassword.length < 6) {
-        setError('New password must be at least 6 characters.');
+        const msg = 'New password must be at least 6 characters.';
+        setError(msg);
+        showToast.warning(msg, { title: 'Password too short' });
         return;
       }
 
       if (newPassword !== confirmPassword) {
-        setError('New passwords do not match.');
+        const msg = 'New passwords do not match.';
+        setError(msg);
+        showToast.warning(msg, { title: 'Passwords mismatch' });
         return;
       }
 
@@ -5928,9 +5998,12 @@ import SkeletonState from '../components/SkeletonState';
         setNewPassword('');
         setConfirmPassword('');
         setMessage('Password changed successfully.');
+        showToast.success('Your password has been changed successfully.', { title: 'Password updated' });
       } catch (passwordError) {
         console.error('Password change error:', passwordError);
-        setError(passwordError?.message || 'We could not change your password.');
+        const msg = passwordError?.message || 'We could not change your password.';
+        setError(msg);
+        showToast.error(msg, { title: 'Password update failed' });
       } finally {
         setChangingPassword(false);
       }

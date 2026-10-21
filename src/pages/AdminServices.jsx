@@ -231,7 +231,7 @@ const ADMIN_SERVICES_CSS = `
 .admin-services-category-row small{color:var(--muted)}
 .admin-services-category-row input{min-height:36px}
 .admin-services-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:1000;display:grid;place-items:center;padding:20px}
-.admin-services-modal{width:min(720px,100%);max-height:min(82vh,760px);overflow:auto;background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 24px 80px rgba(0,0,0,.25)}
+.admin-services-modal{width:min(720px,100%);max-height:min(82vh,760px);overflow:auto;background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:var(--shadow-modal, 0 8px 18px rgba(17,18,15,.10), 0 26px 58px rgba(17,18,15,.16))}
 .admin-services-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}
 .admin-services-modal-head h2{margin:0}
 .admin-services-modal-close{border:0;background:transparent;font-size:24px;cursor:pointer}
@@ -547,7 +547,9 @@ export function AdminServices() {
       }
     } catch (err) {
       console.error('Admin service save error:', err);
-      setError(err?.message || 'Could not save service.');
+      const msg = err?.message || 'Could not save service.';
+      setError(msg);
+      showToast.error(msg, { title: 'Save failed' });
     } finally {
       setSaving(false);
     }
@@ -570,7 +572,9 @@ export function AdminServices() {
       setServices((current) => current.map((service) => service.id === data.id ? data : service));
       showToast(successMessage, { type: 'success' });
     } catch (err) {
-      setError(err?.message || 'Could not update service.');
+      const msg = err?.message || 'Could not update service.';
+      setError(msg);
+      showToast.error(msg, { title: 'Update failed' });
     } finally {
       setSaving(false);
     }
@@ -597,7 +601,9 @@ export function AdminServices() {
       setSelectedIds((current) => current.filter((id) => id !== service.id));
       showToast('Service deleted.', { type: 'success' });
     } catch (err) {
-      setError(err?.message || 'Could not delete service.');
+      const msg = err?.message || 'Could not delete service.';
+      setError(msg);
+      showToast.error(msg, { title: 'Delete failed' });
     }
   }
 
@@ -639,7 +645,9 @@ export function AdminServices() {
       setServices((current) => [data, ...current]);
       showToast('Service duplicated as an inactive draft copy.', { type: 'success' });
     } catch (err) {
-      setError(err?.message || 'Could not duplicate service.');
+      const msg = err?.message || 'Could not duplicate service.';
+      setError(msg);
+      showToast.error(msg, { title: 'Duplicate failed' });
     } finally {
       setSaving(false);
     }
@@ -699,7 +707,9 @@ export function AdminServices() {
 
       setSelectedIds([]);
     } catch (err) {
-      setError(err?.message || 'Bulk action failed.');
+      const msg = err?.message || 'Bulk action failed.';
+      setError(msg);
+      showToast.error(msg, { title: 'Bulk action failed' });
     } finally {
       setBulkSaving(false);
     }
@@ -729,7 +739,9 @@ export function AdminServices() {
       setCategoryDrafts((current) => ({ ...current, [category]: '' }));
       showToast(`Category renamed from "${category}" to "${nextCategory}".`, { type: 'success' });
     } catch (err) {
-      setError(err?.message || 'Could not rename category.');
+      const msg = err?.message || 'Could not rename category.';
+      setError(msg);
+      showToast.error(msg, { title: 'Rename failed' });
     } finally {
       setBulkSaving(false);
     }

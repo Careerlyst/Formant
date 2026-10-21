@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Logo from '../components/Logo';
 import SkeletonState from '../components/SkeletonState';
+import { useToast } from '../components/ToastProvider';
 import { supabase } from '../lib/supabase';
 import { load, patch } from '../lib/store';
 
@@ -215,6 +216,7 @@ function persistUserDraft(uid, currentAnswers) {
 }
 
 export default function LeadAssessment() {
+  const { showToast } = useToast();
   const navigate = useNavigate();
 
   const [initializing, setInitializing] = useState(true);
@@ -487,6 +489,7 @@ export default function LeadAssessment() {
       /*
         Assessment complete: navigate to dedicated service selection.
       */
+      showToast.success('Assessment complete! Loading service recommendations.', { title: 'Assessment completed' });
       navigate('/service-selection', {
         replace: true
       });
@@ -497,10 +500,11 @@ export default function LeadAssessment() {
         saveError
       );
 
-      setError(
+      const msg =
         saveError?.message ||
-        'We could not save your answers. Please try again.'
-      );
+        'We could not save your answers. Please try again.';
+      setError(msg);
+      showToast.error(msg, { title: 'Assessment not saved' });
 
     } finally {
       setSaving(false);
@@ -522,11 +526,11 @@ export default function LeadAssessment() {
     }
 
     if (!hasSelection) {
-      setError(
-        question?.multiple
-          ? 'Choose at least one option to continue.'
-          : 'Choose one option to continue.'
-      );
+      const msg = question?.multiple
+        ? 'Choose at least one option to continue.'
+        : 'Choose one option to continue.';
+      setError(msg);
+      showToast.warning(msg, { title: 'Selection required' });
 
       return;
     }

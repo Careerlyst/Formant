@@ -8,6 +8,7 @@ import React, {
 
 import SkeletonState from './SkeletonState';
 import { useNavigate } from 'react-router-dom';
+import { useToast } from './ToastProvider';
 import { supabase } from '../lib/supabase';
 import { formatFormantBrandText } from '../lib/brand-copy';
 
@@ -182,6 +183,7 @@ function BellIcon() {
 ========================================================= */
 
 export default function NotificationBell() {
+  const { showToast } = useToast();
   const navigate = useNavigate();
 
   const wrapperRef = useRef(null);
@@ -526,6 +528,7 @@ export default function NotificationBell() {
       );
 
       setBusyId(null);
+      showToast.error('Could not mark all notifications as read.', { title: 'Update failed' });
       return;
     }
 
@@ -538,6 +541,7 @@ export default function NotificationBell() {
     );
 
     setBusyId(null);
+    showToast.success('All notifications marked as read.', { title: 'Notifications updated' });
   }
 
   /* =======================================================
@@ -562,6 +566,7 @@ export default function NotificationBell() {
       );
 
       setBusyId(null);
+      showToast.error('Could not delete notification.', { title: 'Delete failed' });
       return;
     }
 
@@ -572,6 +577,7 @@ export default function NotificationBell() {
     );
 
     setBusyId(null);
+    showToast.success('Notification removed.', { title: 'Notification deleted' });
   }
 
   /* =======================================================

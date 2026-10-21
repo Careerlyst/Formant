@@ -52,23 +52,10 @@ export default function Footer() {
       return;
     }
 
-    setNewsletterLoading(true);
-    setNewsletterMessage('');
-
-    const subject = encodeURIComponent(
-      'Formant Newsletter Subscription'
-    );
-
-    const body = encodeURIComponent(
-      `Please subscribe this email to Formant updates:\n\n${email}\n\nInterests: Career tips, product updates, promotions.`
-    );
-
-    window.location.href =
-      `mailto:hello@careerlyst.com?subject=${subject}&body=${body}`;
-
     setNewsletterLoading(false);
+    setNewsletterEmail('');
     setNewsletterMessage(
-      'Your email client will open so you can confirm the subscription request.'
+      'Thank you for your interest! Newsletter subscriptions will open upon official platform launch.'
     );
   }
 
@@ -160,16 +147,14 @@ export default function Footer() {
             <div className="footer-column footer-column-desktop">
               <b>Career</b>
               <Link to="/services">Career services</Link>
-              <Link to="/services">CV &amp; Resume</Link>
+              <Link to="/services/resume">CV &amp; Resume</Link>
               <Link to="/services">Career development</Link>
             </div>
 
             <div className="footer-column footer-column-desktop">
               <b>Support</b>
               <Link to="/contact">Contact</Link>
-              <a href="mailto:hello@careerlyst.com">
-                Email
-              </a>
+              <Link to="/contact">Enquiry form</Link>
             </div>
           </div>
 
@@ -190,7 +175,7 @@ export default function Footer() {
               'career',
               <>
                 <Link to="/services">Career services</Link>
-                <Link to="/services">CV &amp; Resume</Link>
+                <Link to="/services/resume">CV &amp; Resume</Link>
                 <Link to="/services">Career development</Link>
               </>
             )}
@@ -200,9 +185,7 @@ export default function Footer() {
               'support',
               <>
                 <Link to="/contact">Contact</Link>
-                <a href="mailto:hello@careerlyst.com">
-                  Email
-                </a>
+                <Link to="/contact">Enquiry form</Link>
               </>
             )}
           </div>
@@ -219,7 +202,7 @@ export default function Footer() {
             </h2>
 
             <p>
-              Request career tips and product updates. Your email app will open with a prefilled message for you to review and send.
+              Sign up to receive career insights, editorial tips, and platform updates as new features launch.
             </p>
           </div>
 
@@ -255,7 +238,7 @@ export default function Footer() {
             </div>
 
             <small>
-              Submitting opens your email app with a message to hello@careerlyst.com. Nothing is sent until you review and send it.
+              Newsletter subscriptions will open upon official platform launch. For immediate inquiries, please use our contact form.
             </small>
 
             {newsletterMessage && (
