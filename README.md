@@ -1,6 +1,6 @@
 # Formant — Career Development & Profile Platform
 
-> **Live Deployment:** [https://careerlyst-three.vercel.app](https://careerlyst-three.vercel.app)
+> **Live Deployment:** [https://www.formant.cv](https://www.formant.cv)
 > **Brand Direction:** Warm editorial cream (`#fbfaf3`), black ink (`#11120f`), lime accent (`#c7f72f`), hairline borders (`#deded5`), DM Sans interface copy, Manrope display typography, and a strict light-only aesthetic.
 
 ---
@@ -173,7 +173,7 @@ Careerlyst-Full/
 ## 9. Deployment Workflow
 
 - **Hosting Platform:** [Vercel](https://vercel.com)
-- **Production Target:** `https://careerlyst-three.vercel.app`
+- **Production Target:** `https://www.formant.cv`
 - **Routing Enforcement:** Single-page application rewrites are configured in [`vercel.json`](vercel.json):
   ```json
   {

@@ -202,3 +202,42 @@ To prevent the legacy Vercel staging deployment (`careerlyst-three.vercel.app`) 
 2. Submit `https://www.formant.com/sitemap.xml`.
 3. Perform a live URL inspection on the homepage and `/services/resume` to verify Google renders the pre-rendered static HTML and discovers all internal links.
 4. Verify the property in **Bing Webmaster Tools**.
+
+---
+
+## H. Live Production Deployment Verification (October 21, 2026)
+
+- **GitHub Release Commit:** `5fec4c17e7ee2aefa9bdfcf05bcdf2b86e57658c` (merged & pushed as `32fbc8b`)
+- **Remote Branches:** Pushed to `https://github.com/ashik-exe/Formant.git` (`main`) and synced to `https://github.com/Careerlyst/Formant.git` (`main`).
+- **Vercel Project:** `careerlyst` (Team: `ashik-exes-projects`)
+- **Deployment ID:** `dpl_ATciGagFaZ3NVsnXe1t26Cy44vFE`
+- **Deployment Status:** `● Ready` (Production)
+- **Production URL:** `https://careerlyst-three.vercel.app`
+- **Live Verification Status:**
+  - `https://careerlyst-three.vercel.app/` — **VERIFIED** (Pre-rendered semantic DOM in `#root`, dynamic JSON-LD schema without unverified email, high-priority fonts preconnect).
+  - `https://careerlyst-three.vercel.app/services/resume` — **VERIFIED** (Static HTML served with tailored title, description, BreadcrumbList, and Service schema).
+  - `https://careerlyst-three.vercel.app/contact` — **VERIFIED** (Static HTML served with tailored title, BreadcrumbList, and WebPage schema).
+  - `https://careerlyst-three.vercel.app/privacy` — **VERIFIED** (Static HTML served with `index,follow` and canonical link).
+  - `https://careerlyst-three.vercel.app/robots.txt` — **VERIFIED** (Legal routes unblocked; private app routes disallowed; points to sitemap).
+  - `https://careerlyst-three.vercel.app/sitemap.xml` — **VERIFIED** (15 public URLs formatted with `lastmod`, changefreq, and priority).
+  - `https://careerlyst-three.vercel.app/services/cover-letter` — **VERIFIED** (301 Permanent Redirect to `/services/cover`).
+  - `https://careerlyst-three.vercel.app/privacy-policy` — **VERIFIED** (301 Permanent Redirect to `/privacy`).
+
+---
+
+## I. Production Domain Cutover & Sitemap Remediation (October 23, 2026)
+
+- **Production Custom Domain:** `https://www.formant.cv` (Apex `https://formant.cv` redirects via 308 to `https://www.formant.cv/`).
+- **Google Search Console TXT Verification:** Preserved on DNS (`rec_452c4d537be580cf955add4b`).
+- **Root Cause of "Couldn't fetch" Error:**
+  - `public/sitemap.xml` statically listed URLs under the former deployment origin `https://careerlyst-three.vercel.app/`.
+  - Google Search Console rejects cross-origin sitemaps submitted for `https://www.formant.cv` whose `<loc>` tags point to an unverified third-party host.
+  - `VITE_SITE_URL` was not configured in Vercel project environment variables, and `src/lib/seo.js` defaulted to the old staging domain.
+- **Implemented Remediation:**
+  - Configured `VITE_SITE_URL=https://www.formant.cv` on Vercel project (`careerlyst`) across Production and Preview environments.
+  - Updated `src/lib/seo.js` `SITE_ORIGIN` fallback to `https://www.formant.cv`.
+  - Updated `public/sitemap.xml` with all 15 public URLs prefixed with `https://www.formant.cv`, fresh `lastmod` (`2026-10-23`), and hierarchical priorities.
+  - Updated `public/robots.txt` `Sitemap:` directive to `https://www.formant.cv/sitemap.xml`.
+  - Enhanced Vite build plugin (`staticSeoPages` in `vite.config.js`) to dynamically generate and synchronize `dist/sitemap.xml` and `dist/robots.txt` from `SITE_ORIGIN` on every build.
+  - Updated root `index.html` fallback canonical, Open Graph, and Structured Data tags to `https://www.formant.cv`.
+

@@ -2,7 +2,7 @@ const envOrigin = typeof import.meta !== 'undefined' && import.meta.env?.VITE_SI
   ? import.meta.env.VITE_SITE_URL
   : (typeof process !== 'undefined' && process.env?.VITE_SITE_URL ? process.env.VITE_SITE_URL : '');
 
-export const SITE_ORIGIN = (envOrigin || 'https://careerlyst-three.vercel.app').replace(/\/+$/, '');
+export const SITE_ORIGIN = (envOrigin || 'https://www.formant.cv').replace(/\/+$/, '');
 export const BRAND_IMAGE = `${SITE_ORIGIN}/assets/formant-wordmark-1200.png`;
 
 export const SEO_PAGES = {

@@ -62,6 +62,37 @@ function staticSeoPages() {
           writeFileSync(target, html);
         }
       }
+
+      // Keep dist/sitemap.xml and dist/robots.txt synchronized with SITE_ORIGIN
+      const sitemapUrls = Object.keys(SEO_PAGES).map((pagePath) => {
+        const loc = `${SITE_ORIGIN}${pagePath === '/' ? '/' : pagePath}`;
+        let priority = '0.8';
+        let changefreq = 'monthly';
+        if (pagePath === '/') {
+          priority = '1.0';
+          changefreq = 'weekly';
+        } else if (pagePath === '/services') {
+          priority = '0.9';
+          changefreq = 'weekly';
+        } else if (pagePath === '/showcase') {
+          priority = '0.8';
+          changefreq = 'weekly';
+        } else if (pagePath === '/pricing') {
+          priority = '0.7';
+        } else if (pagePath === '/about' || pagePath === '/contact') {
+          priority = '0.6';
+        } else if (['/privacy', '/terms', '/refund'].includes(pagePath)) {
+          priority = '0.3';
+          changefreq = 'yearly';
+        }
+        return `  <url>\n    <loc>${loc}</loc>\n    <lastmod>2026-10-23</lastmod>\n    <changefreq>${changefreq}</changefreq>\n    <priority>${priority}</priority>\n  </url>`;
+      }).join('\n');
+
+      const sitemapXml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${sitemapUrls}\n</urlset>\n`;
+      writeFileSync(resolve(outputDirectory, 'sitemap.xml'), sitemapXml);
+
+      const robotsTxt = `User-agent: *\nAllow: /\nDisallow: /auth/\nDisallow: /forgot-password\nDisallow: /reset-password\nDisallow: /assessment\nDisallow: /service-selection\nDisallow: /dashboard/\nDisallow: /dashboard\nDisallow: /admin/\nDisallow: /admin\n\nSitemap: ${SITE_ORIGIN}/sitemap.xml\n`;
+      writeFileSync(resolve(outputDirectory, 'robots.txt'), robotsTxt);
     }
   };
 }

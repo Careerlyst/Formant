@@ -10,5 +10,5 @@ Disallow: /dashboard
 Disallow: /admin/
 Disallow: /admin
 
-Sitemap: https://careerlyst-three.vercel.app/sitemap.xml
+Sitemap: https://www.formant.cv/sitemap.xml
 
