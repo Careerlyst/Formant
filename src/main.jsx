@@ -33,6 +33,7 @@ import Auth, {
 } from './pages/Auth';
 
 import Protected from './components/Protected';
+import AdminProtected from './components/AdminProtected';
 
 // Code-split heavy routes for optimal Core Web Vitals (INP / TBT / FCP)
 const Showcase = React.lazy(() => import('./pages/Showcase'));
@@ -327,135 +328,135 @@ function App() {
       <Route
         path="/admin"
         element={
-          <Protected>
+          <AdminProtected>
             <AdminGate />
-          </Protected>
+          </AdminProtected>
         }
       />
 
       <Route
         path="/admin/workspace"
         element={
-          <Protected>
+          <AdminProtected>
             <AdminWorkspace />
-          </Protected>
+          </AdminProtected>
         }
       />
 
       <Route
         path="/admin/users"
         element={
-          <Protected>
+          <AdminProtected>
             <AdminUsers />
-          </Protected>
+          </AdminProtected>
         }
       />
 
       <Route
         path="/admin/leads"
         element={
-          <Protected>
+          <AdminProtected>
             <AdminLeads />
-          </Protected>
+          </AdminProtected>
         }
       />
 
       <Route
         path="/admin/orders"
         element={
-          <Protected>
+          <AdminProtected>
             <AdminOrders />
-          </Protected>
+          </AdminProtected>
         }
       />
 
       <Route
         path="/admin/projects"
         element={
-          <Protected>
+          <AdminProtected>
             <AdminProjects />
-          </Protected>
+          </AdminProtected>
         }
       />
 
       <Route
         path="/admin/payments"
         element={
-          <Protected>
+          <AdminProtected>
             <AdminPayments />
-          </Protected>
+          </AdminProtected>
         }
       />
 
       <Route
         path="/admin/messages"
         element={
-          <Protected>
+          <AdminProtected>
             <AdminMessages />
-          </Protected>
+          </AdminProtected>
         }
       />
 
       <Route
         path="/admin/files"
         element={
-          <Protected>
+          <AdminProtected>
             <AdminFiles />
-          </Protected>
+          </AdminProtected>
         }
       />
 
       <Route
         path="/admin/services"
         element={
-          <Protected>
+          <AdminProtected>
             <AdminServices />
-          </Protected>
+          </AdminProtected>
         }
       />
 
       <Route
         path="/admin/showcase"
         element={
-          <Protected>
+          <AdminProtected>
             <AdminShowcase />
-          </Protected>
+          </AdminProtected>
         }
       />
 
       <Route
         path="/admin/reviews"
         element={
-          <Protected>
+          <AdminProtected>
             <AdminReviews />
-          </Protected>
+          </AdminProtected>
         }
       />
 
       <Route
         path="/admin/coupons"
         element={
-          <Protected>
+          <AdminProtected>
             <AdminSimple title="Coupons" />
-          </Protected>
+          </AdminProtected>
         }
       />
 
       <Route
         path="/admin/notifications"
         element={
-          <Protected>
+          <AdminProtected>
             <AdminNotifications />
-          </Protected>
+          </AdminProtected>
         }
       />
 
       <Route
         path="/admin/settings"
         element={
-          <Protected>
+          <AdminProtected>
             <AdminSettings />
-          </Protected>
+          </AdminProtected>
         }
       />
 

@@ -467,7 +467,8 @@ export default function Auth({ signup = false }) {
             password,
             options: {
               data: {
-                name: cleanName
+                name: cleanName,
+                email: cleanEmail
               }
             }
           })
