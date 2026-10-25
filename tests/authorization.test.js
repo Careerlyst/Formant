@@ -51,4 +51,32 @@ describe('Authorization & Admin Routing Gating', () => {
 
     assert.ok(count >= 14, `Expected at least 14 protected admin routes, found ${count}`);
   });
+
+  it('uses the database staff checker and fails closed while access is unverified', () => {
+    const staffAccess = fs.readFileSync(path.join(rootDir, 'src', 'lib', 'staffAccessController.js'), 'utf8');
+    const guard = fs.readFileSync(path.join(rootDir, 'src', 'components', 'AdminProtected.jsx'), 'utf8');
+
+    assert.match(staffAccess, /client\.rpc\('is_showcase_staff_v1'\)/);
+    assert.match(staffAccess, /onAuthStateChange/);
+    assert.match(staffAccess, /status: 'checking'/);
+    assert.doesNotMatch(staffAccess, /user_metadata|localStorage|\.from\('user_roles'\)/);
+    assert.match(guard, /access\.status === 'checking'/);
+    assert.match(guard, /access\.status === 'denied'/);
+    assert.match(guard, /access\.status !== 'allowed'/);
+    assert.doesNotMatch(guard, /from '\.\.\/lib\/store'/);
+  });
+
+  it('shows the Admin workspace link only after staff verification succeeds', () => {
+    const shell = fs.readFileSync(path.join(rootDir, 'src', 'components', 'DashboardShell.jsx'), 'utf8');
+    assert.match(shell, /!admin && staffAccess\.status === 'allowed'/);
+  });
+
+  it('keeps the client-side staff role list aligned with the database checker', () => {
+    const migrationPath = path.join(rootDir, 'supabase', 'migrations', '20261009150000_formant_showcase.sql');
+    const migration = fs.readFileSync(migrationPath, 'utf8');
+    const roleCheck = migration.match(/pg_catalog\.lower\(role_row\.role\) in \(([^)]+)\)/);
+    assert.ok(roleCheck, 'trusted staff checker must define its authorized role set');
+    const databaseRoles = [...roleCheck[1].matchAll(/'([^']+)'/g)].map((match) => match[1]).sort();
+    assert.deepEqual(databaseRoles, [...STAFF_ROLES].sort());
+  });
 });

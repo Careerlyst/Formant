@@ -13,6 +13,7 @@ import {
 } from '../lib/store';
 import { supabase } from '../lib/supabase';
 import { subscribeToClientMessages } from '../lib/messageRealtime';
+import { useStaffAccess } from '../lib/staffAccess';
 
 /* =========================================================
    NAVIGATION
@@ -288,6 +289,7 @@ export default function DashboardShell({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const staffAccess = useStaffAccess(location.pathname);
 
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -793,7 +795,7 @@ export default function DashboardShell({
             )}
           </button>
 
-          {!admin && (
+          {!admin && staffAccess.status === 'allowed' && (
             <Link
               to="/admin"
               className="sidebar-admin-link"
