@@ -10,7 +10,7 @@ import {
 
 import { applyStoredTheme } from './lib/theme';
 import { applySeoMetadata, normalizePath } from './lib/seo';
-import { getHostRouteDestination } from './lib/adminHostRouting';
+import { getHostRouteDestination, isAdminHostname } from './lib/adminHostRouting';
 import './styles.css';
 import './pages/messages.css';
 
@@ -134,7 +134,17 @@ function HomeRoute() {
     return <Navigate to={{ pathname: destination, search: location.search, hash: location.hash }} replace />;
   }
 
+  if (isAdminHostname(window.location.hostname)) return <AdminEntry />;
+
   return <Home />;
+}
+
+function AdminEntry() {
+  return (
+    <AdminProtected>
+      <AdminGate />
+    </AdminProtected>
+  );
 }
 
 function AdminHostRoute({ children }) {
@@ -370,11 +380,7 @@ function App() {
 
       <Route
         path="/admin"
-        element={
-          <AdminProtected>
-            <AdminGate />
-          </AdminProtected>
-        }
+        element={<AdminEntry />}
       />
 
       <Route

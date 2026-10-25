@@ -39,10 +39,9 @@ describe('Authorization & Admin Routing Gating', () => {
       const subpath = match[1];
       const elementBody = match[2];
 
-      assert.ok(
-        elementBody.includes('<AdminProtected>'),
-        `Admin route "/admin${subpath}" must be wrapped in <AdminProtected>`
-      );
+      const usesProtectedAdminEntry = elementBody.includes('<AdminProtected>') ||
+        (elementBody.includes('<AdminEntry />') && content.includes('function AdminEntry() {\n  return (\n    <AdminProtected>'));
+      assert.ok(usesProtectedAdminEntry, `Admin route "/admin${subpath}" must be wrapped in <AdminProtected>`);
       assert.ok(
         !elementBody.includes('<Protected>'),
         `Admin route "/admin${subpath}" should not use generic <Protected>`

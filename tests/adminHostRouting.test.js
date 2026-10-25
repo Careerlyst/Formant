@@ -8,16 +8,16 @@ import { ADMIN_HOSTNAME, getHostRouteDestination, isAdminHostname } from '../src
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 describe('dedicated admin hostname routing', () => {
-  it('routes only the admin hostname root to the existing protected admin entry', () => {
-    assert.equal(getHostRouteDestination(ADMIN_HOSTNAME), '/admin');
-    assert.equal(getHostRouteDestination(ADMIN_HOSTNAME.toUpperCase()), '/admin');
+  it('keeps the admin hostname root at / so it can render the protected admin entry directly', () => {
+    assert.equal(getHostRouteDestination(ADMIN_HOSTNAME), '/');
+    assert.equal(getHostRouteDestination(ADMIN_HOSTNAME.toUpperCase()), '/');
     assert.equal(isAdminHostname(ADMIN_HOSTNAME), true);
     assert.equal(isAdminHostname('www.formant.cv'), false);
   });
 
-  it('sends client-only paths to /admin only on the dedicated admin hostname', () => {
+  it('sends client-only paths to / only on the dedicated admin hostname', () => {
     for (const path of ['/dashboard', '/dashboard/profile', '/dashboard/messages', '/dashboard/settings', '/assessment', '/service-selection', '/onboarding/avatar']) {
-      assert.equal(getHostRouteDestination(ADMIN_HOSTNAME, path), '/admin');
+      assert.equal(getHostRouteDestination(ADMIN_HOSTNAME, path), '/');
       assert.equal(getHostRouteDestination('www.formant.cv', path), path);
       assert.equal(getHostRouteDestination('formant.cv', path), path);
     }
@@ -37,7 +37,11 @@ describe('dedicated admin hostname routing', () => {
     const source = fs.readFileSync(path.join(rootDir, 'src/main.jsx'), 'utf8');
     const adminRoute = source.match(/<Route\s+path="\/admin"\s+element=\{([\s\S]*?)\}\s*\/>/);
     assert.ok(adminRoute, 'the existing /admin route must remain registered');
-    assert.match(adminRoute[1], /<AdminProtected>/);
+    assert.equal(adminRoute[1], '<AdminEntry />');
+    assert.match(source, /function AdminEntry()/);
+    assert.ok(source.includes('function AdminEntry() {\n  return (\n    <AdminProtected>'));
+    assert.ok(source.includes('if (isAdminHostname(window.location.hostname)) return <AdminEntry />'));
+    assert.match(source, /path="\/admin"\s+element=\{<AdminEntry \/>\}/);
     assert.match(source, /<Route\s+path="\/"\s+element=\{<HomeRoute \/>\}\s*\/>/);
     assert.match(source, /<Navigate to=\{\{ pathname: destination, search: location\.search, hash: location\.hash \}\} replace \/>/);
     assert.match(source, /function AdminHostRoute\(\{ children \}\)/);
@@ -59,7 +63,7 @@ describe('dedicated admin hostname routing', () => {
     assert.match(guard, /Admin access required/);
     assert.match(guard, /<Navigate to="\/dashboard" replace \/>/);
     assert.match(guard, /Go to the client dashboard/);
-    assert.match(guard, /Go to the client dashboard[\s\S]*|<a href="https:\/\/www\.formant\.cv\/dashboard">/);
+    assert.match(guard, /<a href="https:\/\/www\.formant\.cv\/dashboard">Go to the client dashboard<\/a>/);
 
     const adminSource = fs.readFileSync(path.join(rootDir, 'src/pages/Admin.jsx'), 'utf8');
     assert.match(adminSource, /<DashboardShell admin>/);

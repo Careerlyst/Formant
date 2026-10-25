@@ -9,8 +9,8 @@ export function getHostRouteDestination(hostname, currentPath = '/') {
   const isClientDashboardPath = path === '/dashboard' || path.startsWith('/dashboard/');
   const isClientWorkflowPath = ['/assessment', '/service-selection', '/onboarding/avatar'].includes(path);
 
-  if (isAdminHostname(hostname) && (path === '/' || isClientDashboardPath || isClientWorkflowPath)) {
-    return '/admin';
+  if (isAdminHostname(hostname) && (isClientDashboardPath || isClientWorkflowPath)) {
+    return '/';
   }
 
   return path;
