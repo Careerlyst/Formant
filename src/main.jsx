@@ -10,7 +10,7 @@ import {
 
 import { applyStoredTheme } from './lib/theme';
 import { applySeoMetadata, normalizePath } from './lib/seo';
-import { getHostRootDestination } from './lib/adminHostRouting';
+import { getHostRouteDestination } from './lib/adminHostRouting';
 import './styles.css';
 import './pages/messages.css';
 
@@ -128,13 +128,35 @@ function TitleManager() {
 
 function HomeRoute() {
   const location = useLocation();
-  const destination = getHostRootDestination(window.location.hostname, location.pathname);
+  const destination = getHostRouteDestination(window.location.hostname, location.pathname);
 
   if (destination !== location.pathname) {
     return <Navigate to={{ pathname: destination, search: location.search, hash: location.hash }} replace />;
   }
 
   return <Home />;
+}
+
+function AdminHostRoute({ children }) {
+  const location = useLocation();
+  const destination = getHostRouteDestination(window.location.hostname, location.pathname);
+
+  if (destination !== location.pathname) {
+    return <Navigate to={{ pathname: destination, search: location.search, hash: location.hash }} replace />;
+  }
+
+  return children;
+}
+
+function UnknownDashboardRoute() {
+  const location = useLocation();
+  const destination = getHostRouteDestination(window.location.hostname, location.pathname);
+
+  if (destination !== location.pathname) {
+    return <Navigate to={{ pathname: destination, search: location.search, hash: location.hash }} replace />;
+  }
+
+  return <PageNotFound />;
 }
 
 function App() {
@@ -232,7 +254,7 @@ function App() {
 
       <Route
         path="/onboarding/avatar"
-        element={<Protected requireAvatar={false}><AvatarOnboarding /></Protected>}
+        element={<AdminHostRoute><Protected requireAvatar={false}><AvatarOnboarding /></Protected></AdminHostRoute>}
       />
 
 
@@ -243,9 +265,9 @@ function App() {
       <Route
         path="/assessment"
         element={
-          <Protected>
-            <LeadAssessment />
-          </Protected>
+          <AdminHostRoute>
+            <Protected><LeadAssessment /></Protected>
+          </AdminHostRoute>
         }
       />
 
@@ -256,9 +278,9 @@ function App() {
       <Route
         path="/service-selection"
         element={
-          <Protected>
-            <ServiceSelection />
-          </Protected>
+          <AdminHostRoute>
+            <Protected><ServiceSelection /></Protected>
+          </AdminHostRoute>
         }
       />
 
@@ -270,74 +292,76 @@ function App() {
       <Route
         path="/dashboard"
         element={
-          <Protected>
-            <Dashboard />
-          </Protected>
+          <AdminHostRoute>
+            <Protected><Dashboard /></Protected>
+          </AdminHostRoute>
         }
       />
 
       <Route
         path="/dashboard/profile"
         element={
-          <Protected>
-            <Profile />
-          </Protected>
+          <AdminHostRoute>
+            <Protected><Profile /></Protected>
+          </AdminHostRoute>
         }
       />
 
       <Route
         path="/dashboard/orders"
         element={
-          <Protected>
-            <Orders />
-          </Protected>
+          <AdminHostRoute>
+            <Protected><Orders /></Protected>
+          </AdminHostRoute>
         }
       />
 
       <Route
         path="/dashboard/messages"
         element={
-          <Protected>
-            <Messages />
-          </Protected>
+          <AdminHostRoute>
+            <Protected><Messages /></Protected>
+          </AdminHostRoute>
         }
       />
 
       <Route
         path="/dashboard/files"
         element={
-          <Protected>
-            <Files />
-          </Protected>
+          <AdminHostRoute>
+            <Protected><Files /></Protected>
+          </AdminHostRoute>
         }
       />
 
       <Route
         path="/dashboard/payments"
         element={
-          <Protected>
-            <Payments />
-          </Protected>
+          <AdminHostRoute>
+            <Protected><Payments /></Protected>
+          </AdminHostRoute>
         }
       />
 
       <Route
         path="/dashboard/notifications"
         element={
-          <Protected>
-            <Notifications />
-          </Protected>
+          <AdminHostRoute>
+            <Protected><Notifications /></Protected>
+          </AdminHostRoute>
         }
       />
 
       <Route
         path="/dashboard/settings"
         element={
-          <Protected>
-            <Settings />
-          </Protected>
+          <AdminHostRoute>
+            <Protected><Settings /></Protected>
+          </AdminHostRoute>
         }
       />
+
+      <Route path="/dashboard/*" element={<UnknownDashboardRoute />} />
 
 
       {/* =====================================================
