@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { SEO_PAGES } from '../src/lib/seo.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -57,5 +58,34 @@ describe('Sitemap & SEO Configuration', () => {
     }
 
     assert.ok(count >= 10, `Expected at least 10 sitemap URLs, found ${count}`);
+  });
+
+  it('describes Formant accurately and avoids unsupported SEO claims', () => {
+    assert.equal(SEO_PAGES['/'].title, 'Formant — CV, LinkedIn & Interview Support');
+    assert.match(SEO_PAGES['/'].description, /CV, LinkedIn or GitHub profile, portfolio, cover letter, or interview preparation/);
+    assert.equal(SEO_PAGES['/services/resume'].title, 'CV & Resume Writing Support for Your Next Role | Formant');
+    assert.match(SEO_PAGES['/about'].description, /organize and present their experience/);
+
+    const allMetadata = Object.values(SEO_PAGES)
+      .map(({ title, description }) => `${title} ${description}`)
+      .join(' ');
+    assert.doesNotMatch(
+      allMetadata,
+      /ATS optimization|executive-ready|measurable business outcomes|service guarantees|1-on-1 mock sessions|global privacy standards/i
+    );
+  });
+
+  it('keeps the dedicated admin hostname root out of search results', () => {
+    const vercelConfig = JSON.parse(fs.readFileSync(path.join(rootDir, 'vercel.json'), 'utf8'));
+    const adminRootNoIndex = vercelConfig.headers.find((rule) =>
+      rule.source === '/' && rule.has?.some((condition) =>
+        condition.type === 'host' && condition.value === 'admin.formant.cv'
+      )
+    );
+
+    assert.ok(adminRootNoIndex, 'admin.formant.cv root must have a host-scoped header rule');
+    assert.ok(adminRootNoIndex.headers.some((header) =>
+      header.key === 'X-Robots-Tag' && /noindex/i.test(header.value)
+    ));
   });
 });

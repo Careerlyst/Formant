@@ -7,56 +7,56 @@ export const BRAND_IMAGE = `${SITE_ORIGIN}/assets/formant-wordmark-1200.png`;
 
 export const SEO_PAGES = {
   '/': {
-    title: 'Formant — Executive Resume Writing & Tech Career Advisory',
-    description: 'Present your experience for the role you want with executive CV writing, GitHub and portfolio curation, and mock interview preparation from Formant.'
+    title: 'Formant — CV, LinkedIn & Interview Support',
+    description: 'Choose support for your CV, LinkedIn or GitHub profile, portfolio, cover letter, or interview preparation, focused on the role or opportunity you have in mind.'
   },
   '/services': {
     title: 'Career Services & Advisory Packages | Formant',
-    description: 'Compare tailored career services for CVs, LinkedIn, GitHub profiles, portfolios, cover letters, and interview coaching. Clear deliverables and upfront pricing.'
+    description: 'Compare available services, packages, and starting prices for CVs, LinkedIn, GitHub, portfolios, cover letters, and interview preparation.'
   },
   '/showcase': {
     title: 'Work Showcase: Approved CV, Portfolio & Profile Samples | Formant',
-    description: 'Browse real, approved samples of Formant-crafted CVs, developer portfolios, GitHub profiles, and cover letters across technology and business sectors.'
+    description: 'Explore approved Formant work samples, including CV layouts, portfolio case studies, and professional profile projects.'
   },
   '/pricing': {
     title: 'Pricing & Career Service Packages | Formant',
-    description: 'Transparent starting prices and package options for resumes ($19+), LinkedIn, GitHub profiles, and complete interview readiness bundles.'
+    description: 'Compare starting prices and packages for CV, LinkedIn, GitHub, portfolio, cover letter, and interview preparation services.'
   },
   '/about': {
     title: 'About Formant — Our Editorial Career Philosophy & Standards',
-    description: 'Discover the Formant standard: editorial clarity, deliberate composition, and operational precision designed to help professionals present their best work.'
+    description: 'Formant helps people organize and present their experience through clearer CVs, professional profiles, portfolios, and interview preparation.'
   },
   '/contact': {
     title: 'Contact Formant — Request a Project Consultation',
     description: 'Reach out to discuss your target role, request custom portfolio scoping, or ask questions about our career document and interview preparation services.'
   },
   '/services/resume': {
-    title: 'CV & Executive Resume Writing Services | Formant',
-    description: 'Transform your work history into an executive-ready CV or resume tailored to your target role. Editorial structure, ATS optimization, and direct human review.'
+    title: 'CV & Resume Writing Support for Your Next Role | Formant',
+    description: 'Get help structuring your CV or resume around a target role, with editorial review and practical recommendations for the opportunity you have in mind.'
   },
   '/services/linkedin': {
     title: 'LinkedIn Profile Optimization & Positioning | Formant',
-    description: 'Optimize your LinkedIn headline, About section, and experience narrative to attract recruiters and align with your next senior or technical role.'
+    description: 'Refine your LinkedIn headline, About section, and experience entries to present your background clearly for the roles you are targeting.'
   },
   '/services/github': {
     title: 'GitHub Profile & Repository Curation for Developers | Formant',
-    description: 'Turn your GitHub into a compelling engineering portfolio. Curate pinned repositories, structure READMEs, and showcase architecture decisions clearly.'
+    description: 'Curate repositories and README files so visitors can find your work and understand what you built.'
   },
   '/services/portfolio': {
-    title: 'Technical & Design Portfolio Architecture | Formant',
-    description: 'Build an editorial portfolio case study structure that explains your technical decisions, product scope, and measurable business outcomes to hiring teams.'
+    title: 'Portfolio Case Study Planning | Formant',
+    description: 'Plan portfolio case studies that explain your role, project scope, decisions, and work in a clear structure for the opportunities you are targeting.'
   },
   '/services/cover': {
     title: 'Tailored Cover Letter Writing Services | Formant',
-    description: 'Craft concise, opportunity-specific cover letters that directly connect your achievements to job requirements without generic corporate boilerplate.'
+    description: 'Connect your experience to the requirements of a specific opportunity with a focused cover letter.'
   },
   '/services/interview': {
-    title: 'Mock Interview Preparation & Strategy Coaching | Formant',
-    description: 'Master behavioral, technical, and executive interviews with 1-on-1 mock sessions, role-specific question frameworks, and actionable delivery feedback.'
+    title: 'Interview Preparation and Practice | Formant',
+    description: 'Practice role-specific answers and get feedback as you prepare for an upcoming interview.'
   },
   '/privacy': {
     title: 'Privacy Policy | Formant',
-    description: 'Learn how Formant collects, protects, and handles personal data, documents, and communication in accordance with global privacy standards.'
+    description: 'Review how Formant handles account information, career documents, and project communications.'
   },
   '/terms': {
     title: 'Terms of Service | Formant',
@@ -64,7 +64,7 @@ export const SEO_PAGES = {
   },
   '/refund': {
     title: 'Refund & Cancellation Policy | Formant',
-    description: 'Understand Formant’s service guarantees, cancellation guidelines, and refund policies for custom career projects.'
+    description: 'Read Formant’s cancellation guidelines and refund policy for custom career-service projects.'
   }
 };
 
@@ -151,7 +151,7 @@ export function getStructuredData(pathname = '/') {
           'name': 'Formant',
           'url': SITE_ORIGIN,
           'logo': `${SITE_ORIGIN}/assets/formant-symbol-180.png`,
-          'description': 'Editorial career advisory, executive resume writing, portfolio architecture, and interview preparation.'
+          'description': 'CV, LinkedIn and GitHub profile support, portfolio and cover letter services, and interview preparation for people preparing for their next role.'
         },
         {
           '@type': 'WebSite',
@@ -256,4 +256,3 @@ export function applySeoMetadata(pathname = '/', overrides = {}) {
 
   return metadata;
 }
-
