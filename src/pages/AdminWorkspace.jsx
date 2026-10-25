@@ -6,6 +6,7 @@ import SkeletonState from '../components/SkeletonState';
 import { useToast } from '../components/ToastProvider';
 import { getProfileProgress } from '../lib/profileCompletion';
 import { supabase } from '../lib/supabase';
+import ProfileAvatar from '../components/ProfileAvatar';
 import './admin-workspace.css';
 
 const STAFF_ROLES = ['admin', 'expert', 'support', 'finance'];
@@ -173,7 +174,7 @@ export default function AdminWorkspace() {
       let nextProfiles = {};
       if (ids.length) {
         const { data: profileRows, error: profileError } = await supabase.from('profiles')
-          .select('id, name, email, phone, location, target_role, experience, education, skills, certifications, linkedin, github, portfolio, bio, preferences, lead_assessment, lead_score, lead_status, lead_assessment_completed_at, updated_at')
+          .select('id, name, email, phone, location, target_role, experience, education, skills, certifications, linkedin, github, portfolio, bio, preferences, avatar_id, lead_assessment, lead_score, lead_status, lead_assessment_completed_at, updated_at')
           .in('id', ids);
         if (profileError) throw profileError;
         nextProfiles = Object.fromEntries((profileRows || []).map((profile) => [String(profile.id), profile]));
@@ -568,7 +569,7 @@ export default function AdminWorkspace() {
             ) : (
               <div className="client360-main">
                 <section className="client360-hero" aria-labelledby="workspace-client-name">
-                  <div className="client360-identity"><div className="client360-avatar" aria-hidden="true">{initials(clientProfile?.name)}</div><div><p className="eyebrow">CLIENT 360 · ORDER #{selectedOrder.id}</p><h2 id="workspace-client-name">{clientProfile?.name || 'Client'}</h2><p className="client360-target">{clientProfile?.target_role || 'Target role not provided'}{clientProfile?.experience ? ` · ${clientProfile.experience}` : ''}{clientProfile?.location ? ` · ${clientProfile.location}` : ''}</p><div className="client360-tags"><StatusBadge>{humanize(selectedOrder.status)}</StatusBadge><StatusBadge>{selectedOrder.service_name || 'Service'}</StatusBadge>{selectedOrder.package_name && <StatusBadge>{selectedOrder.package_name}</StatusBadge>}</div></div></div>
+                  <div className="client360-identity"><ProfileAvatar className="client360-avatar" avatarId={clientProfile?.avatar_id} decorative initials={initials(clientProfile?.name)} /><div><p className="eyebrow">CLIENT 360 · ORDER #{selectedOrder.id}</p><h2 id="workspace-client-name">{clientProfile?.name || 'Client'}</h2><p className="client360-target">{clientProfile?.target_role || 'Target role not provided'}{clientProfile?.experience ? ` · ${clientProfile.experience}` : ''}{clientProfile?.location ? ` · ${clientProfile.location}` : ''}</p><div className="client360-tags"><StatusBadge>{humanize(selectedOrder.status)}</StatusBadge><StatusBadge>{selectedOrder.service_name || 'Service'}</StatusBadge>{selectedOrder.package_name && <StatusBadge>{selectedOrder.package_name}</StatusBadge>}</div></div></div>
                   <nav className="client360-actions" aria-label="Workspace actions"><Link className="btn dark" to={`/admin/messages?order=${encodeURIComponent(selectedOrder.id)}`}>Message</Link><button type="button" className="btn" onClick={() => { setTaskOpen(true); jumpTo('workspace-tasks'); }} disabled={!canEdit}>Add task</button><button type="button" className="btn" onClick={() => { setNoteOpen(true); jumpTo('workspace-notes'); }} disabled={!canEdit}>Add note</button></nav>
                   <div className="client360-keyfacts"><div><span>Profile readiness</span><strong>{clientProfile ? `${getProfileProgress(clientProfile).percent}%` : 'Unknown'}</strong></div><div><span>Assessment</span><strong>{clientProfile?.lead_score != null ? `${clientProfile.lead_score} points` : 'Not completed'}</strong></div><div><span>Assessment status</span><strong>{clientProfile?.lead_status ? humanize(clientProfile.lead_status) : 'Not completed'}</strong></div><div><span>Task/session assignees</span><strong>{assignedStaffSummary}</strong></div><div><span>Last activity</span><strong>{timeline[0] ? formatDate(timeline[0].at, true) : 'No activity'}</strong></div></div>
                 </section>

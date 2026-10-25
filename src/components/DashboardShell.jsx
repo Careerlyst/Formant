@@ -14,6 +14,7 @@ import {
 import { supabase } from '../lib/supabase';
 import { subscribeToClientMessages } from '../lib/messageRealtime';
 import { useStaffAccess } from '../lib/staffAccess';
+import ProfileAvatar from './ProfileAvatar';
 
 /* =========================================================
    NAVIGATION
@@ -753,7 +754,7 @@ export default function DashboardShell({
           <div className="sidebar-account">
 
             <div className="sidebar-avatar">
-              {firstLetter}
+              <ProfileAvatar avatarId={s.profile?.avatar_id} className="sidebar-avatar-image" decorative initials={firstLetter} />
             </div>
 
             <div className="sidebar-account-copy">

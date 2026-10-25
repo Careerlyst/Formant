@@ -224,6 +224,40 @@ button{
 
 }
 
+/* Curated avatar onboarding and shared identity images */
+.auth-avatar-selection{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:16px 0;padding:12px;border:1px solid var(--line,#deded5);border-radius:12px;background:var(--paper,#fff)}
+.auth-avatar-selection-preview{display:flex;align-items:center;gap:11px;min-width:0}
+.auth-avatar-selection-preview img,.auth-avatar-selection-preview>span{display:grid;place-items:center;flex:0 0 48px;width:48px;height:48px;object-fit:contain;border-radius:50%;background:var(--soft,#f2f1eb);color:var(--muted,#666960);font-weight:700}
+.auth-avatar-selection-preview>div{display:grid;gap:3px;min-width:0}
+.auth-avatar-selection-preview strong{font-size:13px;color:var(--ink,#11120f)}
+.auth-avatar-selection-preview span{color:var(--muted,#666960);font-size:11px;line-height:1.4}
+.auth-avatar-selection>.btn{min-height:42px;flex:0 0 auto}
+.avatar-onboarding-page{min-height:100vh;min-height:100dvh;padding:clamp(18px,4vw,44px);background:var(--cream,#f7f6ef);color:var(--ink,#11120f)}
+.avatar-onboarding-header{width:min(920px,100%);margin:0 auto 40px}
+.avatar-onboarding-card{width:min(680px,100%);margin:0 auto;padding:clamp(22px,4vw,40px);border:1px solid var(--line,#deded5);border-radius:18px;background:var(--paper,#fff);box-shadow:var(--shadow-subtle,0 5px 22px rgba(17,18,15,.06))}
+.avatar-onboarding-card>.eyebrow{margin:0 0 8px;color:var(--lime-strong,#729b00);font-size:11px;font-weight:800;letter-spacing:.1em}
+.avatar-onboarding-card h1{margin:0;font-size:clamp(25px,4vw,34px);line-height:1.15;letter-spacing:-.035em}
+.avatar-onboarding-copy{max-width:54ch;margin:12px 0 24px;color:var(--muted,#666960);font-size:15px;line-height:1.55}
+.avatar-onboarding-selected{display:flex;align-items:center;gap:14px;padding:14px 0;border-top:1px solid var(--line,#deded5);border-bottom:1px solid var(--line,#deded5)}
+.avatar-onboarding-selected img,.avatar-onboarding-selected>span{display:grid;place-items:center;flex:0 0 68px;width:68px;height:68px;object-fit:contain;border-radius:50%;background:var(--soft,#f2f1eb);font-size:20px;font-weight:800}
+.avatar-onboarding-selected>div{display:grid;gap:4px;flex:1;min-width:0}
+.avatar-onboarding-selected strong{font-size:14px}
+.avatar-onboarding-selected>div>span{color:var(--muted,#666960);font-size:12px}
+.avatar-onboarding-selected>.btn{min-height:42px;flex:0 0 auto}
+.avatar-onboarding-continue{width:100%;min-height:48px;margin-top:18px}
+.protected-access-message{width:min(480px,calc(100% - 32px));padding:24px;border:1px solid var(--line,#deded5);border-radius:14px;background:var(--paper,#fff);color:var(--ink,#11120f)}
+.protected-access-message h1{margin:0 0 10px;font-size:22px}
+.protected-access-message p{color:var(--muted,#666960);line-height:1.5}
+.client360-avatar{object-fit:cover}
+.admin-lead-avatar,.admin-review-avatar,.admin-user-avatar,.admin-files-client-avatar,.messages-chat-avatar,.messages-admin-client-avatar{object-fit:cover;overflow:hidden}
+.admin-files-client-avatar{border-radius:50%;object-fit:contain;background:var(--soft,#f2f1eb)}
+html[data-theme="dark"] .avatar-onboarding-page{background:var(--dark-bg,#10110e);color:var(--dark-text,#f5f4ee)}
+html[data-theme="dark"] .avatar-onboarding-card,html[data-theme="dark"] .protected-access-message,html[data-theme="dark"] .auth-avatar-selection{background:var(--dark-surface,#151610);border-color:var(--dark-border,#34362d);color:var(--dark-text,#f5f4ee)}
+html[data-theme="dark"] .avatar-onboarding-copy,html[data-theme="dark"] .avatar-onboarding-selected>div>span,html[data-theme="dark"] .auth-avatar-selection-preview span{color:var(--dark-muted,#aaa99f)}
+html[data-theme="dark"] .auth-avatar-selection-preview strong{color:var(--dark-text,#f5f4ee)}
+html[data-theme="dark"] .avatar-onboarding-selected{border-color:var(--dark-border,#34362d)}
+@media(max-width:600px){.auth-avatar-selection{align-items:stretch;flex-direction:column}.auth-avatar-selection>.btn{width:100%}.avatar-onboarding-page{padding:16px}.avatar-onboarding-header{margin-bottom:24px}.avatar-onboarding-card{padding:22px 18px}.avatar-onboarding-selected{align-items:flex-start;flex-wrap:wrap}.avatar-onboarding-selected>div{padding-top:7px}.avatar-onboarding-selected>.btn{width:100%}}
+
 /* =========================================================
    HEADER / NAVIGATION
    ========================================================= */
@@ -5523,6 +5557,14 @@ footer{
 
   font-size: 12px;
   font-weight: 800;
+}
+
+.sidebar-avatar-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: contain;
 }
 
 .sidebar-account-copy {

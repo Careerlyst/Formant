@@ -4,11 +4,13 @@ import {
   BrowserRouter,
   Routes,
   Route,
+  Navigate,
   useLocation
 } from 'react-router-dom';
 
 import { applyStoredTheme } from './lib/theme';
 import { applySeoMetadata, normalizePath } from './lib/seo';
+import { getHostRootDestination } from './lib/adminHostRouting';
 import './styles.css';
 import './pages/messages.css';
 
@@ -49,6 +51,7 @@ const Files = React.lazy(() => import('./pages/Dashboard').then((m) => ({ defaul
 const Payments = React.lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Payments })));
 const Notifications = React.lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Notifications })));
 const Settings = React.lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Settings })));
+const AvatarOnboarding = React.lazy(() => import('./pages/AvatarOnboarding'));
 
 const AdminGate = React.lazy(() => import('./pages/Admin').then((m) => ({ default: m.AdminGate })));
 const AdminUsers = React.lazy(() => import('./pages/Admin').then((m) => ({ default: m.AdminUsers })));
@@ -123,6 +126,17 @@ function TitleManager() {
   return null;
 }
 
+function HomeRoute() {
+  const location = useLocation();
+  const destination = getHostRootDestination(window.location.hostname, location.pathname);
+
+  if (destination !== location.pathname) {
+    return <Navigate to={{ pathname: destination, search: location.search, hash: location.hash }} replace />;
+  }
+
+  return <Home />;
+}
+
 function App() {
   return (
     <Routes>
@@ -133,7 +147,7 @@ function App() {
 
       <Route
         path="/"
-        element={<Home />}
+        element={<HomeRoute />}
       />
 
       <Route
@@ -214,6 +228,11 @@ function App() {
       <Route
         path="/auth/callback"
         element={<AuthCallback />}
+      />
+
+      <Route
+        path="/onboarding/avatar"
+        element={<Protected requireAvatar={false}><AvatarOnboarding /></Protected>}
       />
 
 

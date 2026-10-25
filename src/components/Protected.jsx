@@ -1,37 +1,41 @@
 import React, { useEffect, useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { activateUser, load } from '../lib/store';
+import { getProfileAvatar, requiresProfileAvatar } from '../lib/profileAvatars';
 import SkeletonState from './SkeletonState';
 
-export default function Protected({ children }) {
-
+export default function Protected({ children, requireAvatar = true }) {
+  const location = useLocation();
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState(null);
+  const [avatarRequired, setAvatarRequired] = useState(false);
+  const [profileError, setProfileError] = useState('');
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-
     let mounted = true;
     let authResolved = false;
     let latestUserId = null;
 
     async function syncDashboardStore(nextSession) {
-      if (!nextSession?.user) return;
+      if (!nextSession?.user) {
+        if (mounted) setAvatarRequired(false);
+        return;
+      }
 
       const user = nextSession.user;
-      const fallbackName =
-        user.user_metadata?.full_name ||
-        user.user_metadata?.name ||
-        user.email?.split('@')[0] ||
-        'Client';
+      const fallbackName = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || 'Client';
       let profile = null;
       if (supabase) {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('id, name, email, phone, location, target_role, experience, education, skills, certifications, linkedin, github, portfolio, bio, preferences')
+        const { data, error } = await supabase.from('profiles')
+          .select('id, name, email, phone, location, target_role, experience, education, skills, certifications, linkedin, github, portfolio, bio, preferences, avatar_id')
           .eq('id', user.id)
           .maybeSingle();
-        if (error) console.error('Profile hydration failed:', error);
+        if (error) {
+          if (mounted && latestUserId === user.id) setProfileError('Your profile could not be verified. Retry before continuing.');
+          throw error;
+        }
         profile = data;
       }
       if (!mounted || latestUserId !== user.id) return;
@@ -46,142 +50,97 @@ export default function Protected({ children }) {
         },
         profile: { ...(profile || {}), email: user.email, name }
       });
+      let verifiedStaff = false;
+      if (!getProfileAvatar(profile?.avatar_id)) {
+        const { data: staffResult, error: staffError } = await supabase.rpc('is_showcase_staff_v1');
+        if (staffError) {
+          if (mounted && latestUserId === user.id) setProfileError('Your account role could not be verified. Retry before continuing.');
+          throw staffError;
+        }
+        verifiedStaff = staffResult === true;
+      }
+      setAvatarRequired(requiresProfileAvatar(profile?.avatar_id, verifiedStaff));
+      setProfileError('');
     }
 
-    /*
-      Supabase is the source of truth when configured.
-      Keep the route blocked until the initial auth state has
-      been resolved. This prevents a transient null session from
-      causing an immediate redirect during a page refresh.
-    */
     if (supabase) {
-
-      const { data } = supabase.auth.onAuthStateChange(
-        (_event, nextSession) => {
-
-          if (!mounted) return;
-
-          /*
-            INITIAL_SESSION is Supabase's first answer about the
-            persisted browser session. Do not redirect before it.
-          */
-          if (!authResolved) {
-            /*
-              During startup, wait for getSession() to finish. The
-              INITIAL_SESSION event can briefly report null while the
-              persisted browser session is still being resolved.
-            */
-            return;
-          }
-
-          /*
-            After the initial check, normal auth changes are trusted.
-            SIGNED_IN / TOKEN_REFRESHED keep the existing user in place;
-            SIGNED_OUT clears the session and allows the login redirect.
-          */
-          const nextUserId = nextSession?.user?.id || null;
-          const identityChanged = nextUserId !== latestUserId;
-          setSession(nextSession);
-          latestUserId = nextUserId;
-          if (!nextSession?.user) {
-            setLoading(false);
-            return;
-          }
-          if (identityChanged) setLoading(true);
-          void syncDashboardStore(nextSession).finally(() => {
-            if (mounted && latestUserId === nextUserId) setLoading(false);
-          });
+      const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+        if (!mounted || !authResolved) return;
+        const nextUserId = nextSession?.user?.id || null;
+        const identityChanged = nextUserId !== latestUserId;
+        latestUserId = nextUserId;
+        setSession(nextSession);
+        setProfileError('');
+        if (!nextSession?.user) {
+          setAvatarRequired(false);
+          setLoading(false);
+          return;
         }
-      );
-
-      /*
-        Also explicitly ask Supabase for the current session. This
-        covers the case where the persisted session is available before
-        the auth listener finishes initializing.
-      */
-      supabase.auth.getSession()
-        .then(async ({ data: sessionData, error }) => {
-          if (!mounted) return;
-
-          if (error) {
-            console.error('Auth session check failed:', error);
-          }
-
-          const nextSession = sessionData?.session || null;
-
-          /*
-            Prefer the concrete getSession result for the initial route
-            decision. A null result is only accepted once this check has
-            completed; the app never redirects while it is still pending.
-          */
-          authResolved = true;
-          latestUserId = nextSession?.user?.id || null;
-          setSession(nextSession);
-          await syncDashboardStore(nextSession);
-          if (!mounted || latestUserId !== (nextSession?.user?.id || null)) return;
-          setLoading(false);
-        })
-        .catch((error) => {
-          if (!mounted) return;
-
-          console.error('Auth session initialization failed:', error);
-          authResolved = true;
-          setSession(null);
-          setLoading(false);
+        if (identityChanged) setLoading(true);
+        void syncDashboardStore(nextSession).catch(() => {}).finally(() => {
+          if (mounted && latestUserId === nextUserId) setLoading(false);
         });
+      });
+
+      supabase.auth.getSession().then(async ({ data, error }) => {
+        if (!mounted) return;
+        authResolved = true;
+        const nextSession = data?.session || null;
+        latestUserId = nextSession?.user?.id || null;
+        setSession(nextSession);
+        setProfileError('');
+        if (!nextSession?.user) setAvatarRequired(false);
+        try {
+          await syncDashboardStore(nextSession);
+        } catch {
+          // Keep protected content blocked; the retry panel below is actionable.
+        }
+        if (!mounted || latestUserId !== (nextSession?.user?.id || null)) return;
+        if (error) setProfileError('Your sign-in could not be verified. Retry before continuing.');
+        setLoading(false);
+      }).catch(() => {
+        if (!mounted) return;
+        authResolved = true;
+        setSession(null);
+        setLoading(false);
+      });
 
       return () => {
         mounted = false;
-        // Safe unsubscribe check
-        if (data?.subscription) {
-          data.subscription.unsubscribe();
-        }
+        listener?.subscription?.unsubscribe();
       };
     }
 
-    /*
-      Demo/local fallback.
-    */
     const current = load();
-
     if (!mounted) return undefined;
-
-    setSession(
-      current.user
-        ? { user: current.user }
-        : null
-    );
+    setSession(current.user ? { user: current.user } : null);
+    setAvatarRequired(Boolean(current.user && requiresProfileAvatar(current.profile?.avatar_id)));
+    setProfileError('');
     setLoading(false);
+    return () => { mounted = false; };
+  }, [attempt]);
 
-    return () => {
-      mounted = false;
-    };
-
-  }, []);
-
-
-  /*
-    Never redirect until the initial authentication check has finished.
-  */
   if (loading) {
+    return <main className="protected-loading" aria-busy="true"><SkeletonState label="Checking your account" variant="profile" /></main>;
+  }
+
+  if (!session) return <Navigate to="/login" replace />;
+
+  if (profileError) {
     return (
-      <main className="protected-loading" aria-busy="true">
-        <SkeletonState label="Checking your account" variant="profile" />
+      <main className="protected-loading" role="alert">
+        <section className="protected-access-message">
+          <h1>We could not verify your profile</h1>
+          <p>{profileError}</p>
+          <button type="button" className="btn dark" onClick={() => { setLoading(true); setAttempt((value) => value + 1); }}>Retry</button>
+        </section>
       </main>
     );
   }
 
-
-  if (!session) {
-    return <Navigate to="/login" replace />;
+  if (requireAvatar && avatarRequired) {
+    return <Navigate to="/onboarding/avatar" replace state={{ from: location }} />;
   }
 
-
-  // Remount protected page state when the authenticated identity changes so
-  // an open conversation or draft from the previous user cannot carry over.
-  return (
-    <React.Fragment key={session?.user?.id || session?.user?.email || 'protected-session'}>
-      {children}
-    </React.Fragment>
-  );
+  return <React.Fragment key={session.user?.id || session.user?.email || 'protected-session'}>{children}</React.Fragment>;
 }

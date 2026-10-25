@@ -5,6 +5,9 @@ import SkeletonState from '../components/SkeletonState'
 import { useToast } from '../components/ToastProvider'
 import { demoLogin, patch } from '../lib/store'
 import { supabase } from '../lib/supabase'
+import AvatarPickerDialog from '../components/AvatarPickerDialog'
+import ProfileAvatar from '../components/ProfileAvatar'
+import { clearPendingAvatarSelection, getPendingAvatarSelection, getProfileAvatar, savePendingAvatarSelection } from '../lib/profileAvatars'
 
 /* =========================================================
    RESEND LINK COMPONENT
@@ -169,6 +172,8 @@ export default function Auth({ signup = false }) {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [name, setName] = useState('')
+  const [signupAvatarId, setSignupAvatarId] = useState(null)
+  const [avatarPickerOpen, setAvatarPickerOpen] = useState(false)
 
   const [rememberMe, setRememberMe] = useState(true)
   const [termsAccepted, setTermsAccepted] = useState(false)
@@ -254,6 +259,7 @@ export default function Auth({ signup = false }) {
         errorDesc || 'Google sign-in could not be completed.'
       if (errorCode === 'access_denied') {
         friendlyMsg = 'Google sign-in was cancelled.'
+        clearPendingAvatarSelection()
       }
       setMessage(friendlyMsg)
       setMessageType('error')
@@ -304,6 +310,13 @@ export default function Auth({ signup = false }) {
   ======================================================= */
   const handleGoogleSignIn = async () => {
     if (googleLoading || loading) return
+    if (signup && !getProfileAvatar(signupAvatarId)) {
+      const msg = 'Choose a Formant avatar before continuing with Google.'
+      setMessage(msg)
+      setMessageType('error')
+      showToast.warning(msg, { title: 'Choose an avatar' })
+      return
+    }
     setMessage('')
     setGoogleLoading(true)
 
@@ -323,10 +336,15 @@ export default function Auth({ signup = false }) {
         // Ignore restricted storage
       }
 
+      const flowId = signup ? (globalThis.crypto?.randomUUID?.() || `avatar-${Date.now()}-${Math.random().toString(36).slice(2)}`) : ''
+      if (signup && !savePendingAvatarSelection('', signupAvatarId, { flowId, source: 'oauth' })) {
+        throw new Error('Your avatar choice could not be kept for the Google sign-in. Allow site storage and try again.')
+      }
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: `${window.location.origin}/auth/callback${signup ? `?avatarFlow=${encodeURIComponent(flowId)}` : ''}`,
           queryParams: {
             access_type: 'offline',
             prompt: 'consent'
@@ -335,6 +353,7 @@ export default function Auth({ signup = false }) {
       })
 
       if (error) {
+        if (signup) clearPendingAvatarSelection()
         const msg = error.message || 'Failed to initiate Google sign-in.'
         setMessage(msg)
         setMessageType('error')
@@ -388,6 +407,16 @@ export default function Auth({ signup = false }) {
     : ''
 
   const passwordStrength = evaluatePasswordStrength(password)
+  const chosenSignupAvatar = getProfileAvatar(signupAvatarId)
+  const avatarSelection = signup ? (
+    <div className="auth-avatar-selection">
+      <div className="auth-avatar-selection-preview">
+        {chosenSignupAvatar ? <ProfileAvatar avatarId={chosenSignupAvatar.id} decorative initials="F" /> : <span aria-hidden="true">+</span>}
+        <div><strong>{chosenSignupAvatar ? `Avatar ${String(chosenSignupAvatar.id).padStart(3, '0')} selected` : 'Choose a profile avatar'}</strong><span>Pick from the approved Formant collection. You can change it later.</span></div>
+      </div>
+      <button type="button" className="btn" onClick={() => setAvatarPickerOpen(true)}>{chosenSignupAvatar ? 'Change avatar' : 'Choose avatar'}</button>
+    </div>
+  ) : null
 
   /* =======================================================
      SUBMIT
@@ -427,6 +456,13 @@ export default function Auth({ signup = false }) {
     }
 
     if (signup) {
+      if (!getProfileAvatar(signupAvatarId)) {
+        const msg = 'Choose an approved Formant avatar to create your account.'
+        setMessage(msg)
+        setMessageType('error')
+        showToast.warning(msg, { title: 'Avatar required' })
+        return
+      }
       if (!cleanName) {
         const msg = 'Please enter your full name.'
         setMessage(msg)
@@ -462,18 +498,21 @@ export default function Auth({ signup = false }) {
       ===================================================== */
       if (supabase) {
         if (signup) {
+          savePendingAvatarSelection(cleanEmail, signupAvatarId, { source: 'email' });
           const { data, error } = await supabase.auth.signUp({
             email: cleanEmail,
             password,
             options: {
               data: {
                 name: cleanName,
-                email: cleanEmail
+                email: cleanEmail,
+                formant_avatar_id: getProfileAvatar(signupAvatarId)?.id
               }
             }
           })
 
           if (error) {
+            clearPendingAvatarSelection()
             setMessage(error.message)
             setMessageType('error')
             showToast.error(error.message, { title: 'Account creation failed' })
@@ -600,6 +639,7 @@ export default function Auth({ signup = false }) {
         cleanEmail,
         cleanName || 'Demo Client'
       )
+      if (signup) patch((current) => ({ ...current, profile: { ...(current.profile || {}), avatar_id: getProfileAvatar(signupAvatarId)?.id || null } }))
       nav('/assessment')
 
     } catch (error) {
@@ -746,6 +786,8 @@ export default function Auth({ signup = false }) {
                   </p>
                 </div>
 
+                {avatarSelection}
+
                 {/* FIRST OPTION — EMAIL */}
                 <button
                   type="button"
@@ -840,6 +882,7 @@ export default function Auth({ signup = false }) {
                   onSubmit={submit}
                   noValidate
                 >
+                {avatarSelection}
                 {/* =================================================
                    NAME (SIGNUP ONLY)
                 ================================================= */}
@@ -1161,7 +1204,7 @@ export default function Auth({ signup = false }) {
          FOOTER
       ===================================================== */}
 
-      <footer className="login-footer">
+    <footer className="login-footer">
 
         <span>
           FORMANT
@@ -1175,9 +1218,20 @@ export default function Auth({ signup = false }) {
           © 2026
         </span>
 
-      </footer>
+    </footer>
 
-    </main>
+    <AvatarPickerDialog
+      open={avatarPickerOpen}
+      selectedAvatarId={signupAvatarId}
+      onSelectedChange={setSignupAvatarId}
+      onSave={() => setAvatarPickerOpen(false)}
+      onCancel={() => setAvatarPickerOpen(false)}
+      saveLabel="Use this avatar"
+      title="Choose your Formant avatar"
+      description="Your profile image will come from this approved local collection."
+    />
+
+  </main>
   )
 }
 
@@ -2377,6 +2431,32 @@ export function AuthCallback() {
           user.email?.split('@')[0] ||
           'Client'
 
+        const avatarFlowId = searchParams.get('avatarFlow') || ''
+        const pendingAvatar = avatarFlowId
+          ? getPendingAvatarSelection('', { flowId: avatarFlowId })
+          : null
+        if (pendingAvatar && user.email) {
+          const { data: avatarProfile, error: avatarProfileError } = await supabase
+            .from('profiles')
+            .select('avatar_id')
+            .eq('id', user.id)
+            .maybeSingle()
+          if (avatarProfileError) console.warn('Avatar profile check notice:', avatarProfileError)
+          if (getProfileAvatar(avatarProfile?.avatar_id)) {
+            clearPendingAvatarSelection()
+          } else {
+            // Persist the choice as a validated onboarding preselection as well
+            // as browser storage, so a later visit can recover it. This metadata
+            // is never treated as proof of authorization or as the saved avatar.
+            const { error: metadataError } = await supabase.auth.updateUser({
+              data: { ...(user.user_metadata || {}), formant_avatar_id: pendingAvatar.avatarId }
+            })
+            if (metadataError) console.warn('Avatar onboarding preference could not be persisted:', metadataError)
+            clearPendingAvatarSelection()
+            savePendingAvatarSelection(user.email, pendingAvatar.avatarId, { source: 'oauth-confirmed' })
+          }
+        }
+
         // 6. Safe non-blocking profile name sync if not set
         // The handle_new_user trigger creates the public.profiles row.
         // We only update name if permitted; never block login on failures.
@@ -2426,6 +2506,8 @@ export function AuthCallback() {
         nav(destination, { replace: true })
       } catch (err) {
         console.error('Google auth callback error:', err)
+        // Keep a flow-scoped choice for a retry of this callback. It expires
+        // automatically and cannot prefill another OAuth flow.
         if (isMounted) {
           setError(
             err?.message || 'Authentication could not be completed. Please try again.'

@@ -5,7 +5,10 @@ import { useToast } from '../components/ToastProvider';
 import { load, patch, services } from '../lib/store';
 import { supabase } from '../lib/supabase';
 import { showcaseTabForService } from '../lib/showcase';
-import { fetchProfile, saveProfile } from '../lib/profileRepository';
+import { fetchProfile, saveProfile, saveOwnProfileAvatar } from '../lib/profileRepository';
+import { getProfileAvatar } from '../lib/profileAvatars';
+import AvatarPickerDialog from '../components/AvatarPickerDialog';
+import ProfileAvatar from '../components/ProfileAvatar';
 import { subscribeToClientMessages } from '../lib/messageRealtime';
 import { useMessageViewport } from '../lib/messageViewport';
 import MessageActions from '../components/MessageActions';
@@ -858,6 +861,7 @@ import SkeletonState from '../components/SkeletonState';
 
     const emptyForm = {
       name: initial.name || initialUser.name || '',
+      avatar_id: getProfileAvatar(initial.avatar_id)?.id ?? null,
       email: initial.email || initialUser.email || '',
       phone: initial.phone || '',
       target_role: initial.target_role || '',
@@ -899,6 +903,10 @@ import SkeletonState from '../components/SkeletonState';
     const [profileLoadFailed, setProfileLoadFailed] = useState(false);
     const [profileLoadAttempt, setProfileLoadAttempt] = useState(0);
     const [assessmentSummary, setAssessmentSummary] = useState(null);
+    const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
+    const [selectedAvatarId, setSelectedAvatarId] = useState(null);
+    const [avatarSaving, setAvatarSaving] = useState(false);
+    const [avatarError, setAvatarError] = useState('');
 
     // Initial Profile Load from Supabase or Fallback
     useEffect(() => {
@@ -950,6 +958,7 @@ import SkeletonState from '../components/SkeletonState';
 
           const loaded = {
             name: data?.name || authName,
+            avatar_id: getProfileAvatar(data?.avatar_id)?.id ?? null,
             email: user.email || '',
             phone: data?.phone || '',
             target_role: data?.target_role || '',
@@ -1075,6 +1084,7 @@ import SkeletonState from '../components/SkeletonState';
     const missingKeys = profileProgress.missing;
 
     const FIELD_LABELS = {
+      avatar_id: 'Formant avatar',
       name: 'Full name',
       phone: 'Phone number',
       target_role: 'Target role',
@@ -1082,6 +1092,7 @@ import SkeletonState from '../components/SkeletonState';
     };
 
     const FIELD_SUGGESTIONS = {
+      avatar_id: 'Choose an approved Formant avatar for your profile.',
       name: 'Add your full name so our career consultants can identify your records.',
       target_role: 'Select your target role to calibrate your resume and interview preparation.',
       career_background: 'Add either experience or education to give the team career context.'
@@ -1102,6 +1113,57 @@ import SkeletonState from '../components/SkeletonState';
       if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
       return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
     }, [form.name]);
+
+    const savedAvatarId = getProfileAvatar(savedForm.avatar_id)?.id ?? null;
+
+    function openAvatarPicker() {
+      setSelectedAvatarId(getProfileAvatar(form.avatar_id)?.id ?? null);
+      setAvatarError('');
+      setAvatarPickerOpen(true);
+    }
+
+    function closeAvatarPicker() {
+      if (avatarSaving) return;
+      setAvatarPickerOpen(false);
+      setAvatarError('');
+    }
+
+    async function saveSelectedAvatar() {
+      if (avatarSaving || saving) return;
+      const avatar = getProfileAvatar(selectedAvatarId);
+      if (!avatar) {
+        setAvatarError('That avatar is not in the approved Formant library. Choose another avatar.');
+        return;
+      }
+
+      setAvatarSaving(true);
+      setAvatarError('');
+      try {
+        const avatarId = avatar.id;
+        if (supabase) {
+          await saveOwnProfileAvatar(avatarId);
+        }
+
+        setForm((current) => ({ ...current, avatar_id: avatarId }));
+        setSavedForm((current) => ({ ...current, avatar_id: avatarId }));
+        patch((current) => ({
+          ...current,
+          profile: { ...(current.profile || {}), avatar_id: avatarId }
+        }));
+        window.dispatchEvent(new CustomEvent('careerlyst-profile-updated', {
+          detail: { userId, avatarId }
+        }));
+        setAvatarPickerOpen(false);
+        showToast('Your profile avatar has been saved.', {
+          type: 'success', title: 'Avatar saved', placement: 'bottom-right'
+        });
+      } catch (saveError) {
+        console.error('Save profile avatar error:', saveError);
+        setAvatarError(saveError.message || 'We could not save your avatar. Please try again.');
+      } finally {
+        setAvatarSaving(false);
+      }
+    }
 
     const allRolesList = ALL_TARGET_ROLES;
 
@@ -1211,7 +1273,7 @@ import SkeletonState from '../components/SkeletonState';
 
     async function handleSave(e, section = null) {
       if (e && e.preventDefault) e.preventDefault();
-      if (saving) return;
+      if (saving || avatarSaving) return;
       if (supabase && profileLoadFailed) {
         const msg = 'The saved profile has not loaded. Refresh before editing so a stale cache cannot overwrite server data.';
         setError(msg);
@@ -1417,9 +1479,16 @@ import SkeletonState from '../components/SkeletonState';
           <section className="profile-hero-card" aria-label="Profile Identity Header">
             <div className="profile-hero-identity">
               <div className="profile-hero-avatar-wrap">
-                <div className="profile-hero-avatar" aria-hidden="true">
-                  {userInitials}
-                </div>
+                <ProfileAvatar className="profile-hero-avatar" avatarId={form.avatar_id} decorative initials={userInitials} />
+                <button
+                  type="button"
+                  className="profile-avatar-edit"
+                  aria-label="Choose profile avatar"
+                  title="Choose avatar"
+                  onClick={openAvatarPicker}
+                >
+                  <ProfileIcon name="edit" size={14} />
+                </button>
                 <div className="profile-hero-status-dot" title="Active Client Profile" />
               </div>
 
@@ -1500,6 +1569,17 @@ import SkeletonState from '../components/SkeletonState';
               </button>
             </div>
           </section>
+
+          <AvatarPickerDialog
+            open={avatarPickerOpen}
+            selectedAvatarId={selectedAvatarId}
+            onSelectedChange={setSelectedAvatarId}
+            onSave={saveSelectedAvatar}
+            onCancel={closeAvatarPicker}
+            saving={avatarSaving}
+            error={avatarError}
+            saveDisabled={saving || selectedAvatarId === savedAvatarId}
+          />
 
           {/* =====================================================
               TWO-COLUMN WORKSPACE

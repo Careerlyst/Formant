@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import Logo from './Logo';
 import { supabase } from '../lib/supabase';
+import { getProfileAvatar } from '../lib/profileAvatars';
+import ProfileAvatar from './ProfileAvatar';
 
 function getUserName(user) {
   return (
@@ -23,14 +25,6 @@ function getInitials(user) {
   return name.slice(0, 2).toUpperCase() || 'U';
 }
 
-function getAvatarUrl(user) {
-  return (
-    user?.user_metadata?.avatar_url ||
-    user?.user_metadata?.picture ||
-    ''
-  );
-}
-
 export default function PublicNav() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -40,7 +34,7 @@ export default function PublicNav() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [session, setSession] = useState(null);
   const [profileName, setProfileName] = useState('');
-  const [avatarBroken, setAvatarBroken] = useState(false);
+  const [profileAvatarId, setProfileAvatarId] = useState(null);
   const [authReady, setAuthReady] = useState(!supabase);
   const [isProcessInView, setIsProcessInView] = useState(() => {
     if (typeof window !== 'undefined' && location.pathname === '/') {
@@ -144,18 +138,24 @@ export default function PublicNav() {
     const userId = session?.user?.id;
     if (!supabase || !userId) {
       setProfileName('');
+      setProfileAvatarId(null);
       return () => { mounted = false; };
     }
     setProfileName('');
-    const refreshProfileName = () => supabase.from('profiles').select('name').eq('id', userId).maybeSingle()
+    setProfileAvatarId(null);
+    const refreshProfileName = () => supabase.from('profiles').select('name, avatar_id').eq('id', userId).maybeSingle()
       .then(({ data, error }) => {
         if (!mounted) return;
         if (error) console.error('Public navigation profile name load failed:', error);
         setProfileName(data?.name || '');
+        setProfileAvatarId(getProfileAvatar(data?.avatar_id)?.id ?? null);
       });
     const handleProfileUpdate = (event) => {
       if (!event.detail?.userId || event.detail.userId === userId) {
         setProfileName(event.detail?.name || '');
+        if (Object.prototype.hasOwnProperty.call(event.detail || {}, 'avatarId')) {
+          setProfileAvatarId(getProfileAvatar(event.detail.avatarId)?.id ?? null);
+        }
         void refreshProfileName();
       }
     };
@@ -194,14 +194,10 @@ export default function PublicNav() {
   const isAuthenticated = authReady && Boolean(session?.user);
   const user = session?.user;
   const userName = profileName || getUserName(user);
-  const avatarSource = getAvatarUrl(user);
-  const avatarUrl = avatarBroken ? '' : avatarSource;
   const initials = (() => {
     const parts = userName.trim().split(/\s+/).filter(Boolean);
     return parts.length > 1 ? `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase() : (userName.slice(0, 2).toUpperCase() || getInitials(user));
   })();
-
-  useEffect(() => setAvatarBroken(false), [avatarSource]);
 
   async function handleLogout() {
     closeAccount();
@@ -325,7 +321,7 @@ export default function PublicNav() {
 
           {authReady && isAuthenticated && (
             <>
-              <NavLink className="authenticated-dashboard-link" to="/dashboard">
+              <NavLink className="authenticated-dashboard-link" to={getProfileAvatar(profileAvatarId) ? '/dashboard' : '/onboarding/avatar'}>
                 Dashboard
               </NavLink>
 
@@ -338,22 +334,14 @@ export default function PublicNav() {
                 aria-expanded={accountOpen}
                 onClick={() => setAccountOpen((open) => !open)}
               >
-                {avatarUrl ? (
-                  <img src={avatarUrl} alt="" className="account-avatar-image" onError={() => setAvatarBroken(true)} />
-                ) : (
-                  <span className="account-avatar-initials">{initials}</span>
-                )}
+                <ProfileAvatar avatarId={profileAvatarId} className="account-avatar-image" decorative initials={initials} />
               </button>
 
               {accountOpen && (
                 <div className="account-dropdown" role="menu">
                   <div className="account-dropdown-head">
                     <span className="account-dropdown-avatar">
-                      {avatarUrl ? (
-                        <img src={avatarUrl} alt="" className="account-avatar-image" onError={() => setAvatarBroken(true)} />
-                      ) : (
-                        initials
-                      )}
+                      <ProfileAvatar avatarId={profileAvatarId} className="account-avatar-image" decorative initials={initials} />
                     </span>
                     <div>
                       <strong>{userName}</strong>
@@ -471,11 +459,7 @@ export default function PublicNav() {
             <div className="mobile-account-actions">
               <div className="mobile-account-summary">
                 <span className="account-dropdown-avatar">
-                  {avatarUrl ? (
-                    <img src={avatarUrl} alt="" className="account-avatar-image" onError={() => setAvatarBroken(true)} />
-                  ) : (
-                    initials
-                  )}
+                  <ProfileAvatar avatarId={profileAvatarId} className="account-avatar-image" decorative initials={initials} />
                 </span>
                 <div>
                   <strong>{userName}</strong>
@@ -483,7 +467,7 @@ export default function PublicNav() {
                 </div>
               </div>
 
-              <Link className="mobile-profile-button" to="/dashboard" onClick={closeMenu}>
+              <Link className="mobile-profile-button" to={getProfileAvatar(profileAvatarId) ? '/dashboard' : '/onboarding/avatar'} onClick={closeMenu}>
                 Dashboard
                 <span>↗</span>
               </Link>

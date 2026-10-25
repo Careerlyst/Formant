@@ -12,6 +12,7 @@ import { AdminReviewsPage } from './AdminReviews';
 import DashboardShell from '../components/DashboardShell';
 import Logo from '../components/Logo';
 import { supabase } from '../lib/supabase';
+import ProfileAvatar from '../components/ProfileAvatar';
 import { load } from '../lib/store';
 import MessageActions from '../components/MessageActions';
 import { useMessageViewport } from '../lib/messageViewport';
@@ -126,7 +127,7 @@ import SkeletonState from '../components/SkeletonState';
               error: profileError
             } = await supabase
               .from('profiles')
-              .select('id, name')
+              .select('id, name, avatar_id')
               .in('id', userIds);
 
             if (profileError) throw profileError;
@@ -1141,7 +1142,7 @@ import SkeletonState from '../components/SkeletonState';
         if (userIds.length) {
           const { data: profileRows, error: profileError } = await supabase
             .from('profiles')
-            .select('id, name, email, phone, location, target_role, experience, education, skills, certifications, linkedin, github, portfolio, bio, preferences, lead_assessment, lead_score, lead_status, lead_assessment_completed_at')
+            .select('id, name, email, phone, location, target_role, experience, education, skills, certifications, linkedin, github, portfolio, bio, preferences, avatar_id, lead_assessment, lead_score, lead_status, lead_assessment_completed_at')
             .in('id', userIds);
           if (profileError) throw profileError;
           profileMap = Object.fromEntries((profileRows || []).map((row) => [row.id, row]));
@@ -1413,7 +1414,7 @@ import SkeletonState from '../components/SkeletonState';
         // profiles is the application-side user directory. We intentionally
         // do not query auth.users from the browser.
         const [profilesResult, ordersResult, rolesResult, joinDatesResult] = await Promise.all([
-          supabase.from('profiles').select('id, name'),
+          supabase.from('profiles').select('id, name, avatar_id'),
           supabase
             .from('orders')
             .select('id, user_id, service_name, package_name, status, payment_status, created_at, updated_at')
@@ -1624,9 +1625,7 @@ import SkeletonState from '../components/SkeletonState';
                     : 'Unknown';
                   return (
                     <article className="admin-user-row" key={user.id}>
-                      <div className="admin-user-avatar">
-                        {user.name.slice(0, 1).toUpperCase()}
-                      </div>
+                      <ProfileAvatar className="admin-user-avatar" avatarId={user.avatar_id} decorative initials={user.name.slice(0, 1).toUpperCase()} />
                       <div className="admin-user-main">
                         <div className="admin-user-title">
                           <strong>{user.name}</strong>
@@ -1910,6 +1909,7 @@ export function AdminReviews() {
           group = {
             userId: order.user_id,
             clientName,
+            avatarId: profiles[order.user_id]?.avatar_id ?? null,
             orders: [],
             unread: 0,
             latestAt: last?.created_at || order.updated_at || order.created_at
@@ -2025,7 +2025,7 @@ export function AdminReviews() {
         if (senderIds.length) {
           const { data: senderProfiles, error: senderProfileError } = await supabase
             .from('profiles')
-            .select('id, name')
+            .select('id, name, avatar_id')
             .in('id', senderIds);
           if (senderProfileError) throw senderProfileError;
           setProfiles((current) => ({
@@ -2164,7 +2164,7 @@ export function AdminReviews() {
               error: profileError
             } = await supabase
               .from('profiles')
-              .select('id, name')
+              .select('id, name, avatar_id')
               .in('id', userIds);
 
             if (profileError) throw profileError;
@@ -2244,7 +2244,7 @@ export function AdminReviews() {
                     try {
                       const { data: prof } = await supabase
                         .from('profiles')
-                        .select('id, name')
+                        .select('id, name, avatar_id')
                         .eq('id', newOrder.user_id)
                         .maybeSingle();
                       if (prof && mounted) {
@@ -3132,9 +3132,7 @@ export function AdminReviews() {
                           aria-controls={`client-projects-${group.userId}`}
                         >
                           <div className="messages-admin-client-identity admin-client-group-identity">
-                            <span className="messages-admin-client-avatar admin-client-group-avatar">
-                              {group.clientName.charAt(0).toUpperCase()}
-                            </span>
+                            <ProfileAvatar className="messages-admin-client-avatar admin-client-group-avatar" avatarId={group.avatarId} decorative initials={group.clientName.charAt(0).toUpperCase()} />
 
                             <div>
                               <strong>{group.clientName}</strong>
@@ -3259,9 +3257,7 @@ export function AdminReviews() {
                         ←
                       </button>
 
-                      <div className="messages-chat-avatar">
-                        {(profiles[selectedOrder.user_id]?.name || 'Client').charAt(0).toUpperCase()}
-                      </div>
+                      <ProfileAvatar className="messages-chat-avatar" avatarId={profiles[selectedOrder.user_id]?.avatar_id} decorative initials={(profiles[selectedOrder.user_id]?.name || 'Client').charAt(0).toUpperCase()} />
 
                       <div className="messages-chat-header-details">
                         <h2 className="messages-chat-title">
@@ -4119,7 +4115,7 @@ function AdminFilesManager() {
         try {
           const { data: profiles } = await supabase
             .from('profiles')
-            .select('id, full_name, name, email')
+            .select('id, full_name, name, email, avatar_id')
             .in('id', userIds);
 
           (profiles || []).forEach((profile) => {
@@ -4167,6 +4163,7 @@ function AdminFilesManager() {
             createdAt: message.created_at,
             clientId: order?.user_id || '',
             clientName,
+            avatarId: profile?.avatar_id ?? null,
             serviceName: order?.service_name || 'Formant service',
             packageName: order?.package_name || '',
             status: order?.status || ''
@@ -4184,6 +4181,7 @@ function AdminFilesManager() {
             profile?.name ||
             profile?.email ||
             `Client #${String(order.user_id || '').slice(0, 8) || 'unknown'}`,
+          avatarId: profile?.avatar_id ?? null,
           serviceName: order.service_name || 'Formant service',
           packageName: order.package_name || '',
           status: order.status || '',
@@ -4275,6 +4273,7 @@ function AdminFilesManager() {
         map.set(key, {
           id: file.clientId || key,
           name: file.clientName,
+          avatarId: file.avatarId,
           count: 0
         });
       }
@@ -4330,6 +4329,7 @@ function AdminFilesManager() {
         groups.set(key, {
           id: file.clientId || key,
           name: file.clientName,
+          avatarId: file.avatarId,
           files: []
         });
       }
@@ -4773,9 +4773,7 @@ function AdminFilesManager() {
                   >
                     <header className="admin-files-client-head">
                       <div className="admin-files-client-title">
-                        <div className="admin-files-client-avatar">
-                          {getInitials(group.name)}
-                        </div>
+                        <ProfileAvatar className="admin-files-client-avatar" avatarId={group.avatarId} decorative initials={getInitials(group.name)} />
 
                         <div>
                           <h2>{group.name}</h2>

@@ -1,12 +1,15 @@
 // Shared profile readiness model. Optional details are recommendations, not
 // required work, so a complete core profile is not penalized for omissions.
-export const PROFILE_COMPLETION_FIELDS = ['name', 'target_role', 'career_background'];
+import { getProfileAvatar } from './profileAvatars.js';
+
+export const PROFILE_COMPLETION_FIELDS = ['avatar_id', 'name', 'target_role', 'career_background'];
 
 export function getProfileProgress(profile = {}) {
   const hasCareerBackground = Boolean(
     String(profile?.experience ?? '').trim() || String(profile?.education ?? '').trim()
   );
   const checks = [
+    { key: 'avatar_id', label: 'Formant avatar', done: Boolean(getProfileAvatar(profile?.avatar_id)) },
     { key: 'name', label: 'Full name', done: Boolean(String(profile?.name ?? '').trim()) },
     { key: 'target_role', label: 'Target role', done: Boolean(String(profile?.target_role ?? '').trim()) },
     { key: 'career_background', label: 'Experience or education', done: hasCareerBackground }

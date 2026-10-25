@@ -9,6 +9,7 @@ import DashboardShell from '../components/DashboardShell';
 import { useToast } from '../components/ToastProvider';
 import SkeletonState from '../components/SkeletonState';
 import { supabase } from '../lib/supabase';
+import ProfileAvatar from '../components/ProfileAvatar';
 
 import './admin-reviews.css';
 
@@ -247,11 +248,7 @@ function ReviewDrawer({
 
         <div className="admin-review-drawer-body">
           <section className="admin-review-profile">
-            <div className="admin-review-avatar large">
-              {getInitials(
-                review.client_name || 'Client'
-              )}
-            </div>
+            <ProfileAvatar className="admin-review-avatar large" avatarId={review.client_avatar_id} decorative initials={getInitials(review.client_name || 'Client')} />
 
             <div>
               <strong>
@@ -617,7 +614,7 @@ function AdminReviewsPage() {
             await supabase
               .from('profiles')
               .select(
-                'id, name'
+                'id, name, avatar_id'
               )
               .in(
                 'id',
@@ -657,6 +654,7 @@ function AdminReviewsPage() {
                   review.user_id
                 ]?.name ||
                 'Client',
+              client_avatar_id: profileMap[review.user_id]?.avatar_id ?? null,
               rating:
                 Number(
                   review.rating
@@ -1579,12 +1577,7 @@ function AdminReviewsPage() {
                     >
                       <div className="admin-review-card-main">
                         <div className="admin-review-card-client">
-                          <div className="admin-review-avatar">
-                            {getInitials(
-                              review.client_name ||
-                                'Client'
-                            )}
-                          </div>
+                          <ProfileAvatar className="admin-review-avatar" avatarId={review.client_avatar_id} decorative initials={getInitials(review.client_name || 'Client')} />
 
                           <div>
                             <strong>

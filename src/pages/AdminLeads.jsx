@@ -3,6 +3,7 @@ import DashboardShell from '../components/DashboardShell';
 import SkeletonState from '../components/SkeletonState';
 import { useToast } from '../components/ToastProvider';
 import { supabase } from '../lib/supabase';
+import ProfileAvatar from '../components/ProfileAvatar';
 
 const QUESTIONS = [
   {
@@ -198,6 +199,7 @@ export default function AdminLeads() {
           id,
           name,
           email,
+          avatar_id,
           lead_assessment,
           lead_score,
           lead_status,
@@ -472,15 +474,13 @@ export default function AdminLeads() {
                 }
               >
 
-                <div className="admin-lead-avatar">
-                  {(
+                <ProfileAvatar className="admin-lead-avatar" avatarId={lead.avatar_id} decorative initials={(
                     lead.name ||
                     lead.email ||
                     'U'
                   )
                     .charAt(0)
-                    .toUpperCase()}
-                </div>
+                    .toUpperCase()} />
 
                 <div className="admin-lead-main">
 
