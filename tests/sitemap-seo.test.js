@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SEO_PAGES } from '../src/lib/seo.js';
+import { SEO_PAGES, getCanonicalServiceSlug } from '../src/lib/seo.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -87,5 +87,14 @@ describe('Sitemap & SEO Configuration', () => {
     assert.ok(adminRootNoIndex.headers.some((header) =>
       header.key === 'X-Robots-Tag' && /noindex/i.test(header.value)
     ));
+  });
+
+  it('uses canonical service slugs for public links and metadata', () => {
+    assert.equal(getCanonicalServiceSlug('resume-cv'), 'resume');
+    assert.equal(getCanonicalServiceSlug('cover-letter'), 'cover');
+    assert.equal(getCanonicalServiceSlug('interview-preparation'), 'interview');
+    assert.equal(getCanonicalServiceSlug('linkedin-profile'), 'linkedin');
+    assert.equal(getCanonicalServiceSlug('github-profile'), 'github');
+    assert.equal(getCanonicalServiceSlug('portfolio'), 'portfolio');
   });
 });

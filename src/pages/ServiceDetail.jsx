@@ -6,7 +6,7 @@ import SkeletonState from '../components/SkeletonState';
 import { PageNotFound, RequestProblem } from '../components/ErrorExperience';
 import { classifyRequestFailure } from '../lib/requestFailure';
 import { services as fallbackServices } from '../lib/store';
-import { applySeoMetadata, normalizePath, SITE_ORIGIN } from '../lib/seo';
+import { applySeoMetadata, getCanonicalServiceSlug, normalizePath, SITE_ORIGIN } from '../lib/seo';
 import { useToast } from '../components/ToastProvider';
 import { supabase } from '../lib/supabase';
 import './service-detail.css';
@@ -177,14 +177,7 @@ export default function ServiceDetail() {
   useEffect(() => {
     if (service?.name) {
       const currentSlug = (service.slug || service.id || id || '').toLowerCase();
-      const canonicalSlug = [
-        ['resume', 'resume-cv', 'cv'],
-        ['linkedin', 'linkedin-profile'],
-        ['github', 'github-profile'],
-        ['portfolio'],
-        ['cover', 'cover-letter'],
-        ['interview', 'interview-preparation', 'interview-prep']
-      ].find((aliases) => aliases.includes(currentSlug))?.[0] || currentSlug;
+      const canonicalSlug = getCanonicalServiceSlug(currentSlug);
       const serviceDescription = service.description || getServiceProfile(service).tagline;
 
       applySeoMetadata(normalizePath(`/services/${canonicalSlug}`), {

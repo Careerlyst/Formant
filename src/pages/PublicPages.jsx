@@ -5,6 +5,7 @@ import Footer from '../components/Footer';
 import SkeletonState from '../components/SkeletonState';
 import { services as fallbackServices } from '../lib/store';
 import { supabase } from '../lib/supabase';
+import { getCanonicalServiceSlug } from '../lib/seo';
 import { useToast } from '../components/ToastProvider';
 
 
@@ -171,7 +172,7 @@ export function Services() {
 
               <Link
                 className="service-row"
-                to={`/services/${s.id}`}
+                to={`/services/${getCanonicalServiceSlug(s.id)}`}
                 key={s.id}
               >
 

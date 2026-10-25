@@ -122,6 +122,20 @@ export function normalizePath(pathname = '/') {
   return pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
 }
 
+const SERVICE_SLUG_GROUPS = [
+  ['resume', 'resume-cv', 'cv'],
+  ['linkedin', 'linkedin-profile'],
+  ['github', 'github-profile'],
+  ['portfolio'],
+  ['cover', 'cover-letter'],
+  ['interview', 'interview-preparation', 'interview-prep']
+];
+
+export function getCanonicalServiceSlug(slug = '') {
+  const normalized = String(slug).toLowerCase();
+  return SERVICE_SLUG_GROUPS.find((aliases) => aliases.includes(normalized))?.[0] || normalized;
+}
+
 export function getSeoMetadata(pathname = '/') {
   const path = normalizePath(pathname);
   const metadata = SEO_PAGES[path];
