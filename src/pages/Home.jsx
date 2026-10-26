@@ -11,6 +11,23 @@ const serviceDescriptions = Object.fromEntries(
   services.map(({ id, desc }) => [id, desc])
 );
 
+const getHeroIllustration = () => {
+  const isDark = document.documentElement.dataset.theme === 'dark';
+  return isDark
+    ? {
+        src: '/assets/hero-illustration-dark-960.webp',
+        srcSet: '/assets/hero-illustration-dark-640.webp 640w, /assets/hero-illustration-dark-960.webp 960w',
+        width: 1536,
+        height: 1024,
+      }
+    : {
+        src: '/assets/hero-illustration-960.webp',
+        srcSet: '/assets/hero-illustration-640.webp 640w, /assets/hero-illustration-960.webp 960w',
+        width: 1405,
+        height: 1120,
+      };
+};
+
 function PublicHome({ user = null, profileName = '' }) {
   const firstName =
     profileName?.split(' ')[0] ||
@@ -20,21 +37,13 @@ function PublicHome({ user = null, profileName = '' }) {
     user?.email?.split('@')[0] ||
     'there';
 
-  const [heroIllustration, setHeroIllustration] = useState(() =>
-    document.documentElement.dataset.theme === 'dark'
-      ? '/assets/hero-illustration-dark.png'
-      : '/assets/hero-illustration.png'
-  );
+  const [heroIllustration, setHeroIllustration] = useState(getHeroIllustration);
 
   useEffect(() => {
     const root = document.documentElement;
 
     const updateHeroIllustration = () => {
-      setHeroIllustration(
-        root.dataset.theme === 'dark'
-          ? '/assets/hero-illustration-dark.png'
-          : '/assets/hero-illustration.png'
-      );
+      setHeroIllustration(getHeroIllustration());
     };
 
     updateHeroIllustration();
@@ -108,10 +117,12 @@ function PublicHome({ user = null, profileName = '' }) {
 
             <div className="hero-art">
               <img
-                src={heroIllustration}
+                src={heroIllustration.src}
+                srcSet={heroIllustration.srcSet}
+                sizes="(max-width: 900px) 100vw, 48vw"
                 alt="Formant career preparation illustration"
-                width="1405"
-                height="1120"
+                width={heroIllustration.width}
+                height={heroIllustration.height}
                 fetchPriority="high"
                 decoding="async"
               />

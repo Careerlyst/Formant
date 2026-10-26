@@ -34,4 +34,28 @@ describe('About page image delivery', () => {
       assert.equal(bytes.toString('ascii', 8, 12), 'WEBP', `${asset} must be a valid WebP file`);
     }
   });
+
+  it('uses responsive WebP variants for both homepage theme illustrations', () => {
+    const source = fs.readFileSync(path.join(rootDir, 'src/pages/Home.jsx'), 'utf8');
+
+    assert.match(source, /hero-illustration-640\.webp 640w/);
+    assert.match(source, /hero-illustration-960\.webp 960w/);
+    assert.match(source, /hero-illustration-dark-640\.webp 640w/);
+    assert.match(source, /hero-illustration-dark-960\.webp 960w/);
+    assert.match(source, /width: 1536,[\s\S]*height: 1024/);
+    assert.match(source, /width: 1405,[\s\S]*height: 1120/);
+    assert.match(source, /width=\{heroIllustration\.width\}/);
+    assert.match(source, /height=\{heroIllustration\.height\}/);
+
+    for (const asset of [
+      'hero-illustration-640.webp',
+      'hero-illustration-960.webp',
+      'hero-illustration-dark-640.webp',
+      'hero-illustration-dark-960.webp',
+    ]) {
+      const bytes = fs.readFileSync(path.join(rootDir, 'public/assets', asset));
+      assert.equal(bytes.toString('ascii', 0, 4), 'RIFF', `${asset} must be a valid WebP file`);
+      assert.equal(bytes.toString('ascii', 8, 12), 'WEBP', `${asset} must be a valid WebP file`);
+    }
+  });
 });
