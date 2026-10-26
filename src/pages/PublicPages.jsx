@@ -629,11 +629,14 @@ export function About() {
             <div className="about-hero-art" aria-hidden="true">
               <img
                 className="about-hero-art-image"
-                src="/assets/Friendly%20Team%20Workspace%20Illustration.png"
+                src="/assets/friendly-team-workspace-800.webp"
+                srcSet="/assets/friendly-team-workspace-480.webp 480w, /assets/friendly-team-workspace-800.webp 800w"
+                sizes="(max-width: 900px) 100vw, 45vw"
                 alt="Formant team collaborating in a workspace"
-                width="1254"
-                height="1254"
-                loading="lazy"
+                width="800"
+                height="800"
+                loading="eager"
+                fetchPriority="high"
                 decoding="async"
               />
             </div>
@@ -696,10 +699,12 @@ export function About() {
             </div>
             <img
               className="about-purpose-illustration"
-              src="/assets/Confident%20Professional%20Portfolio%20Illustration.png"
+              src="/assets/confident-professional-portfolio-800.webp"
+              srcSet="/assets/confident-professional-portfolio-480.webp 480w, /assets/confident-professional-portfolio-800.webp 800w"
+              sizes="(max-width: 900px) 100vw, 45vw"
               alt="A professional holding a portfolio, surrounded by examples of career documents and creative work."
-              width="1254"
-              height="1254"
+              width="800"
+              height="800"
               loading="lazy"
               decoding="async"
             />
