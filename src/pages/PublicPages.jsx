@@ -590,7 +590,7 @@ export function About() {
   const displayServices = services
     .map((service) => ({
       ...service,
-      routeId: service.slug || (!supabase ? service.id : ''),
+      routeId: getCanonicalServiceSlug(service.slug || (!supabase ? service.id : '')),
       description: service.description || service.desc || ''
     }))
     .filter((service) => service.routeId && service.name);

@@ -96,5 +96,12 @@ describe('Sitemap & SEO Configuration', () => {
     assert.equal(getCanonicalServiceSlug('linkedin-profile'), 'linkedin');
     assert.equal(getCanonicalServiceSlug('github-profile'), 'github');
     assert.equal(getCanonicalServiceSlug('portfolio'), 'portfolio');
+
+    const publicPages = fs.readFileSync(path.join(rootDir, 'src/pages/PublicPages.jsx'), 'utf8');
+    assert.match(
+      publicPages,
+      /routeId:\s*getCanonicalServiceSlug\(service\.slug\s*\|\|\s*\(!supabase\s*\?\s*service\.id\s*:\s*''\)\)/,
+      'About service links must normalize database slugs to canonical routes'
+    );
   });
 });
